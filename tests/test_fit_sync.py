@@ -223,3 +223,28 @@ def test_install_uses_the_real_interpreter_and_names_it(tmp_path):
     plist = plistlib.loads((home / "Library" / "LaunchAgents" / "com.lockedin.fitsync.plist").read_bytes())
     assert plist["ProgramArguments"][0] == real
     assert real in out.stdout and "Full Disk Access" in out.stdout
+
+
+def test_icloud_evicted_file_is_downloaded_and_retried(tmp_path, monkeypatch):
+    import errno
+    evicted = make(tmp_path / "old.fit", b"old ride")
+    state = {"downloaded": False}
+    requested = []
+    real = fit_sync.sha256_file
+
+    def sha(path):
+        if path == evicted and not state["downloaded"]:
+            raise OSError(errno.EDEADLK, "Resource deadlock avoided")  # iCloud placeholder
+        return real(path)
+
+    def download(path):
+        requested.append(path)
+        state["downloaded"] = True
+
+    monkeypatch.setattr(fit_sync, "sha256_file", sha)
+    monkeypatch.setattr(fit_sync, "icloud_download", download)
+    first = fit_sync.sync_once(cfg(tmp_path), NOW, http=FakeHttp())
+    assert requested == [evicted]
+    assert first.pending == 1 and first.uploaded == 0 and first.warnings == []
+    second = fit_sync.sync_once(cfg(tmp_path), NOW, http=FakeHttp())
+    assert second.uploaded == 1

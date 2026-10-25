@@ -11,9 +11,11 @@ Config: ~/.config/lockedin/sync.env (KEY=VALUE lines), overridable by environmen
 
 from __future__ import annotations
 
+import errno
 import hashlib
 import json
 import os
+import subprocess
 import sys
 import time
 import urllib.error
@@ -112,6 +114,11 @@ def sha256_file(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def icloud_download(path: Path) -> None:
+    """Ask iCloud Drive to bring an evicted file back to this Mac; it is retried on the next pass."""
+    subprocess.run(["/usr/bin/brctl", "download", str(path)], capture_output=True, timeout=30, check=False)
+
+
 def urllib_http(url: str, token: str, body: bytes, headers: dict) -> tuple[int, bytes]:
     req = urllib.request.Request(url, data=body, method="POST",
                                  headers={**headers, "Authorization": f"Bearer {token}"})
@@ -149,7 +156,11 @@ def sync_once(cfg: dict, now: float, http: Http = urllib_http) -> SyncReport:
         try:
             hashed.append((p, label, sha256_file(p)))
         except OSError as e:
-            report.warnings.append(f"Skipped {p.name} for now, couldn't read it: {e}")
+            if e.errno == errno.EDEADLK:  # iCloud placeholder ("Optimize Mac Storage"); fetch it, retry soon
+                icloud_download(p)
+                report.pending += 1
+            else:
+                report.warnings.append(f"Skipped {p.name} for now, couldn't read it: {e}")
     try:
         known: set[str] = set()
         for i in range(0, len(hashed), BATCH):
@@ -206,7 +217,7 @@ def main() -> int:
     for report in reports:
         stamp = datetime.now().isoformat(timespec="seconds")
         print(f"{stamp} uploaded {report.uploaded}, already there {report.duplicates}, "
-              f"still being written {report.pending}, errors {len(report.errors)}")
+              f"waiting (being written or downloading from iCloud) {report.pending}, errors {len(report.errors)}")
         for line in report.warnings + report.errors:
             print(f"{stamp}   {line}")
     return 0
