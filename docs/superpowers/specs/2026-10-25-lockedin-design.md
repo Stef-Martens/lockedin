@@ -61,13 +61,13 @@ Marked **(owner)** where the owner decided, **(my call)** where I chose and the 
 - **(my call)** Login with **Supabase Auth, email + password**, long-lived session (magic links are awkward on a phone at the gym). Sign-ups disabled in Supabase; the backend additionally checks the JWT's user id/email against `OWNER_EMAIL`.
 - The frontend only talks to Supabase for **auth**. All data goes through the FastAPI backend, which verifies the Supabase JWT on every request.
 - **Row Level Security enabled on every table with no policies** for `anon`/`authenticated`, so Supabase's PostgREST API exposes nothing. The backend connects with its own DB role.
-- Machine endpoints (Apple Health ingest, Zwift sync) use separate **static bearer tokens** from env (`HEALTH_INGEST_TOKEN`, `SYNC_TOKEN`), compared in constant time.
+- The Mac sync script uses a **static bearer token** from env (`SYNC_TOKEN`), compared in constant time.
 - `ANTHROPIC_API_KEY` lives only in backend env (Vercel env vars / local `.env`), never sent to the frontend.
 
 ### 5.3 Data sources
 
 **Zwift (bike).** A hosted app can't read `~/Documents/Zwift/Activities`, so:
-- **(my call)** A small **Mac sync script** (`sync/zwift_sync.py`, stdlib + `requests` only), run by a **launchd agent** using `WatchPaths` on the Zwift folder plus a periodic fallback (e.g. hourly). It hashes each `.fit` (SHA-256), asks the API which hashes are already known, and uploads only new files. Folder path from `ZWIFT_ACTIVITIES_DIR`. README documents installing/uninstalling the launchd agent.
+- **(my call)** A small **Mac sync script** (`sync/fit_sync.py`, stdlib + `requests` only), run by a **launchd agent** using `WatchPaths` on the Zwift folder plus a periodic fallback (e.g. hourly). It hashes each `.fit` (SHA-256), asks the API which hashes are already known, and uploads only new files. Folder path from `ZWIFT_ACTIVITIES_DIR`. README documents installing/uninstalling the launchd agent.
 - A manual **"Upload FIT"** button in the UI as a fallback (multi-file).
 - Server dedupes by file hash regardless of path.
 - Summary stored: start time, duration (elapsed + moving), distance, elevation gain, avg/max power, avg/max HR, avg cadence, calories, **NP, IF, TSS** (computed from per-second power and the FTP in effect at ride date).
@@ -80,38 +80,34 @@ Marked **(owner)** where the owner decided, **(my call)** where I chose and the 
 - **Dedupe:** a workout is identified by `(start_time, title)`. Re-importing an existing workout **replaces its exercises and sets** (so edits in Hevy propagate). Workouts missing from a newer export are **not** deleted (my call — safer with partial exports).
 - Upload result shows counts: new workouts, updated workouts, unchanged, rows skipped (with reasons).
 
-**Apple Health (run, swim, others)** via the iOS app **Health Auto Export** (third-party, by Lybron Sobers; not Apple). Apple offers no web access to Health data, so an iOS app is required. Two supported paths:
-- **Premium** (€1.99/month, €7.99/year or €29.99 lifetime; 7-day trial): REST API automation, sends in the background. The main path.
-- **Basic** (€2.99 one-time): manual export only. The owner exports a JSON file now and then and uploads it in the UI (same path as the history backfill below).
-
-Both paths must work. Pricing from the Belgian App Store, 2026-10-25.
-- `POST /api/ingest/health`, bearer `HEALTH_INGEST_TOKEN`. Accepts Health Auto Export's JSON (`{"data": {"workouts": [...], "metrics": [...]}}`, format version 2). Builder must verify field names against the app's current docs and a real sample.
-- Every payload stored raw (`jsonb`) with received-at timestamp, then parsed. **(my call)** Identical payloads are deduped by SHA-256; raw payloads older than 90 days that parsed successfully are pruned, so overlapping syncs don't fill the 500 MB.
-- **History backfill (my call):** the UI accepts a manual Health Auto Export JSON export file (e.g. one per year). The browser parses it and posts workouts in batches under ~3 MB to an authenticated endpoint that uses the same parser/upsert. README explains how to make these exports. Apple Health's full `export.zip` is not supported.
-- Workouts parsed: external id (HAE workout `id` if present, else hash of type+start+end), type (running, swimming, cycling, walking, other…), start/end, duration, distance, avg/max HR, pace, active calories, elevation; for swims: lap length, laps, stroke count, pool vs open water where available. Per-workout HR samples stored if included.
-- Metrics: **body mass** (weight) imported into the measurements table if present; other metrics (resting HR, VO₂max) stored if present, displayed later. Not required.
-- Re-sent workouts upsert by external id (no duplicates).
-- Keep payloads small: README tells the owner to configure frequent syncs over a short date range and to **turn off route/GPS data** (not needed and it bloats payloads past Vercel's request limit).
-- **Overlap dedupe (owner):** a Health workout that overlaps in time with a Zwift ride by more than 50% of the shorter one is marked `superseded_by` that ride and excluded from all stats. Applied whichever arrives first (re-checked on every Zwift and Health import). Superseded rows remain visible in the activity detail as "duplicate of Zwift ride".
-- **HR merge (my call):** if the Zwift ride has no HR data (no strap paired in Zwift), the superseded Health workout's HR (avg/max and samples, aligned by timestamp) is copied onto the Zwift ride and its stream. Works in both arrival orders.
+**Apple Health (run, swim, others)** via the iOS app **HealthFit** (third-party, ~€8 one-time; **owner** chose it over Health Auto Export and Apple's built-in export). Apple offers no web access to Health data, so an iOS app is required.
+- HealthFit auto-exports each Apple Watch workout as a **.FIT file to iCloud Drive**. iCloud syncs it to the Mac, and the **same Mac sync script** (generalised: `sync/fit_sync.py`) watches both the Zwift folder and the HealthFit folder (`HEALTHFIT_DIR`) and uploads new files through the same FIT endpoint. One import pipeline for bike, run and swim.
+- Known trade-off (accepted by owner): Watch workouts only arrive once the Mac is on.
+- The exact iCloud folder path and HealthFit export settings must be verified once the owner buys it. Until then, build and test against synthetic FIT samples. The script must skip iCloud placeholder files (`.icloud`, not yet downloaded) or trigger their download, and retry later.
+- **Source** of each FIT file is recorded (`zwift` / `healthfit`), from the folder it came from and the FIT `file_id` manufacturer. Sport and sub-sport come from the FIT `sport` message (running, lap/open-water swimming, cycling/indoor cycling, walking, training…).
+- Parsed for every file: start/end, duration, distance, avg/max HR, pace, calories, elevation, per-second streams. For pool swims: pool length, lengths/laps and stroke counts from FIT `length`/`lap` messages where present.
+- **History backfill:** HealthFit can export past workouts too; the owner drops them in the HealthFit folder (or uses the UI upload). README explains how. *(Builder to confirm HealthFit's bulk-export flow.)*
+- Not covered (accepted): body weight and other Health metrics. Measurements are entered by hand (see 5.6 Body).
+- **Overlap dedupe (owner):** a HealthFit workout that overlaps in time with a Zwift ride by more than 50% of the shorter one is marked `superseded_by` that ride and excluded from all stats. Applied whichever arrives first. Superseded rows remain visible in the activity detail as "duplicate of Zwift ride".
+- **HR merge (my call):** if the Zwift ride has no HR data (no strap paired in Zwift), the superseded Watch workout's HR (avg/max and samples, aligned by timestamp) is copied onto the Zwift ride and its stream. Works in both arrival orders.
 - **Walks (my call):** walking workouts are stored and listed (sport `other`, sub_type walking) but excluded from totals, streaks and the comeback check, since the Watch records many casual walks. Other workout types (hiking, rowing, HIIT, etc.) count as `other` sessions.
+- **Dropped:** the Health Auto Export JSON endpoint (`/api/ingest/health`) from the original brief. It could be added later if the owner ever wants runs to show up without the Mac.
 
 ### 5.4 Data model (Postgres)
 
 Sketch; builder may adjust names/types.
 
 - `profile` (single row): date_of_birth, height_cm, sex (optional, for formulas), max_hr_override, ftp_override, resting_hr_override, created/updated.
-- `activities`: id, source (`zwift|health|hevy`), sport (`bike|run|swim|gym|other`), sub_type (raw type), start_at, end_at, duration_s, moving_s, distance_m, elevation_m, avg_hr, max_hr, calories, avg_power, max_power, avg_cadence, np, if_, tss, avg_pace_s_per_km, swim_pace_s_per_100m, swim_laps, swim_strokes, pool_length_m, effort_class, superseded_by (fk), source_ref (file hash / HAE id / hevy key), unique(source, source_ref).
+- `activities`: id, source (`zwift|healthfit|hevy`), sport (`bike|run|swim|gym|other`), sub_type (raw type), start_at, end_at, duration_s, moving_s, distance_m, elevation_m, avg_hr, max_hr, calories, avg_power, max_power, avg_cadence, np, if_, tss, avg_pace_s_per_km, swim_pace_s_per_100m, swim_laps, swim_strokes, pool_length_m, effort_class, superseded_by (fk), source_ref (file hash / hevy key), unique(source, source_ref).
 - `activity_streams`: activity_id (pk/fk), t_offset int[], power int[], hr int[], cadence int[], speed real[], altitude real[], distance real[].
 - `fit_files`: sha256 (pk), filename, uploaded_at, activity_id, parse_status, error.
-- `health_payloads`: id, received_at, payload jsonb, parse_status, error, counts.
 - `gym_workouts`: id (= activities.id), hevy_key (start_time+title), title, description, start_at, end_at.
 - `gym_sets`: id, workout_id, exercise_id, exercise_order, set_index, set_type (normal/warmup/dropset/failure), weight_kg, reps, distance_km, duration_s, rpe, superset_id, notes, e1rm (computed).
 - `exercises`: id, name (as in Hevy, unique), equipment, is_bodyweight, mapped (bool).
 - `muscles`: id, name, group (e.g. `shoulders`→ front/side/rear delt). Taxonomy (my call): upper chest, mid/lower chest, front delt, side delt, rear delt, triceps, biceps, forearms, lats, upper back/traps, rhomboids/mid back, lower back, abs, obliques, glutes, quads, hamstrings, adductors, abductors, calves.
 - `exercise_muscles`: exercise_id, muscle_id, role (`primary` = 1 set credit, `secondary` = 0.5).
 - `measurement_types`: id, name, unit, kind (`weight|tape|other`); seeded with weight, chest, left arm, right arm, waist, hips, left thigh, right thigh, shoulders; owner can add more.
-- `measurements`: id, type_id, measured_at (date), value, source (`manual|health`), note.
+- `measurements`: id, type_id, measured_at (date), value, source (`manual`), note.
 - `goals`: id, text, sport/area (optional), target (free text or structured metric+value), status (`active|achieved|dropped`), created_at, updated_at, source (`coach|manual`).
 - `coach_conversations` / `coach_messages`: for chat history; `coach_state`: last_goal_checkin_at.
 
@@ -160,21 +156,21 @@ Tone of all copy: neutral-to-encouraging. Declines shown factually, never in ala
 
 ## 6. Constraints
 
-- Free tiers: Supabase (500 MB DB, project pauses after ~1 week of inactivity — regular Health syncs should keep it active; builder to verify and note in README), Vercel Hobby (request body ~4.5 MB, function duration limits).
+- Free tiers: Supabase (500 MB DB, project pauses after ~1 week of inactivity; regular syncs should keep it active, builder to verify and document how to un-pause in README), Vercel Hobby (request body ~4.5 MB, function duration limits).
 - Single user; personal health data → security in 5.2 is mandatory, not optional.
 - Metric units everywhere; Europe/Brussels for display and week boundaries.
 
 ## 7. Testing & samples
 
-- Small sample files in `samples/` so imports can be tested without real data: a short synthetic Zwift-like `.fit` (generated by a script in the repo), a Hevy CSV with a few workouts (including warmup sets, a superset, an extra unknown column, a reordered header), and Health Auto Export JSON with a run, a pool swim, and an indoor cycle that overlaps the sample Zwift ride.
-- Backend tests (pytest) for: FIT parsing + NP/TSS, Hevy parsing + re-import idempotence, Health parsing + upsert, overlap dedupe in both arrival orders, auth/token rejection, read-only SQL role refusing writes, focus-engine calculations on fixtures.
+- Small sample files in `samples/` so imports can be tested without real data: synthetic FIT files generated by a script in the repo (a Zwift-like ride with power, a HealthFit-like run, a pool swim with lengths and strokes, and a Watch indoor cycle that overlaps the sample Zwift ride, with and without HR), and a Hevy CSV with a few workouts (including warmup sets, a superset, an extra unknown column, a reordered header).
+- Backend tests (pytest) for: FIT parsing + NP/TSS, Hevy parsing + re-import idempotence, HealthFit run/swim parsing, overlap dedupe in both arrival orders, auth/token rejection, read-only SQL role refusing writes, focus-engine calculations on fixtures.
 - Frontend: type-check + build; light component tests where useful.
 
 ## 8. Delivery
 
 - Git repo, committed in logical steps.
-- Order: (1) repo skeleton, config, Supabase schema + RLS; (2) Zwift FIT import + sync script; (3) Hevy import; (4) Health ingest + overlap dedupe; (5) profile & measurements; (6) focus engine; (7) dashboard pages; (8) deploy to Vercel/Supabase + README (Supabase setup, Vercel env vars, iPhone Health Auto Export config step by step, launchd install); then v2 (9) coach.
-- README must document exactly how to configure Health Auto Export on the iPhone (automation type REST API, URL `https://<app>.vercel.app/api/ingest/health`, header `Authorization: Bearer <token>`, data type Workouts (+ Body Mass metric), JSON format version, sync cadence and date range, route data off).
+- Order: (1) repo skeleton, config, Supabase schema + RLS; (2) Zwift FIT import + Mac sync script; (3) Hevy import; (4) HealthFit run/swim import + overlap dedupe; (5) profile & measurements; (6) focus engine; (7) dashboard pages; (8) deploy to Vercel/Supabase + README; then v2 (9) coach.
+- README must document: Supabase setup, Vercel env vars, the Mac sync script (launchd install/uninstall, folder paths), and step by step how to set up HealthFit on the iPhone (auto-export to iCloud Drive as FIT, plus exporting history).
 
 ## 9. Left to the builder
 
