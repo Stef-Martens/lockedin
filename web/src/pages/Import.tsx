@@ -1,6 +1,8 @@
 import { type DragEvent, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
+import { Card, PageHeader, SectionHead } from "../components/ui";
 import { apiFetch, uploadFile } from "../lib/api";
+import { stagger } from "../lib/motion";
 import type { FitResult, HevyResult, Status } from "../lib/types";
 
 interface FileRow {
@@ -16,8 +18,23 @@ function ago(iso: string | null): string {
   if (mins < 1) return "just now";
   if (mins < 60) return `${mins} min ago`;
   const h = Math.round(mins / 60);
-  if (h < 48) return `${h} h ago`;
-  return `${Math.round(h / 24)} days ago`;
+  if (h < 24) return `${h} h ago`;
+  const d = Math.round(h / 24);
+  return d === 1 ? "yesterday" : `${d} days ago`;
+}
+
+const recent = (iso: string | null) => !!iso && Date.now() - new Date(iso).getTime() < 24 * 3600 * 1000;
+
+function StatusTile({ label, when, sub, dot, i }: { label: string; when: string; sub: string; dot: "live" | "idle" | "gym"; i: number }) {
+  return (
+    <div className="card rise" style={stagger(i)}>
+      <div className="row spread"><span className="eyebrow">{label}</span>
+        <span className={`sync-dot${dot === "live" ? " live pulse" : ""}`} style={dot === "gym" ? { background: "var(--sport-gym)" } : undefined} aria-hidden="true" />
+      </div>
+      <div className="display" style={{ fontSize: 34, marginTop: 10 }}>{when}</div>
+      <div className="secondary" style={{ fontSize: 14 }}>{sub}</div>
+    </div>
+  );
 }
 
 function FitUpload({ onDone }: { onDone: () => void }) {
@@ -41,45 +58,47 @@ function FitUpload({ onDone }: { onDone: () => void }) {
     onDone();
   }
 
-  const drop = (e: DragEvent) => {
-    e.preventDefault();
-    setOver(false);
-    handle(e.dataTransfer.files);
+  const label = (r: FileRow): [string, string] => {
+    if (r.error) return [r.error, "var(--danger)"];
+    if (r.state === "waiting") return ["waiting", "var(--ink-muted)"];
+    if (r.state === "uploading") return ["uploading…", "var(--ink-muted)"];
+    switch (r.result?.status) {
+      case "imported": return ["imported", "var(--accent)"];
+      case "duplicate": return ["already imported", "var(--ink-3)"];
+      case "empty": return ["empty, skipped", "var(--ink-3)"];
+      default: return ["couldn't read this file", "var(--danger)"];
+    }
   };
 
   return (
-    <section className="card">
-      <h2>Ride and workout files (.fit)</h2>
-      <p className="secondary" style={{ marginTop: 0 }}>
-        Zwift rides and HealthFit workouts sync from your Mac automatically. Use this for anything the sync missed.
-      </p>
-      <div className={`drop${over ? " over" : ""}`} onClick={() => input.current?.click()}
-        onDragOver={(e) => { e.preventDefault(); setOver(true); }} onDragLeave={() => setOver(false)} onDrop={drop}
-        role="button" tabIndex={0} onKeyDown={(e) => e.key === "Enter" && input.current?.click()}>
-        Drop .fit files here or tap to choose
+    <Card i={4}>
+      <SectionHead title="Ride and workout files" />
+      <p className="secondary" style={{ marginTop: -6, fontSize: 14 }}>.fit files from Zwift or HealthFit. These normally sync from your Mac by themselves.</p>
+      <div className={`drop${over ? " over" : ""}`} onClick={() => input.current?.click()} role="button" tabIndex={0}
+        onKeyDown={(e) => e.key === "Enter" && input.current?.click()}
+        onDragOver={(e) => { e.preventDefault(); setOver(true); }} onDragLeave={() => setOver(false)}
+        onDrop={(e: DragEvent) => { e.preventDefault(); setOver(false); handle(e.dataTransfer.files); }}>
+        Drop .fit files here or <span style={{ color: "var(--accent)", fontWeight: 600 }}>choose files</span>
         <input ref={input} type="file" accept=".fit,.FIT" multiple onChange={(e) => handle(e.target.files)} />
       </div>
-      {rows.length > 0 && (
-        <ul className="list" style={{ marginTop: 12 }}>
-          {rows.map((r, i) => (
-            <li key={i} className="row spread" style={{ padding: "6px 0" }}>
-              <span>{r.name}</span>
-              <span className="num">
-                {r.state === "waiting" && <span className="muted">waiting</span>}
-                {r.state === "uploading" && <span className="muted">uploading…</span>}
-                {r.error && <span className="error">{r.error}</span>}
-                {r.result?.status === "imported" && (
-                  <Link className="ok" to={`/activities/${r.result.activity_id}`}>imported</Link>
-                )}
-                {r.result?.status === "duplicate" && <span className="muted">already imported</span>}
-                {r.result?.status === "empty" && <span className="muted">empty (started and quit), skipped</span>}
-                {r.result?.status === "error" && <span className="error">couldn't read this file</span>}
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
+      {rows.map((r, i) => {
+        const [text, color] = label(r);
+        const pct = r.state === "waiting" ? 0 : r.state === "uploading" ? 60 : 100;
+        return (
+          <div key={i} className="pop" style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", gap: 12, alignItems: "center", padding: "10px 0", borderTop: "1px solid var(--hairline)", marginTop: i ? 0 : 10 }}>
+            <div style={{ minWidth: 0 }}>
+              {r.result?.status === "imported" ? (
+                <Link to={`/activities/${r.result.activity_id}`} style={{ fontSize: 14 }}>{r.name}</Link>
+              ) : <div style={{ fontSize: 14, overflow: "hidden", textOverflow: "ellipsis" }}>{r.name}</div>}
+              <div style={{ height: 4, background: "var(--hairline)", borderRadius: 2, marginTop: 6, overflow: "hidden" }}>
+                <div style={{ height: "100%", width: `${pct}%`, background: color, transition: "width .35s ease" }} />
+              </div>
+            </div>
+            <span style={{ fontSize: 13, color, textAlign: "right" }}>{text}</span>
+          </div>
+        );
+      })}
+    </Card>
   );
 }
 
@@ -103,27 +122,30 @@ function HevyUpload({ onDone }: { onDone: () => void }) {
     }
   }
 
+  const chip = (text: string, on = false) => (
+    <span style={{ border: `1px solid ${on ? "var(--accent-line)" : "var(--hairline)"}`, background: on ? "var(--accent-wash)" : "var(--sunken)",
+      color: on ? "var(--accent)" : "var(--ink)", borderRadius: 999, padding: "6px 12px", fontSize: 14 }}>{text}</span>
+  );
   return (
-    <section className="card">
-      <h2>Hevy workouts (.csv)</h2>
-      <p className="secondary" style={{ marginTop: 0 }}>
-        In Hevy: Profile → Settings → Export &amp; Import Data → Export Workouts. Upload the whole file every time;
-        nothing gets duplicated.
+    <Card i={5}>
+      <SectionHead title="Hevy workouts" />
+      <p className="secondary" style={{ marginTop: -6, fontSize: 14, lineHeight: 1.5 }}>
+        In Hevy: Profile → Settings → Export &amp; Import Data → Export Workouts. Upload the whole file every time; nothing gets duplicated.
       </p>
-      <label className="btn primary">
+      <label className="btn primary" style={{ display: "inline-block" }}>
         {busy ? "Importing…" : "Choose CSV"}
         <input type="file" accept=".csv,text/csv" hidden disabled={busy} onChange={(e) => handle(e.target.files?.[0])} />
       </label>
       {error && <p className="error">{error}</p>}
       {result && (
-        <p className="num">
-          <span className="ok">{result.new} new</span> · {result.updated} updated · {result.unchanged} unchanged
-          {result.skipped.length > 0 && (
-            <span className="muted"> · {result.skipped.length} rows skipped (e.g. row {result.skipped[0][0]}: {result.skipped[0][1]})</span>
-          )}
-        </p>
+        <div className="row pop" style={{ marginTop: 16, gap: 8 }}>
+          {chip(`${result.new} new`, result.new > 0)}
+          {chip(`${result.updated} updated`)}
+          {chip(`${result.unchanged} unchanged`)}
+          {result.skipped.length > 0 && <span className="muted" style={{ fontSize: 13 }}>{result.skipped.length} rows skipped (e.g. row {result.skipped[0][0]}: {result.skipped[0][1]})</span>}
+        </div>
       )}
-    </section>
+    </Card>
   );
 }
 
@@ -134,24 +156,21 @@ export default function Import() {
 
   return (
     <>
-      <h1>Import</h1>
-      <p className="secondary">Get your training data in.</p>
+      <PageHeader title="Import" sub="Most of this happens by itself. Use the uploads for anything the sync missed." />
       {status && (
-        <section className="card">
-          <h2>Last synced</h2>
-          <div className="tiles" style={{ marginBottom: 0 }}>
-            {(["zwift", "healthfit", "hevy"] as const).map((s) => (
-              <div className="tile" key={s}>
-                <div className="label">{{ zwift: "Zwift", healthfit: "Apple Watch", hevy: "Hevy" }[s]}</div>
-                <div className="value" style={{ fontSize: "1rem" }}>{ago(status[s].last_import_at)}</div>
-                <div className="muted num" style={{ fontSize: "0.85rem" }}>{status[s].count} imported</div>
-              </div>
-            ))}
-          </div>
-        </section>
+        <div className="grid-auto" style={{ ["--min" as string]: "240px" }}>
+          <StatusTile i={1} label="Zwift" when={ago(status.zwift.last_import_at)} sub={`${status.zwift.count} rides · syncing from your Mac`}
+            dot={recent(status.zwift.last_import_at) ? "live" : "idle"} />
+          <StatusTile i={2} label="Apple Watch" when={status.healthfit.count ? ago(status.healthfit.last_import_at) : "Not set up"}
+            sub={status.healthfit.count ? `${status.healthfit.count} workouts via HealthFit` : "Add your HealthFit folder to the sync"}
+            dot={recent(status.healthfit.last_import_at) ? "live" : "idle"} />
+          <StatusTile i={3} label="Hevy" when={ago(status.hevy.last_import_at)} sub={`${status.hevy.count} workouts · manual upload`} dot="gym" />
+        </div>
       )}
-      <FitUpload onDone={load} />
-      <HevyUpload onDone={load} />
+      <div className="grid-auto" style={{ ["--min" as string]: "420px" }}>
+        <FitUpload onDone={load} />
+        <HevyUpload onDone={load} />
+      </div>
     </>
   );
 }

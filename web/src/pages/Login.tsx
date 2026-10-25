@@ -1,4 +1,5 @@
 import { type FormEvent, useState } from "react";
+import { stagger } from "../lib/motion";
 import { supabase } from "../lib/supabase";
 
 export default function Login() {
@@ -21,25 +22,23 @@ export default function Login() {
 
   return (
     <div className="login">
-      <h1>
-        Locked<span style={{ color: "var(--accent)" }}>In</span>
-      </h1>
-      <p className="secondary">Your training, in one place.</p>
-      <form className="stack" onSubmit={submit}>
-        <label className="field">
-          Email
-          <input type="email" autoComplete="username" required value={email} onChange={(e) => setEmail(e.target.value)} />
-        </label>
-        <label className="field">
-          Password
-          <input type="password" autoComplete="current-password" required value={password}
-            onChange={(e) => setPassword(e.target.value)} />
-        </label>
-        {error && <p className="error">{error}</p>}
-        <button className="btn primary" disabled={busy} style={{ width: "100%" }}>
-          {busy ? "Signing in…" : "Sign in"}
-        </button>
-      </form>
+      <div className="login-inner">
+        <div className="rise">
+          <div className="wordmark">Locked<span>In</span></div>
+          <div className="secondary" style={{ marginTop: 10 }}>Your rides, runs, swims and lifts. One place.</div>
+        </div>
+        <form className="card rise stack" style={{ ...stagger(1), padding: 28 }} onSubmit={submit}>
+          <label className="field">Email
+            <input type="email" autoComplete="username" required value={email} placeholder="you@example.com" onChange={(e) => setEmail(e.target.value)} />
+          </label>
+          <label className="field">Password
+            <input type="password" autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} />
+          </label>
+          {error && <p className="error" style={{ margin: 0 }}>{error}</p>}
+          <button className="btn primary" disabled={busy} style={{ width: "100%", padding: 14, fontSize: 16 }}>{busy ? "Signing in…" : "Sign in"}</button>
+        </form>
+        <div className="muted rise" style={{ ...stagger(2), textAlign: "center", fontSize: 13 }}>Private app · one account only</div>
+      </div>
     </div>
   );
 }
