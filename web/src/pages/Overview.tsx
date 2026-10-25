@@ -1,14 +1,39 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import FocusCard from "../components/FocusCard";
-import SportDot from "../components/SportDot";
+import { Card, PageHeader, SectionHead, Segmented } from "../components/ui";
 import WeeklyVolumeChart from "../components/WeeklyVolumeChart";
 import WinsStrip from "../components/WinsStrip";
 import { apiFetch } from "../lib/api";
 import { formatMinutes, type Overview as OverviewData } from "../lib/focus";
 import { formatDistance, SPORT_LABEL, type Sport } from "../lib/format";
+import { stagger, useCountUp } from "../lib/motion";
 
 const SPORTS: Sport[] = ["bike", "run", "swim", "gym", "other"];
+const TREND: Partial<Record<Sport, string>> = { bike: "/trends/bike", run: "/trends/run", swim: "/trends/swim", gym: "/trends/gym" };
+
+function isoWeek(d: Date): number {
+  const t = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  const day = t.getUTCDay() || 7;
+  t.setUTCDate(t.getUTCDate() + 4 - day);
+  return Math.ceil(((t.getTime() - Date.UTC(t.getUTCFullYear(), 0, 1)) / 864e5 + 1) / 7);
+}
+
+function ago(iso: string): string {
+  const days = Math.floor((Date.now() - new Date(iso).getTime()) / 864e5);
+  return days <= 0 ? "today" : days === 1 ? "yesterday" : `${days} days ago`;
+}
+
+function TotalTile({ minutes, sessions, label }: { minutes: number; sessions: number; label: string }) {
+  const shown = useCountUp(minutes);
+  return (
+    <div className="card rise" style={stagger(0)}>
+      <div className="eyebrow">{label}</div>
+      <div className="display num" style={{ fontSize: 64, marginTop: 8 }}>{formatMinutes(shown)}</div>
+      <div className="secondary" style={{ fontSize: 14, marginTop: 6 }}>{sessions} {sessions === 1 ? "session" : "sessions"}</div>
+    </div>
+  );
+}
 
 export default function Overview() {
   const [data, setData] = useState<OverviewData | null>(null);
@@ -25,77 +50,105 @@ export default function Overview() {
 
   const t = data.totals[period];
   const active = SPORTS.filter((s) => t[s].sessions > 0);
+  const total = SPORTS.reduce((m, s) => m + t[s].time_s / 60, 0);
+  const sessions = SPORTS.reduce((n, s) => n + t[s].sessions, 0);
   const c = data.comeback;
+  const now = new Date();
+  const eyebrow = `${now.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", timeZone: "Europe/Brussels" })} · week ${isoWeek(now)}`;
+  const monthName = now.toLocaleDateString("en-GB", { month: "long", timeZone: "Europe/Brussels" });
 
   return (
     <>
-      <h1>{!c ? "Overview" : c.days_since == null ? "Welcome" : "Welcome back"}</h1>
+      <PageHeader eyebrow={eyebrow} title={!c ? "Overview" : c.days_since == null ? "Welcome" : "Welcome back"}
+        right={<Segmented label="Period" value={period} onChange={setPeriod}
+          options={[{ value: "week", label: "Week" }, { value: "month", label: "Month" }]} />} />
+
       {c && (
-        <section className="card note-card">
+        <Card variant="accent" i={0}>
           {c.days_since == null ? (
-            <p style={{ margin: 0 }}>
-              Nothing logged yet. Your Zwift rides and Watch workouts appear once the Mac sync runs, or{" "}
-              <Link to="/import">import a Hevy export</Link>. Suggestions show up after a couple of weeks of training.
-            </p>
+            <p style={{ margin: 0 }}>Nothing logged yet. Your Zwift rides and Watch workouts appear once the Mac sync runs, or{" "}
+              <Link to="/import">import a Hevy export</Link>. Suggestions show up after a couple of weeks of training.</p>
           ) : (
             <p style={{ margin: 0 }}>Last session {c.days_since} days ago. {c.suggestion}</p>
           )}
-        </section>
+        </Card>
       )}
 
-      {!c && <FocusCard items={data.focus} />}
-      <WinsStrip wins={data.wins} />
-      {data.plateaus.length > 0 && (
-        <section className="card">
-          <h2>Stalled lately</h2>
-          {data.plateaus.map((p, i) => (
-            <div key={i} className="plateau">
-              <div className="list-title">{p.title}</div>
-              <div className="muted num" style={{ fontSize: "0.85rem" }}>{p.detail}</div>
-              <div>{p.suggestion}</div>
-            </div>
-          ))}
-        </section>
-      )}
-
-      <section className="card">
-        <div className="chart-title">
-          <h2>{period === "week" ? "This week" : "This month"}</h2>
-          <div className="row" style={{ gap: 6 }}>
-            <button className="chip" aria-pressed={period === "week"} onClick={() => setPeriod("week")}>Week</button>
-            <button className="chip" aria-pressed={period === "month"} onClick={() => setPeriod("month")}>Month</button>
-          </div>
-        </div>
-        <div className="tiles" style={{ marginBottom: 0, marginTop: 8 }}>
-          {active.map((s) => (
-            <div className="tile" key={s}>
-              <div className="label row" style={{ gap: 6 }}><SportDot sport={s} />{SPORT_LABEL[s]}</div>
-              <div className="value num">{formatMinutes(t[s].time_s / 60)}</div>
-              <div className="muted num" style={{ fontSize: "0.85rem" }}>
+      <div className="grid-auto" style={{ ["--min" as string]: "200px" }}>
+        <TotalTile key={period} minutes={Math.round(total)} sessions={sessions} label={period === "week" ? "This week" : monthName} />
+        {active.map((s, n) => {
+          const body = (
+            <>
+              <div className="eyebrow row" style={{ gap: 8 }}><span className="dot" style={{ background: `var(--sport-${s})` }} />{SPORT_LABEL[s]}</div>
+              <div className="display num" style={{ fontSize: 44, marginTop: 14 }}>{formatMinutes(t[s].time_s / 60)}</div>
+              <div className="secondary" style={{ fontSize: 14, marginTop: 6 }}>
                 {t[s].sessions} {t[s].sessions === 1 ? "session" : "sessions"}
                 {t[s].distance_m > 0 && s !== "gym" ? ` · ${formatDistance(t[s].distance_m, s)}` : ""}
               </div>
+            </>
+          );
+          return TREND[s] ? (
+            <Link key={s} to={TREND[s]!} className="card rise lift" style={{ ...stagger(n + 1), display: "block", color: "var(--ink)", textDecoration: "none" }}>{body}</Link>
+          ) : (
+            <div key={s} className="card rise" style={stagger(n + 1)}>{body}</div>
+          );
+        })}
+        {data.streak >= 2 && (
+          <div className="card rise" style={stagger(active.length + 1)}>
+            <div className="eyebrow">Streak</div>
+            <div className="row" style={{ gap: 8, marginTop: 14, alignItems: "baseline" }}>
+              <span className="display" style={{ fontSize: 44, color: "var(--accent)" }}>{data.streak}</span>
+              <span style={{ color: "var(--ink-2)" }}>weeks</span>
+            </div>
+            <div className="secondary" style={{ fontSize: 14, marginTop: 6 }}>2+ sessions every week</div>
+          </div>
+        )}
+      </div>
+
+      {(!c || data.wins.length > 0) && (
+        <div className="grid-auto" style={{ ["--min" as string]: "340px" }}>
+          {!c && <FocusCard items={data.focus} i={2} />}
+          <WinsStrip wins={data.wins} i={3} />
+        </div>
+      )}
+
+      {data.plateaus.length > 0 && (
+        <Card i={4}>
+          <SectionHead title="Stalled lately" />
+          {data.plateaus.map((p, n) => (
+            <div key={n} style={{ padding: "10px 0", borderTop: n ? "1px solid var(--hairline)" : undefined }}>
+              <div className="list-title">{p.title}</div>
+              <div className="muted num" style={{ fontSize: 13 }}>{p.detail}</div>
+              <div style={{ color: "var(--ink-2)", marginTop: 2 }}>{p.suggestion}</div>
             </div>
           ))}
-          {data.streak >= 2 && (
-            <div className="tile">
-              <div className="label">Streak</div>
-              <div className="value num">{data.streak} weeks</div>
-              <div className="muted" style={{ fontSize: "0.85rem" }}>2+ sessions a week</div>
-            </div>
-          )}
-          {active.length === 0 && <p className="secondary" style={{ margin: 0 }}>Nothing yet {period === "week" ? "this week" : "this month"}.</p>}
-        </div>
-      </section>
-
-      <WeeklyVolumeChart rows={data.weekly} weeks={weeks} onWeeks={setWeeks} />
-
-      {data.measure_due && (
-        <p className="note">
-          {data.last_tape_measurement_on ? "It's been a while since you measured. " : "No body measurements yet. "}
-          <Link to="/body">Time to measure</Link>: chest, arms, waist and thighs take two minutes.
-        </p>
+        </Card>
       )}
+
+      <WeeklyVolumeChart rows={data.weekly} weeks={weeks} onWeeks={setWeeks} i={5} />
+
+      <div className="grid-auto rise" style={{ ["--min" as string]: "320px", ...stagger(6) }}>
+        <Link to="/body" className={`note lift ${data.checkin_due ? "accent" : ""}`} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, textDecoration: "none", color: "var(--ink-2)" }}>
+          <span className="row" style={{ gap: 12, flexWrap: "nowrap" }}>
+            {data.checkin_due && <span className="sync-dot live pulse" aria-hidden="true" />}
+            <span>
+              <strong style={{ color: "var(--ink)" }}>{data.checkin_due ? "Body check-in due." : "Body check-in up to date."}</strong>{" "}
+              {data.last_tape_measurement_on || !data.checkin_due
+                ? `Next one on ${new Date(`${data.next_checkin_on}T12:00:00Z`).toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" })}.`
+                : "No measurements yet; two minutes with a tape measure."}
+            </span>
+          </span>
+          <span style={{ color: "var(--accent)", fontWeight: 600, whiteSpace: "nowrap" }}>{data.checkin_due ? "Check in" : "Open"}</span>
+        </Link>
+        <Link to="/import" className={`note lift ${data.hevy_due ? "accent" : ""}`} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, textDecoration: "none", color: "var(--ink-2)" }}>
+          <span>
+            <strong style={{ color: "var(--ink)" }}>Hevy</strong>{" "}
+            {data.hevy_last_upload_at ? `last uploaded ${ago(data.hevy_last_upload_at)}.` : "not uploaded yet."}{" "}
+            {data.hevy_due ? "Upload your latest export to keep gym suggestions current." : ""}
+          </span>
+          <span style={{ color: "var(--accent)", fontWeight: 600, whiteSpace: "nowrap" }}>Upload</span>
+        </Link>
+      </div>
     </>
   );
 }

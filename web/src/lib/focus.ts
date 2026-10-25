@@ -27,6 +27,10 @@ export interface Overview {
   focus: FocusItem[];
   measure_due: boolean;
   last_tape_measurement_on: string | null;
+  checkin_due: boolean;
+  next_checkin_on: string;
+  hevy_due: boolean;
+  hevy_last_upload_at: string | null;
 }
 
 export interface Coverage {
@@ -54,4 +58,13 @@ export function formatMinutes(m: number): string {
   const total = Math.round(m);
   if (total < 60) return `${total} min`;
   return `${Math.floor(total / 60)} h ${String(total % 60).padStart(2, "0")}`;
+}
+
+/** "est. 1RM 96.0 kg (was 92.5)" → { value: "96.0 kg", note: "est. 1RM, was 92.5" } for the new-bests list. */
+export function winParts(detail: string): { value: string; note: string } {
+  const m = detail.match(/^(.*?)(?:^|\s)(\d+(?:[.:]\d+)?)(\s?(?:kg|W|km|\/km|\/100m))?(?=\s|$)(.*?)\s*\(was ([^)]+)\)$/);
+  if (!m) return { value: "", note: detail };
+  const [, pre, num, unit = "", post, was] = m;
+  const label = [pre.trim(), post.trim()].filter(Boolean).join(" ");
+  return { value: `${num}${unit}`, note: label ? `${label}, was ${was}` : `was ${was}` };
 }

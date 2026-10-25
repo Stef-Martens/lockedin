@@ -1,29 +1,30 @@
+import { Link } from "react-router-dom";
 import { focusLine, type FocusItem } from "../lib/focus";
-import SportDot from "./SportDot";
+import { Card, SectionHead } from "./ui";
 
-export default function FocusCard({ items }: { items: FocusItem[] }) {
+export default function FocusCard({ items, i }: { items: FocusItem[]; i?: number }) {
   return (
-    <section className="card focus-card">
-      <h2>Focus this week</h2>
+    <Card i={i}>
+      <SectionHead title="Focus this week" right={<Link to="/trends/gym" style={{ fontSize: 13, textDecoration: "none" }}>Why these</Link>} />
       {items.length === 0 ? (
         <p className="secondary" style={{ margin: 0 }}>Keep logging for a couple of weeks and suggestions will show up here.</p>
       ) : (
         <ol className="focus-list">
-          {items.map((item, i) => {
+          {items.map((item, n) => {
             const line = focusLine(item);
             return (
-              <li key={i}>
-                <SportDot sport={item.type === "gym" ? "gym" : item.sport} />
+              <li key={n}>
+                <span className="focus-num">{String(n + 1).padStart(2, "0")}</span>
                 <div>
                   <div className="list-title">{line.title}</div>
-                  <div className="num">{line.detail}</div>
-                  <div className="muted" style={{ fontSize: "0.85rem" }}>{item.reason}</div>
+                  <div className="num" style={{ color: "var(--ink-2)", marginTop: 3 }}>{line.detail}</div>
+                  <div className="muted" style={{ fontSize: 13, marginTop: 3 }}>{item.reason}</div>
                 </div>
               </li>
             );
           })}
         </ol>
       )}
-    </section>
+    </Card>
   );
 }

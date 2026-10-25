@@ -40,3 +40,19 @@ describe("formatMinutes", () => {
     expect(formatMinutes(0)).toBe("0 min");
   });
 });
+
+import { winParts } from "./focus";
+
+describe("winParts", () => {
+  it("splits each kind of win detail into a big value and a note", () => {
+    expect(winParts("est. 1RM 96.0 kg (was 92.5)")).toEqual({ value: "96.0 kg", note: "est. 1RM, was 92.5" });
+    expect(winParts("248 W (was 241)")).toEqual({ value: "248 W", note: "was 241" });
+    expect(winParts("45.0 km ride (was 30.0)")).toEqual({ value: "45.0 km", note: "ride, was 30.0" });
+    expect(winParts("5:10 /km (was 5:30)")).toEqual({ value: "5:10 /km", note: "was 5:30" });
+    expect(winParts("2:05 /100m (was 2:10)")).toEqual({ value: "2:05 /100m", note: "was 2:10" });
+    expect(winParts("12 sessions in the last 4 weeks (was 6)")).toEqual({ value: "12", note: "sessions in the last 4 weeks, was 6" });
+  });
+  it("falls back to the whole text", () => {
+    expect(winParts("something else")).toEqual({ value: "", note: "something else" });
+  });
+});
