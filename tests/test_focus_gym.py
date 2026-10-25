@@ -23,7 +23,7 @@ def test_coverage_counts_primary_and_half_secondary(conn):
     cov = by_key(muscle_coverage(conn, NOW))
     assert cov["mid_lower_chest"].sets_per_week == 3.0
     assert cov["upper_chest"].sets_per_week == 1.5 and cov["triceps"].sets_per_week == 1.5
-    assert cov["mid_lower_chest"].status == "low"  # target 6–12
+    assert cov["mid_lower_chest"].status == "low"  # target 4–12
     assert cov["calves"].sets_per_week == 0 and cov["calves"].status == "low"
     assert cov["forearms"].status == "ok"  # target_low 0 is never low
 
@@ -53,8 +53,8 @@ def test_new_exercise_estimated_from_related_lift(conn):
     add_gym(conn, ago(4), [("Leg Press Horizontal (Machine)", 150, 10, "normal")])  # e1RM 200
     calves = by_key(gym_suggestions(conn, NOW, limit=20), "muscle_key")["calves"]
     assert calves.exercise == "Standing Calf Raise (Machine)"
-    assert calves.weight_kg == 55.0 and calves.estimate is True and calves.per_dumbbell is False
-    assert calves.reason == "Calves: 0 sets/week, aim for 6–12"
+    assert calves.weight_kg == 55.0 and calves.estimate is True and calves.dumbbell is None
+    assert calves.reason == "Calves: 0 sets/week, aim for 3–12"
 
 
 def test_known_exercise_uses_own_history(conn):
@@ -64,10 +64,18 @@ def test_known_exercise_uses_own_history(conn):
     assert (tri.exercise, tri.estimate, tri.weight_kg) == ("Triceps Extension (Cable)", False, 27.5)
 
 
-def test_dumbbell_weights_are_per_dumbbell(conn):
-    add_gym(conn, ago(3), [("Overhead Press (Dumbbell)", 20, 10, "normal")] * 3)
+def test_dumbbell_weights_follow_how_the_owner_logs_them(conn):
+    from sqlalchemy import text
+    add_gym(conn, ago(3), [("Overhead Press (Dumbbell)", 48, 9, "normal")])  # logged as both dumbbells together
     front = by_key(gym_suggestions(conn, NOW, limit=20), "muscle_key")["front_delt"]
-    assert front.exercise == "Overhead Press (Dumbbell)" and front.per_dumbbell is True
+    assert (front.exercise, front.dumbbell, front.weight_kg) == ("Overhead Press (Dumbbell)", "pair", 42.5)
+    conn.execute(text("update profile set dumbbell_weights = 'each'"))
+    assert by_key(gym_suggestions(conn, NOW, limit=20), "muscle_key")["front_delt"].dumbbell == "each"
+
+
+def test_non_dumbbell_has_no_dumbbell_label(conn):
+    add_gym(conn, ago(3), [("Bench Press (Barbell)", 80, 8, "normal")])
+    assert by_key(gym_suggestions(conn, NOW, limit=20), "muscle_key")["mid_lower_chest"].dumbbell is None
 
 
 def test_bodyweight_suggestion_has_reps_not_weight(conn):

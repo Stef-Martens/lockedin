@@ -3,16 +3,22 @@ import { focusLine, formatMinutes, type FocusItem } from "./focus";
 
 const gym = (over: Partial<Extract<FocusItem, { type: "gym" }>>): FocusItem => ({
   type: "gym", muscle_key: "triceps", muscle_name: "Triceps", exercise: "Triceps Extension (Cable)", sets: 3, reps: "8–12",
-  weight_kg: 27.5, per_dumbbell: false, estimate: false, reason: "Triceps: 0 sets/week, aim for 8–14", ...over,
+  weight_kg: 27.5, dumbbell: null, estimate: false, reason: "Triceps: 0 sets/week, aim for 8–14", ...over,
 });
 
 describe("focusLine", () => {
   it("own exercise with weight", () => {
     expect(focusLine(gym({}))).toEqual({ title: "Triceps Extension (Cable)", detail: "3 × 8–12 at 27.5 kg" });
   });
-  it("estimated per-dumbbell weight", () => {
-    expect(focusLine(gym({ exercise: "Shrug (Dumbbell)", weight_kg: 55, per_dumbbell: true, estimate: true })).detail)
-      .toBe("3 × 8–12 at 55 kg per dumbbell · estimate, start light");
+  it("estimated weight for a pair of dumbbells (logged as total)", () => {
+    expect(focusLine(gym({ exercise: "Shrug (Dumbbell)", weight_kg: 40, dumbbell: "pair", estimate: true })).detail)
+      .toBe("3 × 8–12 at 40 kg total (20 kg each) · estimate, start light");
+  });
+  it("odd pair totals split to half kilos", () => {
+    expect(focusLine(gym({ weight_kg: 42.5, dumbbell: "pair" })).detail).toBe("3 × 8–12 at 42.5 kg total (21.25 kg each)");
+  });
+  it("weight logged per dumbbell", () => {
+    expect(focusLine(gym({ weight_kg: 20, dumbbell: "each" })).detail).toBe("3 × 8–12 at 20 kg per dumbbell");
   });
   it("new exercise without a basis for a weight", () => {
     expect(focusLine(gym({ weight_kg: null, estimate: true })).detail).toBe("3 × 8–12, start light");

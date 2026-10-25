@@ -82,3 +82,10 @@ def test_bike_plateau(conn):
     for d in (50, 40, 20, 5):
         add_session(conn, "bike", NOW - timedelta(days=d), 3600, source="zwift", best_20m_power=240)
     assert [x.kind for x in plateaus(conn, NOW)] == ["bike_power"]
+
+
+def test_previous_best_is_shown_with_one_decimal(conn):
+    add_gym(conn, NOW - timedelta(days=30), [("Lateral Raise (Dumbbell)", 28, 13, "normal")])  # 40.1333…
+    add_gym(conn, NOW - timedelta(days=2), [("Lateral Raise (Dumbbell)", 32, 10, "normal")])   # 42.666…
+    (w,) = [w for w in recent_wins(conn, NOW) if w.kind == "e1rm_pr"]
+    assert w.detail == "est. 1RM 42.7 kg (was 40.1)"

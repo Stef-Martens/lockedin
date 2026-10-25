@@ -1,6 +1,7 @@
 -- Muscle taxonomy and exercise library for the focus engine.
 -- Exercises are keyed by name, exactly as Hevy writes them; owner-tagged rows have created_by = 'owner'.
--- Weekly set targets are starting points (common hypertrophy guidance); target_low = 0 is never flagged low.
+-- Weekly working-set targets: target_low is the minimum effective dose (below it a muscle is "low", i.e. neglected),
+-- target_high the upper end of the usual growth range. target_low = 0 is never flagged low.
 
 create table muscles (
   key text primary key, name text not null, region text not null,
@@ -21,26 +22,26 @@ create table library_muscles (
 create index library_muscles_muscle_idx on library_muscles (muscle_key);
 
 insert into muscles (key, name, region, target_low, target_high, sort) values
-  ('upper_chest', 'Upper chest', 'chest', 4, 10, 0),
-  ('mid_lower_chest', 'Mid/lower chest', 'chest', 6, 12, 1),
-  ('front_delt', 'Front delts', 'shoulders', 4, 10, 2),
-  ('side_delt', 'Side delts', 'shoulders', 8, 16, 3),
-  ('rear_delt', 'Rear delts', 'shoulders', 6, 12, 4),
-  ('triceps', 'Triceps', 'arms', 8, 14, 5),
-  ('biceps', 'Biceps', 'arms', 8, 14, 6),
+  ('upper_chest', 'Upper chest', 'chest', 3, 10, 0),
+  ('mid_lower_chest', 'Mid/lower chest', 'chest', 4, 12, 1),
+  ('front_delt', 'Front delts', 'shoulders', 2, 10, 2),
+  ('side_delt', 'Side delts', 'shoulders', 4, 16, 3),
+  ('rear_delt', 'Rear delts', 'shoulders', 4, 12, 4),
+  ('triceps', 'Triceps', 'arms', 4, 14, 5),
+  ('biceps', 'Biceps', 'arms', 4, 14, 6),
   ('forearms', 'Forearms', 'arms', 0, 8, 7),
-  ('lats', 'Lats', 'back', 8, 14, 8),
-  ('mid_back', 'Mid back', 'back', 8, 14, 9),
-  ('upper_back_traps', 'Traps', 'back', 4, 10, 10),
-  ('lower_back', 'Lower back', 'back', 3, 8, 11),
-  ('abs', 'Abs', 'core', 6, 12, 12),
-  ('obliques', 'Obliques', 'core', 3, 8, 13),
-  ('glutes', 'Glutes', 'legs', 6, 12, 14),
-  ('quads', 'Quads', 'legs', 8, 14, 15),
-  ('hamstrings', 'Hamstrings', 'legs', 6, 12, 16),
-  ('adductors', 'Adductors', 'legs', 3, 8, 17),
+  ('lats', 'Lats', 'back', 4, 14, 8),
+  ('mid_back', 'Mid back', 'back', 4, 14, 9),
+  ('upper_back_traps', 'Traps', 'back', 2, 10, 10),
+  ('lower_back', 'Lower back', 'back', 2, 8, 11),
+  ('abs', 'Abs', 'core', 3, 12, 12),
+  ('obliques', 'Obliques', 'core', 2, 8, 13),
+  ('glutes', 'Glutes', 'legs', 4, 12, 14),
+  ('quads', 'Quads', 'legs', 4, 14, 15),
+  ('hamstrings', 'Hamstrings', 'legs', 4, 12, 16),
+  ('adductors', 'Adductors', 'legs', 2, 8, 17),
   ('abductors', 'Abductors', 'legs', 0, 6, 18),
-  ('calves', 'Calves', 'legs', 6, 12, 19);
+  ('calves', 'Calves', 'legs', 3, 12, 19);
 
 insert into library_exercises (name, equipment) values
   ('Overhead Press (Dumbbell)', 'dumbbell'),
@@ -183,6 +184,9 @@ insert into library_muscles (exercise_name, muscle_key, role) values
   ('Face Pull', 'mid_back', 'secondary'),
   ('Rear Delt Reverse Fly (Machine)', 'mid_back', 'secondary'),
   ('Low Cable Fly Crossover', 'front_delt', 'secondary');
+
+-- How the owner logs dumbbell weights in Hevy: both dumbbells together ('pair') or one dumbbell ('each').
+alter table profile add column dumbbell_weights text not null default 'pair' check (dumbbell_weights in ('pair', 'each'));
 
 -- Same lockdown as the core schema, and keep future tables from inheriting Supabase's default grants.
 alter table muscles enable row level security;

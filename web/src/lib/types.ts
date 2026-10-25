@@ -102,6 +102,7 @@ export interface Profile {
   max_hr_override: number | null;
   ftp_override: number | null;
   resting_hr_override: number | null;
+  dumbbell_weights: "pair" | "each";
 }
 
 export interface MeasurementType {

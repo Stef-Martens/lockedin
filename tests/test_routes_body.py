@@ -61,3 +61,10 @@ def test_setting_ftp_recomputes_existing_rides(client):
     client.put("/api/profile", json={"ftp_override": 250}, headers=H)
     assert client.get(f"/api/activities/{rid}", headers=H).json()["tss"] == pytest.approx(75.2, abs=2.5)
 
+
+
+def test_dumbbell_logging_preference(client):
+    assert client.get("/api/profile", headers=H).json()["dumbbell_weights"] == "pair"
+    r = client.put("/api/profile", headers=H, json={"dumbbell_weights": "each"})
+    assert r.status_code == 200 and r.json()["dumbbell_weights"] == "each"
+    assert client.put("/api/profile", headers=H, json={"dumbbell_weights": "left"}).status_code == 422

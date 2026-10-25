@@ -24,7 +24,9 @@ def test_every_flaggable_muscle_has_a_primary_exercise(conn):
 def test_twenty_muscles_with_targets(conn):
     m = {r.key: r for r in conn.execute(text("select * from muscles"))}
     assert len(m) == 20
-    assert (m["side_delt"].target_low, m["side_delt"].target_high) == (8, 16)
+    # target_low = minimum effective dose (so "low" means neglected), target_high = upper growth range
+    assert (m["side_delt"].target_low, m["side_delt"].target_high) == (4, 16)
+    assert (m["calves"].target_low, m["traps" if "traps" in m else "upper_back_traps"].target_low) == (3, 2)
     assert m["forearms"].target_low == 0 and m["abductors"].target_low == 0
     assert m["calves"].region == "legs"
 

@@ -62,3 +62,11 @@ def test_muscles_and_coverage(client):
 def test_requires_auth(client):
     for path in ("/api/trends/bike", "/api/gym/exercises", "/api/gym/coverage", "/api/muscles", "/api/gym/volume"):
         assert client.get(path).status_code == 401
+
+
+def test_gym_suggestions_for_every_low_muscle(client):
+    client.post("/api/hevy/upload", files={"file": ("h.csv", read("hevy_sample.csv"))}, headers=H)
+    s = client.get("/api/gym/suggestions?limit=20", headers=H).json()
+    assert len(s) > 3 and {"muscle_key", "exercise", "weight_kg", "dumbbell", "estimate", "reason"} <= set(s[0])
+    assert "calves" in {x["muscle_key"] for x in s}
+    assert client.get("/api/gym/suggestions").status_code == 401

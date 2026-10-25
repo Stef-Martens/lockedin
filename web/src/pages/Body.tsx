@@ -4,7 +4,8 @@ import { apiFetch } from "../lib/api";
 import { todayLocal } from "../lib/format";
 import type { Measurement, MeasurementType, Profile } from "../lib/types";
 
-const EMPTY: Profile = { date_of_birth: null, height_cm: null, sex: null, max_hr_override: null, ftp_override: null, resting_hr_override: null };
+const EMPTY: Profile = { date_of_birth: null, height_cm: null, sex: null, max_hr_override: null, ftp_override: null,
+  resting_hr_override: null, dumbbell_weights: "pair" };
 const toNum = (v: string) => (v === "" ? null : Number(v));
 const dayMs = (d: string) => new Date(`${d}T12:00:00Z`).getTime();
 const shortDate = (ms: number) => new Date(ms).toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "Europe/Brussels" });
@@ -55,8 +56,18 @@ function ProfileForm() {
         {num("max_hr_override", "Max heart rate", "auto")}
         {num("resting_hr_override", "Resting heart rate", "optional")}
         {num("ftp_override", "FTP (W)", "auto")}
+        <label className="field">
+          Dumbbell weights in Hevy
+          <select value={p.dumbbell_weights} onChange={(e) => setP({ ...p, dumbbell_weights: e.target.value as Profile["dumbbell_weights"] })}>
+            <option value="pair">Total of both dumbbells</option>
+            <option value="each">Per dumbbell</option>
+          </select>
+        </label>
       </div>
-      <p className="muted" style={{ fontSize: "0.85rem" }}>Leave max heart rate and FTP empty and they're estimated from your rides.</p>
+      <p className="muted" style={{ fontSize: "0.85rem" }}>
+        Leave max heart rate and FTP empty and they're estimated from your rides. Zwift shows your FTP in your profile;
+        entering it here gives better numbers than the estimate from regular rides.
+      </p>
       <div className="row">
         <button className="btn primary">Save profile</button>
         {msg && <span className="ok">{msg}</span>}

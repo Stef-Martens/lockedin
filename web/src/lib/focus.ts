@@ -5,7 +5,7 @@ export type Effort = "easy" | "steady" | "hard" | "long";
 export type FocusItem =
   | {
       type: "gym"; muscle_key: string; muscle_name: string; exercise: string; sets: number; reps: string;
-      weight_kg: number | null; per_dumbbell: boolean; estimate: boolean; reason: string;
+      weight_kg: number | null; dumbbell: "pair" | "each" | null; estimate: boolean; reason: string;
     }
   | { type: "session"; sport: Sport; kind: Effort; title: string; detail: string; reason: string };
 
@@ -37,7 +37,12 @@ export interface EffortMix { sport: string; counts: Record<Effort, number>; uncl
 export function focusLine(item: FocusItem): { title: string; detail: string } {
   if (item.type === "session") return { title: item.title, detail: item.detail };
   let detail = `${item.sets} × ${item.reps}`;
-  if (item.weight_kg != null) detail += ` at ${item.weight_kg} kg${item.per_dumbbell ? " per dumbbell" : ""}`;
+  if (item.weight_kg != null) {
+    // Same convention as the owner's Hevy logs: a pair total gets the per-hand weight spelled out too.
+    const kg = item.weight_kg;
+    detail += item.dumbbell === "pair" ? ` at ${kg} kg total (${kg / 2} kg each)`
+      : item.dumbbell === "each" ? ` at ${kg} kg per dumbbell` : ` at ${kg} kg`;
+  }
   if (item.estimate) detail += item.weight_kg != null ? " · estimate, start light" : ", start light";
   return { title: item.exercise, detail };
 }

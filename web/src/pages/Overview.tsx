@@ -29,7 +29,7 @@ export default function Overview() {
 
   return (
     <>
-      <h1>{c ? "Welcome back" : "This week"}</h1>
+      <h1>{c ? "Welcome back" : "Overview"}</h1>
       {c && (
         <section className="card note-card">
           <p style={{ margin: 0 }}>

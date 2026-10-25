@@ -12,7 +12,8 @@ from lockedin.fitness import recompute_training_load
 
 router = APIRouter(prefix="/api", dependencies=[Depends(require_owner)])
 
-PROFILE_FIELDS = ("date_of_birth", "height_cm", "sex", "max_hr_override", "ftp_override", "resting_hr_override")
+PROFILE_FIELDS = ("date_of_birth", "height_cm", "sex", "max_hr_override", "ftp_override", "resting_hr_override",
+                  "dumbbell_weights")
 
 
 class Profile(BaseModel):
@@ -22,6 +23,7 @@ class Profile(BaseModel):
     max_hr_override: int | None = Field(None, ge=120, le=230)
     ftp_override: int | None = Field(None, ge=50, le=600)
     resting_hr_override: int | None = Field(None, ge=30, le=110)
+    dumbbell_weights: Literal["pair", "each"] = "pair"
 
 
 class MeasurementType(BaseModel):

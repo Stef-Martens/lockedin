@@ -28,6 +28,7 @@ export default function SeriesChart({ title, summary, points, colorVar, formatX,
   const muted = useCssVar("--ink-muted");
   const axis = useCssVar("--axis");
   const surface = useCssVar("--surface");
+  const sparse = points.length <= 60;
   const tick = { fill: muted, fontSize: 12 };
 
   return (
@@ -56,7 +57,9 @@ export default function SeriesChart({ title, summary, points, colorVar, formatX,
               );
             }}
           />
-          <Line type="monotone" dataKey="y" stroke={color} strokeWidth={2} dot={false}
+          {/* Few points (one per ride/session): straight segments with a marker each, no implied curve between them */}
+          <Line type={sparse ? "linear" : "monotone"} dataKey="y" stroke={color} strokeWidth={2}
+            dot={sparse ? { r: 4, fill: color, stroke: surface, strokeWidth: 2 } : false}
             activeDot={{ r: 4, stroke: surface, strokeWidth: 2 }} isAnimationActive={false}
             connectNulls={false} />
         </LineChart>

@@ -9,6 +9,7 @@ import Body from "./pages/Body";
 import Import from "./pages/Import";
 import Login from "./pages/Login";
 import Overview from "./pages/Overview";
+import Trends from "./pages/Trends";
 
 export default function App() {
   const [session, setSession] = useState<Session | null | undefined>(undefined);
@@ -34,6 +35,8 @@ export default function App() {
         <Route path="activities" element={<Activities />} />
         <Route path="activities/:id" element={<ActivityDetail />} />
         <Route path="import" element={<Import />} />
+        <Route path="trends" element={<Navigate to="/trends/bike" replace />} />
+        <Route path="trends/:sport" element={<Trends />} />
         <Route path="body" element={<Body />} />
         <Route path="login" element={<Navigate to="/" replace />} />
         <Route path="*" element={<Navigate to="/" replace />} />

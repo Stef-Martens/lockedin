@@ -10,6 +10,7 @@ from lockedin.auth import require_owner
 from lockedin.db import get_conn
 from lockedin.focus.coverage import muscle_coverage, unmapped_exercises
 from lockedin.focus.sessions import counted
+from lockedin.focus.suggest import gym_suggestions
 from lockedin.focus.trends import bike_trends, gym_exercise_progress, gym_weekly_volume, run_trends, swim_trends
 from lockedin.routes.overview import get_now
 
@@ -39,6 +40,11 @@ def muscles(conn: Connection = Depends(get_conn)) -> list[dict]:
 @router.get("/gym/coverage")
 def coverage(conn: Connection = Depends(get_conn), now: datetime = Depends(get_now)) -> dict:
     return jsonable_encoder({"coverage": muscle_coverage(conn, now), "unmapped": unmapped_exercises(conn, now)})
+
+
+@router.get("/gym/suggestions")
+def suggestions(limit: int = 20, conn: Connection = Depends(get_conn), now: datetime = Depends(get_now)) -> list[dict]:
+    return jsonable_encoder(gym_suggestions(conn, now, max(1, min(limit, 20))))
 
 
 @router.get("/gym/volume")

@@ -3,6 +3,7 @@
 import math
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from typing import Literal
 
 from sqlalchemy import Connection, text
 
@@ -23,7 +24,7 @@ class GymSuggestion:
     sets: int
     reps: str
     weight_kg: float | None
-    per_dumbbell: bool
+    dumbbell: Literal["pair", "each"] | None  # same convention as the owner's Hevy logs; None = not a dumbbell exercise
     estimate: bool
     reason: str
 
@@ -90,6 +91,7 @@ def _pick(conn: Connection, muscle: str, now: datetime) -> tuple[str, str, float
 
 def gym_suggestions(conn: Connection, now: datetime, limit: int = 3) -> list[GymSuggestion]:
     coverage = muscle_coverage(conn, now)
+    dumbbell_logging = conn.execute(text("select dumbbell_weights from profile where id = 1")).scalar() or "pair"
     low = [c for c in coverage if c.status == "low"]
     low.sort(key=lambda c: (-(c.target_low - c.sets_per_week) / c.target_low, coverage.index(c)))
     out = []
@@ -101,6 +103,7 @@ def gym_suggestions(conn: Connection, now: datetime, limit: int = 3) -> list[Gym
         reps = f"{round(best_reps * 0.8)}–{best_reps}" if equipment == "bodyweight" and best_reps else "8–12"
         out.append(GymSuggestion(
             muscle_key=c.key, muscle_name=c.name, exercise=name, sets=3, reps=reps,
-            weight_kg=None if equipment == "bodyweight" else weight, per_dumbbell=equipment == "dumbbell",
+            weight_kg=None if equipment == "bodyweight" else weight,
+            dumbbell=dumbbell_logging if equipment == "dumbbell" else None,
             estimate=estimate, reason=f"{c.name}: {_fmt(c.sets_per_week)} sets/week, aim for {_fmt(c.target_low)}–{_fmt(c.target_high)}"))
     return out

@@ -126,7 +126,8 @@ export default function ActivityDetail() {
         <Tile label="Strokes" value={a.swim_strokes ? `${a.swim_strokes}` : null} />
         <Tile label="Avg HR" value={a.avg_hr ? `${a.avg_hr} bpm` : null} />
         <Tile label="Max HR" value={a.max_hr ? `${a.max_hr} bpm` : null} />
-        <Tile label="Cadence" value={a.avg_cadence && a.sport !== "swim" ? `${a.avg_cadence} ${a.sport === "run" ? "spm" : "rpm"}` : null} />
+        {/* FIT running cadence counts one leg (strides/min); steps per minute is double that */}
+        <Tile label="Cadence" value={a.avg_cadence && a.sport !== "swim" ? (a.sport === "run" ? `${a.avg_cadence * 2} spm` : `${a.avg_cadence} rpm`) : null} />
         <Tile label="Climbing" value={a.elevation_m ? `${Math.round(a.elevation_m)} m` : null} />
         <Tile label="Calories" value={a.calories ? `${a.calories} kcal` : null} />
         <Tile label="Sets" value={a.set_count ? `${a.set_count}` : null} />

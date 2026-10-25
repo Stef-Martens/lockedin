@@ -208,3 +208,22 @@ h2 { font-size: 1.05rem; margin: 0 0 12px; }
   background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px;
 }
 a.win:hover { background: var(--wash); }
+
+/* Muscle coverage */
+.coverage-group + .coverage-group { margin-top: 12px; }
+.coverage-region { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 4px; }
+.coverage-row { display: grid; grid-template-columns: 120px 1fr 72px; gap: 10px; align-items: center; padding: 4px 0; }
+.coverage-name { font-size: 0.9rem; }
+.coverage-track { position: relative; height: 10px; background: var(--wash); border-radius: 5px; }
+.coverage-band { position: absolute; top: 0; bottom: 0; background: color-mix(in srgb, var(--sport-gym) 22%, transparent); border-radius: 5px; }
+.coverage-bar { position: absolute; top: 2px; bottom: 2px; left: 0; background: var(--sport-gym); border-radius: 3px; min-width: 2px; }
+.coverage-status { font-size: 0.85rem; text-align: right; color: var(--ink-2); }
+.coverage-status.low { color: var(--ink); font-weight: 600; }
+.coverage-sugg { grid-column: 1 / -1; font-size: 0.85rem; padding-left: 130px; }
+@media (max-width: 639px) {
+  .coverage-row { grid-template-columns: 96px 1fr 64px; }
+  .coverage-sugg { padding-left: 0; }
+}
+.exercise-row { width: 100%; border: 0; background: none; text-align: left; cursor: pointer; font: inherit; color: inherit; }
+.tag-form { padding: 12px 0; }
+.tag-form + .tag-form { border-top: 1px solid var(--hairline); }

@@ -48,7 +48,7 @@ def _gym_prs(conn: Connection, since: datetime, now: datetime) -> list[Win]:
         "max(e1rm) as best, (select max(e1rm) from sets p where p.name = sets.name and p.start_at <= :since) as prior "
         "from sets where start_at > :since group by name"
     ), {"since": since, "now": now}).all()
-    return [Win("e1rm_pr", f"New best: {r.name}", f"est. 1RM {r.best:.1f} kg (was {r.prior:g})", _local(r.at), r.aid)
+    return [Win("e1rm_pr", f"New best: {r.name}", f"est. 1RM {r.best:.1f} kg (was {r.prior:.1f})", _local(r.at), r.aid)
             for r in rows if r.prior and r.best > r.prior]
 
 
