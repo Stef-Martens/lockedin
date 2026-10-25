@@ -6,3 +6,5 @@ __pycache__/
 dist/
 .vercel/
 .DS_Store
+.superpowers/
+*.egg-info/

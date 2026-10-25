@@ -1,0 +1,9 @@
+# Runtime dependencies for the Vercel Python function (keep in sync with pyproject.toml).
+fastapi>=0.115
+sqlalchemy>=2.0.36
+psycopg[binary]>=3.2
+fitdecode>=0.10
+pyjwt[crypto]>=2.9
+python-multipart>=0.0.12
+python-dotenv>=1.0
+tzdata>=2024.1
