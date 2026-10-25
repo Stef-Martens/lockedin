@@ -3,7 +3,7 @@ from sqlalchemy import text
 TABLES = {
     "profile", "activities", "activity_streams", "fit_files", "exercises",
     "gym_workouts", "gym_sets", "measurement_types", "measurements", "import_log",
-    "muscles", "library_exercises", "library_muscles",
+    "muscles", "library_exercises", "library_muscles", "goals", "coach_conversations", "coach_messages",
 }
 
 
@@ -36,3 +36,13 @@ def test_new_tables_get_no_default_grants(conn):
         "where n.nspname = 'public'"
     )).scalars().all()
     assert not any("anon=" in acl or "authenticated=" in acl for acl in rows)
+
+
+def test_only_the_app_can_call_the_coach_query_function(conn):
+    for role in ("anon", "authenticated"):
+        assert not conn.execute(text("select has_function_privilege(:r, 'coach.run_query(text, integer)', 'execute')"),
+                                {"r": role}).scalar(), role
+    public = conn.execute(text(
+        "select count(*) from pg_proc p, aclexplode(p.proacl) a where p.proname = 'run_query' and a.grantee = 0"
+    )).scalar()
+    assert public == 0
