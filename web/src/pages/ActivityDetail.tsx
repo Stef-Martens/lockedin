@@ -6,6 +6,7 @@ import { activityTitle } from "../lib/activity";
 import { apiFetch } from "../lib/api";
 import { formatDuration, formatPace, formatSwimPace, formatDistance, SPORT_LABEL } from "../lib/format";
 import { stagger } from "../lib/motion";
+import { smooth } from "../lib/smooth";
 import type { ActivityDetail as Detail, GymSet, Profile } from "../lib/types";
 
 const minutes = (s: number) => `${Math.round(s / 60)}′`;
@@ -78,10 +79,14 @@ export default function ActivityDetail() {
 
   const s = a.streams;
   const t = s?.t_offset ?? [];
-  const power = series(t, s?.power ?? null);
+  // ~30 s moving average for display only; the stored data and the tiles stay exact
+  const step = t.length > 1 ? (t[t.length - 1] - t[0]) / (t.length - 1) : 1;
+  const win = Math.max(1, Math.round(30 / step));
+  const smoothed = (p: Point[] | null) => (p ? smooth(p, win) : null);
+  const power = smoothed(series(t, s?.power ?? null));
   const hr = series(t, s?.hr ?? null);
-  const cadence = a.sport === "bike" ? series(t, s?.cadence ?? null) : null;
-  const pace = a.sport === "run" ? series(t, s?.speed ?? null, (v) => (v > 0.5 ? 1000 / v : null)) : null;
+  const cadence = a.sport === "bike" ? smoothed(series(t, s?.cadence ?? null)) : null;
+  const pace = a.sport === "run" ? smoothed(series(t, s?.speed ?? null, (v) => (v > 0.5 ? 1000 / v : null))) : null;
   const when = new Date(a.start_at).toLocaleString("en-GB", { weekday: "long", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit", timeZone: "Europe/Brussels" });
   const tiles: [string, string | null][] = [
     ["Time", formatDuration(a.moving_s ?? a.duration_s)],
@@ -135,7 +140,7 @@ export default function ActivityDetail() {
 
       {(power || hr || pace || cadence) && (
         <Card i={3}>
-          {power && <SeriesChart bare syncId="act" title="Power" summary={a.avg_power ? `avg ${a.avg_power} W` : undefined} points={power}
+          {power && <SeriesChart bare syncId="act" title="Power" summary={a.avg_power ? `avg ${a.avg_power} W · 30 s smoothed` : undefined} points={power}
             colorVar="--series-power" formatX={minutes} formatY={(y) => `${Math.round(y)} W`} formatTick={(y) => `${Math.round(y)}`} i={0} />}
           {pace && <SeriesChart bare syncId="act" title="Pace" points={pace} colorVar="--series-pace" reversed formatX={minutes}
             formatY={(y) => formatPace(y)} formatTick={(y) => formatPace(y).replace(" /km", "")}

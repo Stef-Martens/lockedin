@@ -131,6 +131,11 @@ The **Overview** page answers two questions: am I improving, and what should I f
 - **Streak** counts consecutive weeks with at least 2 sessions. After 7 days without training, the page opens with a "Welcome back" card instead of comparisons.
 - **Trends** has a page per sport: power, efficiency and best 20 min for the bike; pace and aerobic efficiency for runs; pace per 100 m for swims; and for the gym, muscle coverage, volume and progress per exercise. Exercises the library doesn't know appear under **Tag your exercises**.
 
+**Body check-ins and reminders:**
+- **Body** is one check-in form: one date, every measurement on one screen (weight, chest, shoulders, arms, waist, hips, thighs). Fill in what you measured; blank fields are skipped. Saving the same date again replaces those values. Each field says where to put the tape, and History shows the change since your previous check-in.
+- **Reminder:** pick every 1, 2 or 4 weeks, and choose whether to include the Hevy upload. **Add to calendar** downloads a repeating event; open it to add it to iPhone or Mac Calendar. It starts on your next due date at 09:00 and links to the Body page.
+- The **Overview** shows "Body check-in due" when it's time, and when you last uploaded your Hevy export. Hevy counts as due after 7 days.
+
 **Better numbers:**
 - Enter your **FTP** on the Body page. Zwift shows it in your profile. Estimating it from regular rides underestimates it, which makes rides look harder than they were.
 - Set **max heart rate** if you know it. Otherwise it's taken from your highest recorded value, or estimated as 220 − age.
