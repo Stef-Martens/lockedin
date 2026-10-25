@@ -7,7 +7,7 @@ from sqlalchemy import Connection, text
 
 from lockedin.dedupe import resolve_overlaps
 from lockedin.fit.metrics import best_avg_power, normalized_power
-from lockedin.fit.parse import FitParseError, ParsedFit, parse_fit
+from lockedin.fit.parse import EmptyActivity, FitParseError, ParsedFit, parse_fit
 from lockedin.fitness import recompute_training_load
 
 Source = Literal["zwift", "healthfit"]
@@ -15,7 +15,7 @@ Source = Literal["zwift", "healthfit"]
 
 @dataclass
 class FitImportResult:
-    status: Literal["imported", "duplicate", "error"]
+    status: Literal["imported", "duplicate", "empty", "error"]
     sha256: str
     activity_id: int | None = None
     error: str | None = None
@@ -24,20 +24,21 @@ class FitImportResult:
 def known_hashes(conn: Connection, hashes: list[str]) -> set[str]:
     if not hashes:
         return set()
-    rows = conn.execute(text("select sha256 from fit_files where parse_status = 'ok' and sha256 = any(:h)"),
+    rows = conn.execute(text("select sha256 from fit_files where parse_status in ('ok', 'empty') and sha256 = any(:h)"),
                         {"h": list(hashes)}).scalars()
     return set(rows)
 
 
 def _record_file(conn: Connection, sha: str, filename: str, source: str | None, activity_id: int | None,
-                 error: str | None) -> None:
+                 error: str | None, status: str | None = None) -> None:
     conn.execute(text(
         "insert into fit_files (sha256, filename, source, activity_id, parse_status, error) "
         "values (:s, :f, :src, :a, :st, :e) "
         "on conflict (sha256) do update set filename = excluded.filename, source = excluded.source, "
         "activity_id = excluded.activity_id, parse_status = excluded.parse_status, error = excluded.error, "
         "uploaded_at = now()"
-    ), {"s": sha, "f": filename, "src": source, "a": activity_id, "st": "error" if error else "ok", "e": error})
+    ), {"s": sha, "f": filename, "src": source, "a": activity_id,
+        "st": status or ("error" if error else "ok"), "e": error})
 
 
 def _paces(f: ParsedFit) -> tuple[float | None, float | None]:
@@ -65,11 +66,14 @@ def _same_session(conn: Connection, source: str, f: ParsedFit) -> int | None:
 def import_fit(conn: Connection, data: bytes, filename: str, source_hint: Source | None) -> FitImportResult:
     sha = hashlib.sha256(data).hexdigest()
     existing = conn.execute(text("select activity_id, parse_status from fit_files where sha256 = :s"), {"s": sha}).first()
-    if existing and existing.parse_status == "ok":
+    if existing and existing.parse_status in ("ok", "empty"):
         return FitImportResult("duplicate", sha, existing.activity_id)
 
     try:
         f = parse_fit(data)
+    except EmptyActivity:
+        _record_file(conn, sha, filename, source_hint, None, None, status="empty")
+        return FitImportResult("empty", sha)
     except FitParseError as e:
         _record_file(conn, sha, filename, source_hint, None, str(e))
         return FitImportResult("error", sha, error=str(e))

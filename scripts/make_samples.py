@@ -126,6 +126,24 @@ def main() -> None:
     build("zwift_ride_no_hr.fit", manufacturer=zwift, sport=Sport.CYCLING, sub_sport=SubSport.VIRTUAL_ACTIVITY,
           start=datetime(2026, 10, 20, 17, 0, tzinfo=UTC), duration_s=3600, records=recs, session=sess)
 
+    # Zwift writes a ~1.5 KB file with a 1-second session and no records when a ride is started and quit
+    build("zwift_empty.fit", manufacturer=zwift, sport=Sport.CYCLING, sub_sport=SubSport.VIRTUAL_ACTIVITY,
+          start=datetime(2026, 2, 25, 12, 44, 4, tzinfo=UTC), duration_s=1, records=[],
+          session={"total_distance": 0.0, "avg_power": 0, "max_power": 0, "avg_heart_rate": 0, "max_heart_rate": 0})
+
+    # A few seconds of pedalling before quitting: records exist but it isn't a ride
+    build("zwift_short.fit", manufacturer=zwift, sport=Sport.CYCLING, sub_sport=SubSport.VIRTUAL_ACTIVITY,
+          start=datetime(2026, 9, 14, 17, 4, 47, tzinfo=UTC), duration_s=10,
+          records=[{"t": t, "power": 50, "heart_rate": 85, "cadence": 7} for t in range(10)],
+          session={"avg_power": 51, "avg_heart_rate": 83, "max_heart_rate": 86})
+    # No HR strap paired: Zwift writes heart rate 0 instead of leaving it out
+    build("zwift_no_strap.fit", manufacturer=zwift, sport=Sport.CYCLING, sub_sport=SubSport.VIRTUAL_ACTIVITY,
+          start=datetime(2026, 4, 25, 16, 26, 59, tzinfo=UTC), duration_s=420,
+          records=[{"t": t, "power": 160, "heart_rate": 0, "cadence": 76, "speed": 9.0, "distance": 9.0 * t}
+                   for t in range(420)],
+          session={"total_distance": 3780.0, "avg_power": 160, "max_power": 160, "avg_heart_rate": 0,
+                   "max_heart_rate": 0, "avg_cadence": 76})
+
     build("watch_indoor_cycle.fit", manufacturer=watch, sport=Sport.CYCLING, sub_sport=SubSport.INDOOR_CYCLING,
           start=datetime(2026, 10, 20, 16, 58, tzinfo=UTC), duration_s=3700,
           records=hr_every(5, 3700, 128, 162),

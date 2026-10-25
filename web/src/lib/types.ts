@@ -82,7 +82,7 @@ export interface Status {
 }
 
 export interface FitResult {
-  status: "imported" | "duplicate" | "error";
+  status: "imported" | "duplicate" | "empty" | "error";
   sha256: string;
   activity_id: number | null;
   error: string | null;

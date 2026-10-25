@@ -104,3 +104,11 @@ def test_unexpected_processing_error_is_reported_not_raised(conn, monkeypatch):
     assert r.status == "error" and "weird file" in r.error
     assert count(conn, "activities") == 0 and count(conn, "activity_streams") == 0
     assert known_hashes(conn, [r.sha256]) == set()
+
+
+def test_empty_file_is_marked_handled_not_an_error(conn):
+    r = import_fit(conn, read("zwift_empty.fit"), "e.fit", "zwift")
+    assert r.status == "empty" and r.activity_id is None and r.error is None
+    assert count(conn, "activities") == 0
+    assert known_hashes(conn, [r.sha256]) == {r.sha256}  # never re-sent by the sync
+    assert import_fit(conn, read("zwift_empty.fit"), "e.fit", "zwift").status == "duplicate"

@@ -189,7 +189,7 @@ def sync_once(cfg: dict, now: float, http: Http = urllib_http) -> SyncReport:
                 report.errors.append(f"{path.name}: server said {status} {detail}")
             elif result.get("status") == "imported":
                 report.uploaded += 1
-            elif result.get("status") == "duplicate":
+            elif result.get("status") in ("duplicate", "empty"):  # empty: a ride started and quit
                 report.duplicates += 1
             else:
                 report.errors.append(f"{path.name}: {result.get('error') or 'import failed'}")

@@ -72,6 +72,7 @@ function FitUpload({ onDone }: { onDone: () => void }) {
                   <Link className="ok" to={`/activities/${r.result.activity_id}`}>imported</Link>
                 )}
                 {r.result?.status === "duplicate" && <span className="muted">already imported</span>}
+                {r.result?.status === "empty" && <span className="muted">empty (started and quit), skipped</span>}
                 {r.result?.status === "error" && <span className="error">couldn't read this file</span>}
               </span>
             </li>

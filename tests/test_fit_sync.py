@@ -248,3 +248,15 @@ def test_icloud_evicted_file_is_downloaded_and_retried(tmp_path, monkeypatch):
     assert first.pending == 1 and first.uploaded == 0 and first.warnings == []
     second = fit_sync.sync_once(cfg(tmp_path), NOW, http=FakeHttp())
     assert second.uploaded == 1
+
+
+def test_empty_upload_is_not_an_error(tmp_path):
+    make(tmp_path / "a.fit", b"aaa")
+
+    def http(url, token, body, headers):
+        if url.endswith("/known"):
+            return 200, b'{"known": []}'
+        return 200, b'{"status": "empty"}'
+
+    report = fit_sync.sync_once(cfg(tmp_path), NOW, http=http)
+    assert report.errors == [] and report.duplicates == 1

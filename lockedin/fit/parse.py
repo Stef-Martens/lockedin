@@ -9,10 +9,15 @@ import fitdecode
 
 Sport = Literal["bike", "run", "swim", "other"]
 SPORTS: dict[str, Sport] = {"cycling": "bike", "running": "run", "swimming": "swim"}
+MIN_ACTIVITY_S = 60
 
 
 class FitParseError(Exception):
     pass
+
+
+class EmptyActivity(FitParseError):
+    """A valid file with nothing in it, e.g. a Zwift ride started and quit within seconds."""
 
 
 @dataclass
@@ -55,6 +60,12 @@ def _values(frame) -> dict:
 
 def _int(v) -> int | None:
     return None if v is None else int(round(v))
+
+
+def _hr(v) -> int | None:
+    """Zwift writes 0 when no heart-rate strap is paired; that means "no data", not 0 bpm."""
+    v = _int(v)
+    return v if v else None
 
 
 def _avg(xs: list) -> int | None:
@@ -105,6 +116,11 @@ def _parse(data: bytes) -> ParsedFit:
 
     if not session and not records:
         raise FitParseError("FIT file has no activity data.")
+    timer = session.get("total_timer_time")
+    if timer is None and records:
+        timer = (_aware(records[-1]["timestamp"]) - _aware(records[0]["timestamp"])).total_seconds()
+    if (timer or 0) < MIN_ACTIVITY_S:
+        raise EmptyActivity("No activity data in this file (started and stopped right away).")
 
     first_ts = _aware(records[0]["timestamp"]) if records else None
     start_at = _aware(session["start_time"]) if "start_time" in session else first_ts
@@ -121,7 +137,7 @@ def _parse(data: bytes) -> ParsedFit:
     for r in records:
         streams.t_offset.append(int((_aware(r["timestamp"]) - start_at).total_seconds()))
         streams.power.append(_int(r.get("power")))
-        streams.hr.append(_int(r.get("heart_rate")))
+        streams.hr.append(_hr(r.get("heart_rate")))
         streams.cadence.append(_int(r.get("cadence")))
         streams.speed.append(r.get("enhanced_speed", r.get("speed")))
         streams.altitude.append(r.get("enhanced_altitude", r.get("altitude")))
@@ -142,8 +158,8 @@ def _parse(data: bytes) -> ParsedFit:
         moving_s=_int(session.get("total_timer_time")),
         distance_m=session.get("total_distance", distances[-1] if distances else None),
         elevation_m=session.get("total_ascent"),
-        avg_hr=_int(session.get("avg_heart_rate")) or _avg(streams.hr),
-        max_hr=_int(session.get("max_heart_rate")) or _max(streams.hr),
+        avg_hr=_hr(session.get("avg_heart_rate")) or _avg(streams.hr),
+        max_hr=_hr(session.get("max_heart_rate")) or _max(streams.hr),
         avg_power=_int(session.get("avg_power")) or _avg(streams.power),
         max_power=_int(session.get("max_power")) or _max(streams.power),
         avg_cadence=_int(session.get("avg_cadence")) or _avg(streams.cadence),

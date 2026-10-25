@@ -60,3 +60,22 @@ def test_unexpected_field_values_become_parse_errors(monkeypatch):
     monkeypatch.setattr(p, "_aware", bad)
     with pytest.raises(FitParseError, match="not a datetime"):
         parse_fit(read("zwift_ride.fit"))
+
+
+def test_empty_zwift_session_is_its_own_error():
+    from lockedin.fit.parse import EmptyActivity
+    with pytest.raises(EmptyActivity):
+        parse_fit(read("zwift_empty.fit"))
+
+
+def test_a_few_seconds_of_data_is_empty():
+    from lockedin.fit.parse import EmptyActivity
+    with pytest.raises(EmptyActivity):
+        parse_fit(read("zwift_short.fit"))
+
+
+def test_zero_heart_rate_means_no_heart_rate():
+    f = parse_fit(read("zwift_no_strap.fit"))
+    assert f.avg_hr is None and f.max_hr is None
+    assert set(f.streams.hr) == {None}
+    assert f.avg_power == 160
