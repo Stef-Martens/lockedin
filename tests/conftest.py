@@ -112,3 +112,19 @@ def owner_headers() -> dict:
 
 
 SYNC_HEADERS = {"Authorization": f"Bearer {SYNC_TOKEN}"}
+
+
+def count(conn, table: str) -> int:
+    return conn.execute(text(f"select count(*) from {table}")).scalar()
+
+
+def get_activity(conn, activity_id: int):
+    return conn.execute(text("select * from activities where id = :i"), {"i": activity_id}).one()
+
+
+def superseded_by(conn, activity_id: int):
+    return get_activity(conn, activity_id).superseded_by
+
+
+def stream(conn, activity_id: int):
+    return conn.execute(text("select * from activity_streams where activity_id = :i"), {"i": activity_id}).one()
