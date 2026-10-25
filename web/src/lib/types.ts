@@ -103,6 +103,8 @@ export interface Profile {
   ftp_override: number | null;
   resting_hr_override: number | null;
   dumbbell_weights: "pair" | "each";
+  reminder_weeks: 1 | 2 | 4;
+  reminder_hevy: boolean;
 }
 
 export interface MeasurementType {

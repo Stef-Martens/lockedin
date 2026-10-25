@@ -41,3 +41,17 @@ export function uploadFile<T>(path: string, file: File, fields: Record<string, s
   fd.append("file", file);
   return apiFetch<T>(path, { method: "POST", body: fd });
 }
+
+/** Download an authenticated file (e.g. the calendar reminder) through the browser. */
+export async function apiDownload(path: string, filename: string): Promise<void> {
+  const res = await fetch(path, { headers: await authHeader() });
+  if (!res.ok) throw new ApiError(res.status, `Download failed (${res.status}).`);
+  const url = URL.createObjectURL(await res.blob());
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}

@@ -1,73 +1,205 @@
 import { type FormEvent, useEffect, useMemo, useState } from "react";
-import SeriesChart from "../components/SeriesChart";
-import { apiFetch } from "../lib/api";
+import { Card, PageHeader, SectionHead, Segmented } from "../components/ui";
+import { apiDownload, apiFetch } from "../lib/api";
+import { type Checkin, historyRows, parseValue, TIPS } from "../lib/body";
 import { todayLocal } from "../lib/format";
-import type { Measurement, MeasurementType, Profile } from "../lib/types";
+import { stagger } from "../lib/motion";
+import type { MeasurementType, Profile } from "../lib/types";
 
 const EMPTY: Profile = { date_of_birth: null, height_cm: null, sex: null, max_hr_override: null, ftp_override: null,
-  resting_hr_override: null, dumbbell_weights: "pair" };
+  resting_hr_override: null, dumbbell_weights: "pair", reminder_weeks: 2, reminder_hevy: true };
 const toNum = (v: string) => (v === "" ? null : Number(v));
-const dayMs = (d: string) => new Date(`${d}T12:00:00Z`).getTime();
-const shortDate = (ms: number) => new Date(ms).toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "Europe/Brussels" });
+const fmtDate = (d: string, year = true) =>
+  new Date(`${d}T12:00:00Z`).toLocaleDateString("en-GB", { day: "numeric", month: "short", ...(year ? { year: "numeric" } : {}), timeZone: "UTC" });
+const addDays = (d: string, n: number) => new Date(new Date(`${d}T12:00:00Z`).getTime() + n * 864e5).toISOString().slice(0, 10);
 
-function ProfileForm() {
-  const [p, setP] = useState<Profile>(EMPTY);
+function CheckinCard({ types, checkins, weeks, onSaved }: { types: MeasurementType[]; checkins: Checkin[]; weeks: number; onSaved: () => void }) {
+  const [date, setDate] = useState(todayLocal());
+  const [values, setValues] = useState<Record<number, string>>({});
+  const [busy, setBusy] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const latest = useMemo(() => {
+    const out: Record<number, number> = {};
+    [...checkins].sort((a, b) => a.measured_on.localeCompare(b.measured_on)).forEach((c) =>
+      Object.entries(c.values).forEach(([id, v]) => { out[Number(id)] = v; }));
+    return out;
+  }, [checkins]);
+  const filled = types.filter((t) => parseValue(values[t.id] ?? "") != null).length;
+
+  async function save(e: FormEvent) {
+    e.preventDefault();
+    setError(null);
+    const payload: Record<string, number> = {};
+    types.forEach((t) => { const v = parseValue(values[t.id] ?? ""); if (v != null) payload[String(t.id)] = v; });
+    if (!Object.keys(payload).length) return;
+    setBusy(true);
+    try {
+      await apiFetch("/api/checkins", { method: "POST", body: JSON.stringify({ measured_on: date, values: payload }) });
+      setValues({});
+      setSaved(true);
+      setTimeout(() => setSaved(false), 1800);
+      onSaved();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const last = checkins[0]?.measured_on;
+  return (
+    <form className="card rise" style={stagger(1)} onSubmit={save}>
+      <div className="section-head">
+        <h2 style={{ fontSize: 26 }}>Check-in</h2>
+        <label className="row" style={{ gap: 10, fontSize: 14, color: "var(--ink-3)" }}>Date
+          <input type="date" value={date} max={todayLocal()} onChange={(e) => setDate(e.target.value)} required
+            style={{ background: "var(--sunken)", border: "1px solid var(--axis)", borderRadius: 10, padding: "9px 10px", colorScheme: "dark" }} />
+        </label>
+      </div>
+      {last && <p className="secondary" style={{ margin: "-4px 0 12px", fontSize: 14 }}>Last check-in {fmtDate(last)} · next on {fmtDate(addDays(last, weeks * 7))}</p>}
+      <div className="checkin-grid">
+        {types.map((t, n) => {
+          const isFilled = parseValue(values[t.id] ?? "") != null;
+          return (
+            <label key={t.id} className={`field-card rise${isFilled ? " filled" : ""}`} style={stagger(n, 0.1, 0.03)}>
+              <span className="row spread" style={{ gap: 8, alignItems: "baseline" }}>
+                <span style={{ fontSize: 15, fontWeight: 600, color: "var(--ink)" }}>{t.name}</span>
+                {latest[t.id] != null && <span className="muted" style={{ fontSize: 12 }}>last {latest[t.id]} {t.unit}</span>}
+              </span>
+              <span className="row" style={{ gap: 8, alignItems: "baseline", flexWrap: "nowrap" }}>
+                <input type="text" inputMode="decimal" value={values[t.id] ?? ""} placeholder="–" aria-label={`${t.name} in ${t.unit}`}
+                  onChange={(e) => setValues({ ...values, [t.id]: e.target.value })} className="field-card-input" />
+                <span className="muted">{t.unit}</span>
+              </span>
+              {TIPS[t.name] && <span className="muted" style={{ fontSize: 12, lineHeight: 1.4 }}>{TIPS[t.name]}</span>}
+            </label>
+          );
+        })}
+      </div>
+      <div className="row spread" style={{ marginTop: 18 }}>
+        <div className="row" style={{ gap: 12 }}>
+          <div style={{ width: 160, height: 6, background: "var(--hairline)", borderRadius: 3, overflow: "hidden" }}>
+            <div style={{ height: "100%", width: `${(filled / Math.max(types.length, 1)) * 100}%`, background: "var(--accent)", borderRadius: 3, transition: "width .25s ease" }} />
+          </div>
+          <span className="secondary" style={{ fontSize: 14 }}>{filled} of {types.length} filled</span>
+        </div>
+        <div className="row" style={{ gap: 14 }}>
+          <span className="muted" style={{ fontSize: 13 }}>Blank fields are skipped</span>
+          <button className="btn primary" disabled={busy || (!filled && !saved)}>
+            {saved ? "Saved" : busy ? "Saving…" : filled ? `Save ${filled} measurement${filled === 1 ? "" : "s"}` : "Save check-in"}
+          </button>
+        </div>
+      </div>
+      {error && <p className="error" style={{ marginBottom: 0 }}>{error}</p>}
+    </form>
+  );
+}
+
+function History({ types, checkins }: { types: MeasurementType[]; checkins: Checkin[] }) {
+  const ids = types.map((t) => t.id);
+  const rows = historyRows(checkins, ids);
+  if (!rows.length) return null;
+  return (
+    <Card i={2} className="pop">
+      <SectionHead title="History" right={<span className="muted" style={{ fontSize: 13 }}>Change vs the previous check-in</span>} />
+      <div className="table-wrap">
+        <table className="table num" style={{ minWidth: 120 + types.length * 92 }}>
+          <thead>
+            <tr><th>Date</th>{types.map((t) => <th key={t.id} className="num">{t.name}</th>)}</tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.measured_on}>
+                <td className="secondary">{fmtDate(r.measured_on)}</td>
+                {r.cells.map((c, n) => (
+                  <td key={n} className="num">
+                    <span className="display" style={{ fontSize: 20, fontWeight: 700 }}>{c.value ?? "–"}</span>
+                    {c.delta != null && <span style={{ display: "block", fontSize: 12, color: "var(--ink-3)" }}>{c.delta === 0 ? "±0" : `${c.delta > 0 ? "+" : "−"}${Math.abs(c.delta).toFixed(1)}`}</span>}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Card>
+  );
+}
+
+function ReminderCard({ profile, onChange }: { profile: Profile; onChange: (p: Partial<Profile>) => void }) {
+  const [note, setNote] = useState<string | null>(null);
+  const every = profile.reminder_weeks === 1 ? "week" : `${profile.reminder_weeks} weeks`;
+  async function download() {
+    setNote(null);
+    try {
+      await apiDownload("/api/reminders/calendar.ics", "lockedin-checkin.ics");
+      setNote(`Added: open the file to put it in your calendar. Repeats every ${every}${profile.reminder_hevy ? ", with the Hevy upload" : ""}.`);
+    } catch (e) {
+      setNote((e as Error).message);
+    }
+  }
+  return (
+    <Card i={4}>
+      <SectionHead title="Reminder" />
+      <p className="secondary" style={{ marginTop: -4, fontSize: 14, lineHeight: 1.5 }}>Your calendar reminds you; the event opens this check-in.</p>
+      <Segmented label="Remind me every" value={profile.reminder_weeks} onChange={(w) => { setNote(null); onChange({ reminder_weeks: w }); }}
+        options={[{ value: 1, label: "Every week" }, { value: 2, label: "Every 2 weeks" }, { value: 4, label: "Every 4 weeks" }]} />
+      <label className="row" style={{ gap: 10, marginTop: 14, fontSize: 14, color: "var(--ink-2)", cursor: "pointer" }}>
+        <input type="checkbox" checked={profile.reminder_hevy} onChange={(e) => { setNote(null); onChange({ reminder_hevy: e.target.checked }); }}
+          style={{ width: 18, height: 18, accentColor: "var(--accent)" }} />
+        Also remind me to upload my Hevy export
+      </label>
+      <div className="row" style={{ marginTop: 16 }}>
+        <button className="btn primary" onClick={download}>Add to calendar</button>
+        <span style={{ fontSize: 13, color: note ? "var(--accent)" : "var(--ink-muted)" }}>{note ?? "Downloads a repeating event for iPhone or Mac Calendar."}</span>
+      </div>
+    </Card>
+  );
+}
+
+function ProfileCard({ profile, onSave }: { profile: Profile; onSave: (p: Profile) => Promise<void> }) {
+  const [p, setP] = useState<Profile>(profile);
   const [msg, setMsg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  useEffect(() => { apiFetch<Profile>("/api/profile").then(setP); }, []);
+  useEffect(() => setP(profile), [profile]);
 
   async function save(e: FormEvent) {
     e.preventDefault();
     setMsg(null);
     setError(null);
     try {
-      setP(await apiFetch<Profile>("/api/profile", { method: "PUT", body: JSON.stringify(p) }));
+      await onSave(p);
       setMsg("Saved.");
     } catch (err) {
       setError((err as Error).message);
     }
   }
-
-  const num = (k: keyof Profile, label: string, hint?: string) => (
-    <label className="field">
-      {label}
-      <input type="number" inputMode="decimal" value={(p[k] as number | null) ?? ""} placeholder={hint}
+  const num = (k: keyof Profile, label: string, hint?: string, accent = false) => (
+    <label className="field">{label}
+      <input type="number" inputMode="decimal" value={(p[k] as number | null) ?? ""} placeholder={hint} className={accent ? "accent" : ""}
         onChange={(e) => setP({ ...p, [k]: toNum(e.target.value) })} />
     </label>
   );
-
   return (
-    <form className="card" onSubmit={save}>
-      <h2>Profile</h2>
-      <div className="grid-form">
-        <label className="field">
-          Date of birth
+    <form className="card rise" style={stagger(3)} onSubmit={save}>
+      <SectionHead title="Profile" />
+      <div className="grid-form" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))" }}>
+        <label className="field">Date of birth
           <input type="date" value={p.date_of_birth ?? ""} onChange={(e) => setP({ ...p, date_of_birth: e.target.value || null })} />
         </label>
-        {num("height_cm", "Height (cm)")}
-        <label className="field">
-          Sex
-          <select value={p.sex ?? ""} onChange={(e) => setP({ ...p, sex: (e.target.value || null) as Profile["sex"] })}>
-            <option value="">–</option>
-            <option value="male">Male</option>
-            <option value="female">Female</option>
-          </select>
-        </label>
-        {num("max_hr_override", "Max heart rate", "auto")}
+        {num("height_cm", "Height (cm)", "cm")}
+        {num("ftp_override", "FTP (W)", "estimated from rides", !p.ftp_override)}
+        {num("max_hr_override", "Max heart rate", "from your rides")}
         {num("resting_hr_override", "Resting heart rate", "optional")}
-        {num("ftp_override", "FTP (W)", "auto")}
-        <label className="field">
-          Dumbbell weights in Hevy
+        <label className="field">Dumbbell weights in Hevy
           <select value={p.dumbbell_weights} onChange={(e) => setP({ ...p, dumbbell_weights: e.target.value as Profile["dumbbell_weights"] })}>
             <option value="pair">Total of both dumbbells</option>
             <option value="each">Per dumbbell</option>
           </select>
         </label>
       </div>
-      <p className="muted" style={{ fontSize: "0.85rem" }}>
-        Leave max heart rate and FTP empty and they're estimated from your rides. Zwift shows your FTP in your profile;
-        entering it here gives better numbers than the estimate from regular rides.
-      </p>
+      <p className="muted" style={{ fontSize: 13, lineHeight: 1.5 }}>Zwift shows your FTP in your profile. Entering it makes effort labels and ride suggestions accurate; every ride's TSS is recalculated.</p>
       <div className="row">
         <button className="btn primary">Save profile</button>
         {msg && <span className="ok">{msg}</span>}
@@ -77,149 +209,76 @@ function ProfileForm() {
   );
 }
 
-export default function Body() {
-  const [types, setTypes] = useState<MeasurementType[]>([]);
-  const [rows, setRows] = useState<Measurement[]>([]);
-  const [typeId, setTypeId] = useState<number | "">("");
-  const [date, setDate] = useState(todayLocal());
-  const [value, setValue] = useState("");
+function GuideCard({ onAdded }: { onAdded: () => void }) {
+  const [name, setName] = useState("");
+  const [unit, setUnit] = useState("cm");
   const [error, setError] = useState<string | null>(null);
-  const [newType, setNewType] = useState({ name: "", unit: "cm" });
-
-  const load = async () => {
-    const [t, m] = await Promise.all([
-      apiFetch<MeasurementType[]>("/api/measurement-types"),
-      apiFetch<Measurement[]>("/api/measurements"),
-    ]);
-    setTypes(t);
-    setRows(m);
-    setTypeId((cur) => cur || t[0]?.id || "");
-  };
-  useEffect(() => { load(); }, []);
-
   async function add(e: FormEvent) {
     e.preventDefault();
     setError(null);
     try {
-      await apiFetch("/api/measurements", { method: "POST", body: JSON.stringify({ type_id: typeId, measured_on: date, value: Number(value) }) });
-      setValue("");
-      await load();
+      await apiFetch("/api/measurement-types", { method: "POST", body: JSON.stringify({ name, unit, kind: unit === "kg" ? "weight" : "tape" }) });
+      setName("");
+      onAdded();
     } catch (err) {
       setError((err as Error).message);
     }
   }
+  return (
+    <Card i={5}>
+      <SectionHead title="Measure the same way every time" />
+      <ul style={{ margin: 0, paddingLeft: 18, fontSize: 14, color: "var(--ink-2)", lineHeight: 1.7 }}>
+        <li>Morning, before eating or training; weight after the toilet.</li>
+        <li>Tape snug on the skin, not pulling it in; read it in a mirror.</li>
+        <li>Relaxed muscles, unless you always measure flexed. Pick one and stick to it.</li>
+        <li>Small swings (±0.5 cm, ±1 kg) are normal day-to-day noise.</li>
+      </ul>
+      <form onSubmit={add} className="row" style={{ marginTop: 16, alignItems: "flex-end" }}>
+        <label className="field" style={{ flex: "1 1 160px" }}>Track something else
+          <input value={name} placeholder="e.g. Calves" onChange={(e) => setName(e.target.value)} required />
+        </label>
+        <label className="field" style={{ width: 90 }}>Unit
+          <select value={unit} onChange={(e) => setUnit(e.target.value)}><option>cm</option><option>kg</option><option>%</option></select>
+        </label>
+        <button className="btn">Add</button>
+      </form>
+      {error && <p className="error" style={{ marginBottom: 0 }}>{error}</p>}
+    </Card>
+  );
+}
 
-  async function addType(e: FormEvent) {
-    e.preventDefault();
-    setError(null);
-    try {
-      const t = await apiFetch<MeasurementType>("/api/measurement-types", {
-        method: "POST", body: JSON.stringify({ ...newType, kind: newType.unit === "kg" ? "weight" : "tape" }),
-      });
-      setNewType({ name: "", unit: "cm" });
-      await load();
-      setTypeId(t.id);
-    } catch (err) {
-      setError((err as Error).message);
-    }
-  }
+export default function Body() {
+  const [types, setTypes] = useState<MeasurementType[]>([]);
+  const [checkins, setCheckins] = useState<Checkin[]>([]);
+  const [profile, setProfile] = useState<Profile>(EMPTY);
 
-  async function remove(id: number) {
-    await apiFetch(`/api/measurements/${id}`, { method: "DELETE" });
-    await load();
-  }
+  const load = async () => {
+    const [t, c, p] = await Promise.all([
+      apiFetch<MeasurementType[]>("/api/measurement-types"),
+      apiFetch<Checkin[]>("/api/checkins"),
+      apiFetch<Profile>("/api/profile"),
+    ]);
+    setTypes(t);
+    setCheckins(c);
+    setProfile(p);
+  };
+  useEffect(() => { load(); }, []);
 
-  const byType = useMemo(() => {
-    const m = new Map<number, Measurement[]>();
-    rows.forEach((r) => m.set(r.type_id, [...(m.get(r.type_id) ?? []), r]));
-    return m;
-  }, [rows]);
-  const unit = types.find((t) => t.id === typeId)?.unit ?? "";
-  const recent = [...rows].sort((a, b) => b.measured_on.localeCompare(a.measured_on) || b.id - a.id).slice(0, 8);
+  const saveProfile = async (p: Profile) => setProfile(await apiFetch<Profile>("/api/profile", { method: "PUT", body: JSON.stringify(p) }));
+  const every = profile.reminder_weeks === 1 ? "week" : `${profile.reminder_weeks} weeks`;
 
   return (
     <>
-      <h1>Body</h1>
-      <p className="secondary">Log a measurement every few weeks to see how you're changing.</p>
-
-      <form className="card" onSubmit={add}>
-        <h2>Add a measurement</h2>
-        <div className="grid-form">
-          <label className="field">
-            What
-            <select value={typeId} onChange={(e) => setTypeId(Number(e.target.value))}>
-              {types.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-            </select>
-          </label>
-          <label className="field">
-            Date
-            <input type="date" value={date} max={todayLocal()} onChange={(e) => setDate(e.target.value)} required />
-          </label>
-          <label className="field">
-            Value ({unit})
-            <input type="number" inputMode="decimal" step="0.1" min="0.1" value={value} onChange={(e) => setValue(e.target.value)} required />
-          </label>
+      <PageHeader title="Body" sub={`A check-in every ${every}. Same time of day, before training.`} />
+      <CheckinCard types={types} checkins={checkins} weeks={profile.reminder_weeks} onSaved={load} />
+      <History types={types} checkins={checkins} />
+      <div className="grid-auto" style={{ ["--min" as string]: "420px" }}>
+        <ProfileCard profile={profile} onSave={saveProfile} />
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          <ReminderCard profile={profile} onChange={(change) => saveProfile({ ...profile, ...change })} />
+          <GuideCard onAdded={load} />
         </div>
-        <div className="row" style={{ marginTop: 12 }}>
-          <button className="btn primary" disabled={!typeId}>Add</button>
-          {error && <span className="error">{error}</span>}
-        </div>
-      </form>
-
-      {types.filter((t) => (byType.get(t.id)?.length ?? 0) > 0).map((t) => {
-        const data = byType.get(t.id)!;
-        const last = data[data.length - 1];
-        const first = data[0];
-        const change = data.length > 1 ? last.value - first.value : null;
-        return (
-          <SeriesChart key={t.id} title={t.name} height={150}
-            summary={`${last.value} ${t.unit}${change != null ? ` (${change >= 0 ? "+" : "−"}${Math.abs(change).toFixed(1)} since ${shortDate(dayMs(first.measured_on))})` : ""}`}
-            points={data.map((m) => ({ x: dayMs(m.measured_on), y: m.value }))} colorVar="--series-body"
-            formatX={shortDate} formatY={(y) => `${y.toFixed(1)} ${t.unit}`} formatTick={(y) => y.toFixed(1)} />
-        );
-      })}
-
-      {recent.length > 0 && (
-        <section className="card">
-          <h2>Recent entries</h2>
-          <table className="table num">
-            <tbody>
-              {recent.map((r) => {
-                const t = types.find((x) => x.id === r.type_id);
-                return (
-                  <tr key={r.id}>
-                    <td>{shortDate(dayMs(r.measured_on))}</td>
-                    <td>{t?.name}</td>
-                    <td className="num">{r.value} {t?.unit}</td>
-                    <td className="num"><button className="btn ghost" onClick={() => remove(r.id)} aria-label={`Delete ${t?.name} on ${r.measured_on}`}>Delete</button></td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </section>
-      )}
-
-      <form className="card" onSubmit={addType}>
-        <h2>Track something else</h2>
-        <div className="grid-form">
-          <label className="field">
-            Name
-            <input value={newType.name} placeholder="e.g. Calves" onChange={(e) => setNewType({ ...newType, name: e.target.value })} required />
-          </label>
-          <label className="field">
-            Unit
-            <select value={newType.unit} onChange={(e) => setNewType({ ...newType, unit: e.target.value })}>
-              <option value="cm">cm</option>
-              <option value="kg">kg</option>
-              <option value="%">%</option>
-            </select>
-          </label>
-        </div>
-        <button className="btn" style={{ marginTop: 12 }}>Add measurement type</button>
-      </form>
-
-      <ProfileForm />
+      </div>
     </>
   );
 }
