@@ -72,6 +72,15 @@ def _aware(ts: datetime) -> datetime:
 
 
 def parse_fit(data: bytes) -> ParsedFit:
+    try:
+        return _parse(data)
+    except FitParseError:
+        raise
+    except Exception as e:  # unexpected field values in real-world files
+        raise FitParseError(f"Could not read FIT file: {e}") from e
+
+
+def _parse(data: bytes) -> ParsedFit:
     file_id: dict = {}
     session: dict = {}
     records: list[dict] = []

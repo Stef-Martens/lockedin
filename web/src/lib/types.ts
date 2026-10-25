@@ -61,6 +61,7 @@ export interface ActivityDetail extends ActivitySummary {
   sets: GymSet[] | null;
   superseded_by_summary: ActivitySummary | null;
   hr_merged_from_summary: ActivitySummary | null;
+  duplicates: ActivitySummary[];
 }
 
 export interface ActivityPage {

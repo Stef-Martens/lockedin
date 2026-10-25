@@ -49,3 +49,14 @@ def test_parse_corrupt_raises():
 def test_parse_garbage_raises():
     with pytest.raises(FitParseError):
         parse_fit(b"not a fit file at all")
+
+
+def test_unexpected_field_values_become_parse_errors(monkeypatch):
+    import lockedin.fit.parse as p
+
+    def bad(ts):
+        raise TypeError("timestamp is not a datetime")
+
+    monkeypatch.setattr(p, "_aware", bad)
+    with pytest.raises(FitParseError, match="not a datetime"):
+        parse_fit(read("zwift_ride.fit"))

@@ -102,6 +102,12 @@ export default function ActivityDetail() {
           so it isn't counted in your totals.
         </p>
       )}
+      {a.duplicates.length > 0 && !a.hr_merged_from_summary && (
+        <p className="note">
+          Also recorded by your{" "}
+          <Link to={`/activities/${a.duplicates[0].id}`}>Apple Watch</Link>; only this one counts.
+        </p>
+      )}
       {a.hr_merged_from_summary && (
         <p className="note">
           Heart rate comes from your <Link to={`/activities/${a.hr_merged_from_summary.id}`}>Apple Watch recording</Link>.

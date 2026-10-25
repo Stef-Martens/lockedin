@@ -1,3 +1,4 @@
+import pytest
 from conftest import owner_headers
 
 H = owner_headers()
@@ -51,3 +52,12 @@ def test_add_type_and_duplicate(client):
 def test_requires_auth(client):
     for path in ["/api/profile", "/api/measurement-types", "/api/measurements"]:
         assert client.get(path).status_code == 401
+
+
+def test_setting_ftp_recomputes_existing_rides(client):
+    from conftest import SYNC_HEADERS, read
+    rid = client.post("/api/fit/upload", files={"file": ("z.fit", read("zwift_ride.fit"))}, headers=SYNC_HEADERS).json()["activity_id"]
+    assert client.get(f"/api/activities/{rid}", headers=H).json()["tss"] is None
+    client.put("/api/profile", json={"ftp_override": 250}, headers=H)
+    assert client.get(f"/api/activities/{rid}", headers=H).json()["tss"] == pytest.approx(75.2, abs=2.5)
+

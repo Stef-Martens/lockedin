@@ -43,3 +43,8 @@ def test_best_20m():
 
 def test_best_20m_shorter_than_window():
     assert best_avg_power([250] * 600, list(range(600)), 1200) is None
+
+
+def test_np_tolerates_out_of_order_samples():
+    t = list(range(100))[::-1]  # timestamps going backwards (clock adjustments in real files)
+    assert normalized_power([200] * 100, t) == pytest.approx(200, abs=0.5)

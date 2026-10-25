@@ -10,6 +10,8 @@ from bisect import bisect_left
 from sqlalchemy import Connection, text
 
 PRIMARY_SOURCES = ("zwift", "hevy")
+# Which Watch workouts each primary can stand in for: a run or ride inside a gym session stays a run or ride.
+REPLACES = {"zwift": ("bike", "other"), "hevy": ("other",)}
 HR_MATCH_WINDOW_S = 5
 
 
@@ -30,7 +32,8 @@ def resolve_overlaps(conn: Connection, activity_id: int) -> None:
     ), {"i": a.id, "start": a.start_at, "end": a.end_at}).all()
 
     if a.source == "healthfit":
-        primaries = [o for o in others if o.source in PRIMARY_SOURCES and _overlaps(a, o)]
+        primaries = [o for o in others
+                     if o.source in PRIMARY_SOURCES and a.sport in REPLACES[o.source] and _overlaps(a, o)]
         if not primaries:
             return
         preferred = "zwift" if a.sport == "bike" else "hevy"
@@ -38,7 +41,8 @@ def resolve_overlaps(conn: Connection, activity_id: int) -> None:
         _supersede(conn, watch=a, primary=primary)
     elif a.source in PRIMARY_SOURCES:
         for o in others:
-            if o.source == "healthfit" and o.superseded_by is None and _overlaps(a, o):
+            if (o.source == "healthfit" and o.superseded_by is None and o.sport in REPLACES[a.source]
+                    and _overlaps(a, o)):
                 _supersede(conn, watch=o, primary=a)
 
 

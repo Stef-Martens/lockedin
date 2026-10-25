@@ -81,10 +81,10 @@ def candidate_files(folders: list[tuple[Path, str]], now: float, min_age_s: int 
     files: list[tuple[Path, str]] = []
     warnings: list[str] = []
     for folder, label in folders:
-        if not folder.is_dir():
-            warnings.append(f"Folder not found or not readable: {folder}. Check the path in {CONFIG_FILE}.")
-            continue
         try:
+            if not folder.is_dir():
+                warnings.append(f"Folder not found or not readable: {folder}. Check the path in {CONFIG_FILE}.")
+                continue
             for p in _walk(folder):
                 name = p.name
                 if name.startswith(".") or not name.lower().endswith(".fit") or name.lower() in SKIP_NAMES:
@@ -100,9 +100,11 @@ def candidate_files(folders: list[tuple[Path, str]], now: float, min_age_s: int 
                 files.append((p, label))
         except PermissionError:
             warnings.append(
-                f"Can't read {folder}: give Full Disk Access to python3 "
+                f"Can't read {folder}: give Full Disk Access to {os.path.realpath(sys.executable)} "
                 "(System Settings → Privacy & Security → Full Disk Access). See README."
             )
+        except OSError as e:
+            warnings.append(f"Can't read {folder}: {e}")
     return files, warnings
 
 
@@ -142,7 +144,12 @@ def sync_once(cfg: dict, now: float, http: Http = urllib_http) -> SyncReport:
     pending: list = []
     files, report.warnings = candidate_files(folders_from(cfg), now, pending=pending)
     report.pending = len(pending)
-    hashed = [(p, label, sha256_file(p)) for p, label in files]
+    hashed = []
+    for p, label in files:
+        try:
+            hashed.append((p, label, sha256_file(p)))
+        except OSError as e:
+            report.warnings.append(f"Skipped {p.name} for now, couldn't read it: {e}")
     try:
         known: set[str] = set()
         for i in range(0, len(hashed), BATCH):
@@ -159,9 +166,16 @@ def sync_once(cfg: dict, now: float, http: Http = urllib_http) -> SyncReport:
                 continue
             body, ctype = _multipart(path.name, path.read_bytes(), label)
             status, resp = http(f"{api}/api/fit/upload", token, body, {"Content-Type": ctype})
-            result = json.loads(resp) if resp else {}
+            try:
+                result = json.loads(resp) if resp else {}
+            except ValueError:
+                result = {}
+            if status == 401:
+                report.errors.append("Server said 401: SYNC_TOKEN doesn't match the server's. Stopped.")
+                return report
             if status != 200:
-                report.errors.append(f"{path.name}: server said {status} {result.get('detail', '')}")
+                detail = result.get("detail") or resp[:120].decode("utf-8", "replace")
+                report.errors.append(f"{path.name}: server said {status} {detail}")
             elif result.get("status") == "imported":
                 report.uploaded += 1
             elif result.get("status") == "duplicate":
@@ -184,7 +198,12 @@ def run(cfg: dict, now: Callable[[], float] = time.time, sleep: Callable[[float]
 
 
 def main() -> int:
-    for report in run(load_config()):
+    try:
+        reports = run(load_config())
+    except Exception as e:  # launchd swallows tracebacks; always leave a readable line in the log
+        print(f"{datetime.now().isoformat(timespec='seconds')} sync failed: {e!r}")
+        return 0
+    for report in reports:
         stamp = datetime.now().isoformat(timespec="seconds")
         print(f"{stamp} uploaded {report.uploaded}, already there {report.duplicates}, "
               f"still being written {report.pending}, errors {len(report.errors)}")

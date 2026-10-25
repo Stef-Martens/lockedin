@@ -6,7 +6,7 @@
   <string>com.lockedin.fitsync</string>
   <key>ProgramArguments</key>
   <array>
-    <string>/usr/bin/python3</string>
+    <string>__PYTHON__</string>
     <string>__SCRIPT__</string>
   </array>
   <key>WatchPaths</key>

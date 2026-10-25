@@ -44,3 +44,23 @@ def test_small_overlap_is_not_a_duplicate(conn):
     # Walk 12:00–12:20 vs strength 17:05–17:55 on the same day: no overlap at all
     ids = imp(conn, ["watch_walk.fit", "watch_strength.fit"])
     assert superseded_by(conn, ids["watch_walk.fit"]) is None
+
+
+def test_watch_run_inside_gym_session_is_not_superseded(conn):
+    from lockedin.hevy.importer import import_hevy
+    from lockedin.hevy.parse import parse_hevy_csv
+    # Gym session 08:50–10:00 Brussels (06:50–08:00Z) contains the 07:00–07:45Z treadmill run entirely
+    csv = ('title,start_time,end_time,exercise_title,weight_kg,reps\n'
+           'Gym + run,"22 Oct 2026, 08:50","22 Oct 2026, 10:00",Squat (Barbell),100,5\n')
+    import_hevy(conn, parse_hevy_csv(csv))
+    run_id = import_fit(conn, read("watch_run.fit"), "r.fit", None).activity_id
+    assert superseded_by(conn, run_id) is None
+
+
+def test_zwift_does_not_supersede_a_watch_run(conn):
+    # A Watch run fully inside a (hypothetical) long Zwift session must stay a run
+    from sqlalchemy import text
+    ride = import_fit(conn, read("zwift_ride.fit"), "z.fit", None).activity_id
+    conn.execute(text("update activities set start_at = '2026-10-22 06:30Z', end_at = '2026-10-22 08:30Z' where id = :i"), {"i": ride})
+    run_id = import_fit(conn, read("watch_run.fit"), "r.fit", None).activity_id
+    assert superseded_by(conn, run_id) is None

@@ -87,14 +87,14 @@ Free projects **pause after about a week with no activity**. Your regular syncs 
    ```bash
    sync/install.sh
    ```
-3. **Give Python access to your folders.** macOS blocks background apps from reading `~/Documents` and iCloud Drive. Open **System Settings → Privacy & Security → Full Disk Access**, click **+**, press **⌘⇧G**, type `/usr/bin/python3` and add it.
+3. **Give Python access to your folders.** macOS blocks background apps from reading `~/Documents` and iCloud Drive. `install.sh` prints the exact Python file to allow; it's the real interpreter behind `/usr/bin/python3`, usually under `/Library/Developer/CommandLineTools/`. Open **System Settings → Privacy & Security → Full Disk Access**, click **+**, press **⌘⇧G**, paste that path and add it.
 4. Check the log:
    ```bash
    tail -f ~/Library/Logs/lockedin-sync.log
    ```
    A healthy run looks like `uploaded 1, already there 42, still being written 0, errors 0`. A line saying it *can't read* a folder means step 3 isn't done yet.
 
-Uninstall with `sync/uninstall.sh`. Files that are still being written (like Zwift's ride in progress) are skipped and picked up a few minutes later. Files over 4 MB are skipped with a warning; upload those on the **Import** page.
+Uninstall with `sync/uninstall.sh`. A file the server can't read is listed in the log and skipped, and newer files still upload. Files that are still being written (like Zwift's ride in progress) are skipped and picked up a few minutes later. Files over 4 MB are skipped with a warning; upload those on the **Import** page.
 
 ## 4. Apple Watch workouts via HealthFit (iPhone)
 
@@ -118,7 +118,7 @@ In Hevy: **Profile → Settings → Export & Import Data → Export Workouts**. 
 | Symptom | Fix |
 |---|---|
 | "File too large (max 4 MB)" | Vercel limits request size. FIT files are normally far smaller; check that you picked the right file. |
-| The sync log says it can't read a folder | Give Full Disk Access to `/usr/bin/python3` (section 3). |
+| The sync log says it can't read a folder | Give Full Disk Access to the Python file named in that log line (section 3). |
 | Sync log shows `server said 401` | `SYNC_TOKEN` in `sync.env` doesn't match Vercel's, or is shorter than 16 characters. |
 | You're logged out right after signing in | `OWNER_EMAIL` on the server doesn't match the account you signed in with. |
 | Everything is slow or failing after a quiet week | Supabase paused the project; restore it in the dashboard. |

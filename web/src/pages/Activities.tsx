@@ -11,6 +11,7 @@ const FILTERS: (Sport | "all")[] = ["all", "bike", "run", "swim", "gym", "other"
 export default function Activities() {
   const [params, setParams] = useSearchParams();
   const sport = (params.get("sport") as Sport | null) ?? "all";
+  const showAll = params.get("all") === "1";
   const [items, setItems] = useState<ActivitySummary[]>([]);
   const [next, setNext] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -21,6 +22,10 @@ export default function Activities() {
     setError(null);
     const q = new URLSearchParams({ limit: "30" });
     if (sport !== "all") q.set("sport", sport);
+    if (showAll) {
+      q.set("include_walks", "true");
+      q.set("include_superseded", "true");
+    }
     if (before) q.set("before", before);
     try {
       const page = await apiFetch<ActivityPage>(`/api/activities?${q}`);
@@ -31,7 +36,13 @@ export default function Activities() {
     } finally {
       setLoading(false);
     }
-  }, [sport]);
+  }, [sport, showAll]);
+
+  const setFilter = (next: { sport?: Sport | "all"; all?: boolean }) => {
+    const s = next.sport ?? sport;
+    const a = next.all ?? showAll;
+    setParams({ ...(s !== "all" ? { sport: s } : {}), ...(a ? { all: "1" } : {}) });
+  };
 
   useEffect(() => { load(); }, [load]);
 
@@ -41,11 +52,15 @@ export default function Activities() {
       <div className="chips" role="group" aria-label="Filter by sport">
         {FILTERS.map((f) => (
           <button key={f} className="chip" aria-pressed={sport === f}
-            onClick={() => setParams(f === "all" ? {} : { sport: f })}>
+            onClick={() => setFilter({ sport: f })}>
             {f !== "all" && <SportDot sport={f} />}
             {f === "all" ? "All" : SPORT_LABEL[f]}
           </button>
         ))}
+        <button className="chip" aria-pressed={showAll} onClick={() => setFilter({ all: !showAll })}
+          title="Show walks and Apple Watch recordings that duplicate a Zwift ride or Hevy workout">
+          Walks &amp; duplicates
+        </button>
       </div>
       <section className="card" style={{ padding: 4 }}>
         {error && <p className="error" style={{ padding: 12 }}>{error}</p>}
@@ -64,7 +79,10 @@ export default function Activities() {
               <Link to={`/activities/${a.id}`} className="list-item">
                 <SportDot sport={a.sport} />
                 <div>
-                  <div className="list-title">{activityTitle(a)}</div>
+                  <div className="list-title">
+                    {activityTitle(a)}
+                    {a.superseded_by && <span className="muted" style={{ fontWeight: 400 }}> · duplicate</span>}
+                  </div>
                   <div className="list-meta num">
                     {formatDate(a.start_at)} · {formatDuration(a.duration_s)}
                     {a.distance_m ? ` · ${formatDistance(a.distance_m, a.sport)}` : ""}

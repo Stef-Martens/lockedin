@@ -91,4 +91,6 @@ def get_activity(activity_id: int, conn: Connection = Depends(get_conn)) -> dict
         ref = d[key]
         other = conn.execute(text(f"{SUMMARY_SQL} where a.id = :i"), {"i": ref}).first() if ref else None
         d[f"{key}_summary"] = _summary(other) if other else None
+    d["duplicates"] = [_summary(r) for r in conn.execute(
+        text(f"{SUMMARY_SQL} where a.superseded_by = :i order by a.start_at"), {"i": activity_id})]
     return d

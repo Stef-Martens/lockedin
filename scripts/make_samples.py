@@ -26,14 +26,15 @@ def ms(dt: datetime) -> int:
 
 
 def build(path: str, *, manufacturer: int, sport: Sport, sub_sport: SubSport, start: datetime,
-          duration_s: int, records: list[dict], session: dict, lengths: list[dict] | None = None) -> None:
+          duration_s: int, records: list[dict], session: dict, lengths: list[dict] | None = None,
+          serial: int = 0x1234) -> None:
     b = FitFileBuilder(auto_define=True, min_string_size=50)
     t0 = ms(start)
     fid = FileIdMessage()
     fid.type = FileType.ACTIVITY
     fid.manufacturer = manufacturer
     fid.product = 0
-    fid.serial_number = 0x1234
+    fid.serial_number = serial
     fid.time_created = t0
     b.add(fid)
 
@@ -118,6 +119,9 @@ def main() -> None:
     recs, sess = ride(with_hr=True)
     build("zwift_ride.fit", manufacturer=zwift, sport=Sport.CYCLING, sub_sport=SubSport.VIRTUAL_ACTIVITY,
           start=datetime(2026, 10, 20, 17, 0, tzinfo=UTC), duration_s=3600, records=recs, session=sess)
+    recs, sess = ride(with_hr=True)
+    build("zwift_ride_earlier.fit", manufacturer=zwift, sport=Sport.CYCLING, sub_sport=SubSport.VIRTUAL_ACTIVITY,
+          start=datetime(2026, 10, 13, 17, 0, tzinfo=UTC), duration_s=3600, records=recs, session=sess)
     recs, sess = ride(with_hr=False)
     build("zwift_ride_no_hr.fit", manufacturer=zwift, sport=Sport.CYCLING, sub_sport=SubSport.VIRTUAL_ACTIVITY,
           start=datetime(2026, 10, 20, 17, 0, tzinfo=UTC), duration_s=3600, records=recs, session=sess)
@@ -128,12 +132,13 @@ def main() -> None:
           session={"avg_heart_rate": 145, "max_heart_rate": 162, "total_calories": 650})
 
     run_speed = 8000 / 2700
-    build("watch_run.fit", manufacturer=watch, sport=Sport.RUNNING, sub_sport=SubSport.GENERIC,
-          start=datetime(2026, 10, 22, 7, 0, tzinfo=UTC), duration_s=2700,
-          records=[{"t": t, "heart_rate": round(140 + 20 * t / 2700), "speed": run_speed,
-                    "distance": run_speed * t, "cadence": 82} for t in range(2701)],
-          session={"total_distance": 8000.0, "avg_heart_rate": 150, "max_heart_rate": 165,
-                   "total_calories": 560, "total_ascent": 35})
+    for name, serial in (("watch_run.fit", 0x1234), ("watch_run_reexport.fit", 0x5678)):
+        build(name, serial=serial, manufacturer=watch, sport=Sport.RUNNING, sub_sport=SubSport.GENERIC,
+              start=datetime(2026, 10, 22, 7, 0, tzinfo=UTC), duration_s=2700,
+              records=[{"t": t, "heart_rate": round(140 + 20 * t / 2700), "speed": run_speed,
+                        "distance": run_speed * t, "cadence": 82} for t in range(2701)],
+              session={"total_distance": 8000.0, "avg_heart_rate": 150, "max_heart_rate": 165,
+                       "total_calories": 560, "total_ascent": 35})
 
     lengths = [{"t": i * 45, "dur": 45, "strokes": 18} for i in range(40)]
     build("watch_pool_swim.fit", manufacturer=watch, sport=Sport.SWIMMING, sub_sport=SubSport.LAP_SWIMMING,

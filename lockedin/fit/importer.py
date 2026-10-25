@@ -6,9 +6,9 @@ from typing import Literal
 from sqlalchemy import Connection, text
 
 from lockedin.dedupe import resolve_overlaps
-from lockedin.fit.metrics import best_avg_power, normalized_power, training_stress
+from lockedin.fit.metrics import best_avg_power, normalized_power
 from lockedin.fit.parse import FitParseError, ParsedFit, parse_fit
-from lockedin.fitness import ftp_at
+from lockedin.fitness import recompute_training_load
 
 Source = Literal["zwift", "healthfit"]
 
@@ -51,6 +51,17 @@ def _paces(f: ParsedFit) -> tuple[float | None, float | None]:
     return None, None
 
 
+SAME_START_S = 60
+
+
+def _same_session(conn: Connection, source: str, f: ParsedFit) -> int | None:
+    return conn.execute(text(
+        "select id from activities where source = :src and sport = :sport "
+        "and abs(extract(epoch from start_at - :start)) <= :tol "
+        "and abs(duration_s - :dur) <= greatest(:tol, 0.1 * :dur) order by id limit 1"
+    ), {"src": source, "sport": f.sport, "start": f.start_at, "dur": f.duration_s, "tol": SAME_START_S}).scalar()
+
+
 def import_fit(conn: Connection, data: bytes, filename: str, source_hint: Source | None) -> FitImportResult:
     sha = hashlib.sha256(data).hexdigest()
     existing = conn.execute(text("select activity_id, parse_status from fit_files where sha256 = :s"), {"s": sha}).first()
@@ -64,6 +75,23 @@ def import_fit(conn: Connection, data: bytes, filename: str, source_hint: Source
         return FitImportResult("error", sha, error=str(e))
 
     source = source_hint or ("zwift" if f.manufacturer == "zwift" else "healthfit")
+    savepoint = conn.begin_nested()
+    try:
+        result = _store(conn, sha, filename, source, f)
+    except Exception as e:  # odd real-world files must come back as an error, never a 500
+        savepoint.rollback()
+        msg = f"Could not import this file: {e}"
+        _record_file(conn, sha, filename, source, None, msg)
+        return FitImportResult("error", sha, error=msg)
+    savepoint.commit()
+    return result
+
+
+def _store(conn: Connection, sha: str, filename: str, source: str, f: ParsedFit) -> FitImportResult:
+    same = _same_session(conn, source, f)
+    if same is not None:  # a re-export of a session we already have, with different bytes
+        _record_file(conn, sha, filename, source, same, None)
+        return FitImportResult("duplicate", sha, same)
     pace_km, pace_100 = _paces(f)
     activity_id = conn.execute(text(
         "insert into activities (source, source_ref, sport, sub_type, start_at, end_at, duration_s, moving_s, "
@@ -96,14 +124,11 @@ def import_fit(conn: Connection, data: bytes, filename: str, source_hint: Source
         best20 = best_avg_power(s.power, s.t_offset, 1200)
         conn.execute(text("update activities set np = :np, best_20m_power = :b where id = :i"),
                      {"np": np_, "b": best20, "i": activity_id})
-        ftp = ftp_at(conn, f.start_at)
-        if np_ and ftp:
-            if_, tss = training_stress(f.duration_s, np_, ftp)
-            conn.execute(text("update activities set if_ = :if_, tss = :tss where id = :i"),
-                         {"if_": if_, "tss": tss, "i": activity_id})
 
     _record_file(conn, sha, filename, source, activity_id, None)
     resolve_overlaps(conn, activity_id)
+    if f.sport == "bike":
+        recompute_training_load(conn, since=f.start_at)  # this ride and later ones whose FTP it may raise
     conn.execute(text("insert into import_log (source, summary) values (:s, cast(:j as jsonb))"),
                  {"s": source, "j": json.dumps({"filename": filename, "activity_id": activity_id, "sport": f.sport})})
     return FitImportResult("imported", sha, activity_id)

@@ -9,9 +9,11 @@ def _resample_1hz(power: Sequence[int | None], t_offset: Sequence[int]) -> list[
     """1 Hz series from possibly sparse samples: short gaps forward-filled, longer gaps zero."""
     if not t_offset:
         return []
+    pairs = sorted(zip(t_offset, power), key=lambda tp: tp[0])  # real files can have clock jumps
+    t_offset = [t for t, _ in pairs]
     out = [0.0] * (t_offset[-1] - t_offset[0] + 1)
     t0 = t_offset[0]
-    for i, (t, p) in enumerate(zip(t_offset, power)):
+    for i, (t, p) in enumerate(pairs):
         if p is None:
             continue
         nxt = t_offset[i + 1] if i + 1 < len(t_offset) else t + 1

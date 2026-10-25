@@ -16,15 +16,23 @@ watch="    <string>${zwift/#\~/$HOME}</string>"
 [ -n "$healthfit" ] && watch="$watch
     <string>${healthfit/#\~/$HOME}</string>"
 
+# /usr/bin/python3 is a shim; the interpreter that actually reads your folders (and needs
+# Full Disk Access) is the one it points to.
+py="$(/usr/bin/python3 -c 'import os, sys; print(os.path.realpath(sys.executable))')"
+
 mkdir -p "$(dirname "$plist")" "$(dirname "$log")"
-python3 - "$here/com.lockedin.fitsync.plist.template" "$plist" "$here/fit_sync.py" "$log" "$watch" <<'PY'
+"$py" - "$here/com.lockedin.fitsync.plist.template" "$plist" "$here/fit_sync.py" "$log" "$watch" "$py" <<'PY'
 import sys
-src, dst, script, log, watch = sys.argv[1:]
-t = open(src).read().replace("__SCRIPT__", script).replace("__LOG__", log).replace("__WATCH_PATHS__", watch)
+src, dst, script, log, watch, py = sys.argv[1:]
+t = (open(src).read().replace("__PYTHON__", py).replace("__SCRIPT__", script)
+     .replace("__LOG__", log).replace("__WATCH_PATHS__", watch))
 open(dst, "w").write(t)
 PY
 
 launchctl bootout "gui/$(id -u)/com.lockedin.fitsync" 2>/dev/null || true
 launchctl bootstrap "gui/$(id -u)" "$plist"
 echo "Installed. Log: $log"
-echo "If the log says it can't read a folder, give Full Disk Access to /usr/bin/python3 (see README)."
+echo
+echo "Now give Full Disk Access to this exact file (System Settings → Privacy & Security → Full Disk Access → +,"
+echo "then press Cmd+Shift+G and paste the path):"
+echo "  $py"

@@ -79,3 +79,10 @@ def test_detail_404(client):
 def test_requires_auth(client):
     assert client.get("/api/activities").status_code == 401
     assert client.get("/api/activities/1").status_code == 401
+
+
+def test_primary_detail_lists_the_watch_recordings_it_replaced(client, loaded):
+    d = client.get(f"/api/activities/{loaded['zwift_ride.fit']}", headers=H).json()
+    assert [x["id"] for x in d["duplicates"]] == [loaded["watch_indoor_cycle.fit"]]
+    run = client.get(f"/api/activities/{loaded['watch_run.fit']}", headers=H).json()
+    assert run["duplicates"] == []

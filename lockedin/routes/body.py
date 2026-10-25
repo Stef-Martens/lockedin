@@ -8,6 +8,7 @@ from sqlalchemy.exc import IntegrityError
 
 from lockedin.auth import require_owner
 from lockedin.db import get_conn
+from lockedin.fitness import recompute_training_load
 
 router = APIRouter(prefix="/api", dependencies=[Depends(require_owner)])
 
@@ -45,7 +46,10 @@ def get_profile(conn: Connection = Depends(get_conn)) -> dict:
 @router.put("/profile")
 def put_profile(body: Profile, conn: Connection = Depends(get_conn)) -> dict:
     sets = ", ".join(f"{f} = :{f}" for f in PROFILE_FIELDS)
+    before = conn.execute(text("select ftp_override from profile where id = 1")).scalar()
     conn.execute(text(f"update profile set {sets}, updated_at = now() where id = 1"), body.model_dump())
+    if body.ftp_override != before:
+        recompute_training_load(conn)
     return get_profile(conn)
 
 
