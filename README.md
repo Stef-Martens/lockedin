@@ -55,7 +55,7 @@ Free projects **pause after about a week with no activity**. Your regular syncs 
 
 ### Vercel
 
-1. Push this repo to GitHub, then **Add New → Project** in Vercel and import it. `vercel.json` defines two services in one project, in the Frankfurt region:
+1. Push this repo to GitHub, then **Add New → Project** in Vercel and import it. `vercel.json` defines two services in one project, in the London region (next to the Supabase database; match yours):
    - **api**: the FastAPI app, served at `/api/*`
    - **web**: the Vite app, serving every other path
 
