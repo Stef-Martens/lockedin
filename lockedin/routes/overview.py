@@ -1,4 +1,4 @@
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from itertools import zip_longest
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -12,12 +12,12 @@ from lockedin.focus.facts import focus_facts
 from lockedin.focus.mix import session_suggestions
 from lockedin.focus.suggest import gym_suggestions
 from lockedin.focus.wins import plateaus, recent_wins
+from lockedin.reminders import checkin_due, hevy_due, next_checkin_due
 from lockedin.timeutil import TZ
 
 router = APIRouter(prefix="/api", dependencies=[Depends(require_owner)])
 
 FOCUS_ITEMS = 3
-MEASURE_EVERY_DAYS = 28
 
 
 def get_now() -> datetime:
@@ -40,6 +40,8 @@ def overview(weeks: int = 12, conn: Connection = Depends(get_conn), now: datetim
         "select max(m.measured_on) from measurements m join measurement_types t on t.id = m.type_id where t.kind = 'tape'"
     )).scalar()
     today = now.astimezone(TZ).date()
+    due = checkin_due(conn, today)
+    hevy_is_due, hevy_last = hevy_due(conn, now)
     return jsonable_encoder({
         "totals": totals(conn, now),
         "weekly": weekly_volume(conn, now, weeks),
@@ -48,7 +50,11 @@ def overview(weeks: int = 12, conn: Connection = Depends(get_conn), now: datetim
         "wins": recent_wins(conn, now),
         "plateaus": [] if back else plateaus(conn, now),
         "focus": focus,
-        "measure_due": last_tape is None or today - last_tape > timedelta(days=MEASURE_EVERY_DAYS),
+        "measure_due": due,
+        "checkin_due": due,
+        "next_checkin_on": next_checkin_due(conn, today),
+        "hevy_due": hevy_is_due,
+        "hevy_last_upload_at": hevy_last,
         "last_tape_measurement_on": last_tape,
     })
 
