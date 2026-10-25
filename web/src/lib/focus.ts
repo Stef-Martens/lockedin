@@ -15,12 +15,15 @@ export type WeekRow = { week_start: string } & Record<Sport, number>;
 
 export interface Win { kind: string; title: string; detail: string; date: string; activity_id: number | null }
 
+export interface Plateau { kind: string; title: string; detail: string; suggestion: string }
+
 export interface Overview {
   totals: { week: TotalsBySport; month: TotalsBySport };
   weekly: WeekRow[];
   streak: number;
   comeback: { days_since: number | null; suggestion: string } | null;
   wins: Win[];
+  plateaus: Plateau[];
   focus: FocusItem[];
   measure_due: boolean;
   last_tape_measurement_on: string | null;

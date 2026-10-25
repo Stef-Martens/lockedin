@@ -14,8 +14,8 @@ describe("focusLine", () => {
     expect(focusLine(gym({ exercise: "Shrug (Dumbbell)", weight_kg: 40, dumbbell: "pair", estimate: true })).detail)
       .toBe("3 × 8–12 at 40 kg total (20 kg each) · estimate, start light");
   });
-  it("odd pair totals split to half kilos", () => {
-    expect(focusLine(gym({ weight_kg: 42.5, dumbbell: "pair" })).detail).toBe("3 × 8–12 at 42.5 kg total (21.25 kg each)");
+  it("pair totals are whole kilos per hand", () => {
+    expect(focusLine(gym({ weight_kg: 44, dumbbell: "pair" })).detail).toBe("3 × 8–12 at 44 kg total (22 kg each)");
   });
   it("weight logged per dumbbell", () => {
     expect(focusLine(gym({ weight_kg: 20, dumbbell: "each" })).detail).toBe("3 × 8–12 at 20 kg per dumbbell");

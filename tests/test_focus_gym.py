@@ -68,7 +68,8 @@ def test_dumbbell_weights_follow_how_the_owner_logs_them(conn):
     from sqlalchemy import text
     add_gym(conn, ago(3), [("Overhead Press (Dumbbell)", 48, 9, "normal")])  # logged as both dumbbells together
     front = by_key(gym_suggestions(conn, NOW, limit=20), "muscle_key")["front_delt"]
-    assert (front.exercise, front.dumbbell, front.weight_kg) == ("Overhead Press (Dumbbell)", "pair", 42.5)
+    # 62.4 / 1.4 = 44.57 total → 22.29 a hand → whole kilos down: 22 kg each, 44 kg total (never 21.25-kg dumbbells)
+    assert (front.exercise, front.dumbbell, front.weight_kg) == ("Overhead Press (Dumbbell)", "pair", 44.0)
     conn.execute(text("update profile set dumbbell_weights = 'each'"))
     assert by_key(gym_suggestions(conn, NOW, limit=20), "muscle_key")["front_delt"].dumbbell == "each"
 
@@ -94,3 +95,10 @@ def test_most_neglected_muscle_first(conn):
 
 def test_empty_db_has_no_suggestions(conn):
     assert gym_suggestions(conn, NOW) == []
+
+
+def test_estimated_pair_weight_is_whole_kilos_per_hand(conn):
+    add_gym(conn, ago(4), [("Overhead Press (Dumbbell)", 30, 10, "normal")])  # e1RM 40 → shrug basis
+    shrug = by_key(gym_suggestions(conn, NOW, limit=20), "muscle_key")["upper_back_traps"]
+    # 40 × 1.2 = 48 → load 34.29 → 32.5 → × 0.8 = 26 → 26.0 total; 13 kg a hand
+    assert shrug.weight_kg == 26.0 and shrug.weight_kg / 2 == int(shrug.weight_kg / 2)

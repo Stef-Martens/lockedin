@@ -20,6 +20,27 @@ function pts<T>(rows: T[], date: (r: T) => string, y: (r: T) => number | null | 
   return rows.filter((r) => y(r) != null).map((r) => ({ x: dayMs(date(r)), y: y(r) as number }));
 }
 
+function Failed({ retry }: { retry: () => void }) {
+  return (
+    <section className="card">
+      <p style={{ marginTop: 0 }}>Couldn't load this right now. Check your connection.</p>
+      <button className="btn" onClick={retry}>Try again</button>
+    </section>
+  );
+}
+
+/** Fetch with loading / failed / data states, so a bad connection never looks like "no data". */
+function useLoad<T>(path: string): { data: T | null; failed: boolean; retry: () => void } {
+  const [data, setData] = useState<T | null>(null);
+  const [failed, setFailed] = useState(false);
+  const [n, setN] = useState(0);
+  useEffect(() => {
+    setFailed(false);
+    apiFetch<T>(path).then(setData).catch(() => setFailed(true));
+  }, [path, n]);
+  return { data, failed, retry: () => setN(n + 1) };
+}
+
 function Empty({ what }: { what: string }) {
   return (
     <section className="card">
@@ -69,9 +90,9 @@ function useFocusSessions(): SessionItem[] {
 interface BikeData { rides: { date: string; np: number | null; efficiency: number | null; best_20m: number | null }[];
   weekly: { week_start: string; minutes: number; tss: number }[]; ftp: number | null; mix: EffortMix }
 function Bike() {
-  const [d, setD] = useState<BikeData | null>(null);
+  const { data: d, failed, retry } = useLoad<BikeData>("/api/trends/bike");
   const sugg = useFocusSessions();
-  useEffect(() => { apiFetch<BikeData>("/api/trends/bike").then(setD); }, []);
+  if (failed) return <Failed retry={retry} />;
   if (!d) return <p className="muted">Loading…</p>;
   if (!d.rides.length) return <Empty what="rides" />;
   return (
@@ -95,9 +116,9 @@ function Bike() {
 interface RunData { runs: { date: string; pace_s_per_km: number | null; aerobic_efficiency: number | null }[];
   weekly: { week_start: string; km: number }[]; mix: EffortMix }
 function Run() {
-  const [d, setD] = useState<RunData | null>(null);
+  const { data: d, failed, retry } = useLoad<RunData>("/api/trends/run");
   const sugg = useFocusSessions();
-  useEffect(() => { apiFetch<RunData>("/api/trends/run").then(setD); }, []);
+  if (failed) return <Failed retry={retry} />;
   if (!d) return <p className="muted">Loading…</p>;
   if (!d.runs.length) return <Empty what="runs" />;
   return (
@@ -115,8 +136,8 @@ function Run() {
 
 interface SwimData { swims: { date: string; pace_s_per_100m: number | null }[]; weekly: { week_start: string; m: number }[] }
 function Swim() {
-  const [d, setD] = useState<SwimData | null>(null);
-  useEffect(() => { apiFetch<SwimData>("/api/trends/swim").then(setD); }, []);
+  const { data: d, failed, retry } = useLoad<SwimData>("/api/trends/swim");
+  if (failed) return <Failed retry={retry} />;
   if (!d) return <p className="muted">Loading…</p>;
   if (!d.swims.length) return <Empty what="swims" />;
   return (
@@ -180,27 +201,36 @@ function Gym() {
   const [cov, setCov] = useState<{ coverage: Coverage[]; unmapped: string[] } | null>(null);
   const [sugg, setSugg] = useState<GymItem[]>([]);
   const [volume, setVolume] = useState<{ week_start: string; volume_kg: number }[]>([]);
-  const [exercises, setExercises] = useState<Exercise[]>([]);
+  const [exercises, setExercises] = useState<Exercise[] | null>(null);
   const [muscles, setMuscles] = useState<Muscle[]>([]);
+  const [failed, setFailed] = useState(false);
   const [open, setOpen] = useState<number | null>(null);
   const [progress, setProgress] = useState<Progress | null>(null);
 
   const load = () => {
-    apiFetch<{ coverage: Coverage[]; unmapped: string[] }>("/api/gym/coverage").then(setCov);
-    apiFetch<Omit<GymItem, "type">[]>("/api/gym/suggestions?limit=20").then((s) => setSugg(s.map((x) => ({ type: "gym" as const, ...x }))));
-    apiFetch<typeof volume>("/api/gym/volume?weeks=26").then(setVolume);
-    apiFetch<Exercise[]>("/api/gym/exercises").then(setExercises);
+    setFailed(false);
+    Promise.all([
+      apiFetch<{ coverage: Coverage[]; unmapped: string[] }>("/api/gym/coverage"),
+      apiFetch<Omit<GymItem, "type">[]>("/api/gym/suggestions?limit=20"),
+      apiFetch<typeof volume>("/api/gym/volume?weeks=26"),
+      apiFetch<Exercise[]>("/api/gym/exercises"),
+      apiFetch<Muscle[]>("/api/muscles"),
+    ]).then(([c, s, v, e, m]) => {
+      setCov(c);
+      setSugg(s.map((x) => ({ type: "gym" as const, ...x })));
+      setVolume(v);
+      setExercises(e);
+      setMuscles(m);
+    }).catch(() => setFailed(true));
   };
-  useEffect(() => {
-    load();
-    apiFetch<Muscle[]>("/api/muscles").then(setMuscles);
-  }, []);
+  useEffect(load, []);
   useEffect(() => {
     setProgress(null);
-    if (open != null) apiFetch<Progress>(`/api/gym/exercises/${open}`).then(setProgress);
+    if (open != null) apiFetch<Progress>(`/api/gym/exercises/${open}`).then(setProgress).catch(() => undefined);
   }, [open]);
 
-  if (!cov) return <p className="muted">Loading…</p>;
+  if (failed) return <Failed retry={load} />;
+  if (!cov || !exercises) return <p className="muted">Loading…</p>;
   if (!exercises.length) return <Empty what="gym workouts" />;
   const unmapped = exercises.filter((e) => !e.mapped);
   return (

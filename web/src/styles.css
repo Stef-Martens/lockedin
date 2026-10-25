@@ -227,3 +227,4 @@ a.win:hover { background: var(--wash); }
 .exercise-row { width: 100%; border: 0; background: none; text-align: left; cursor: pointer; font: inherit; color: inherit; }
 .tag-form { padding: 12px 0; }
 .tag-form + .tag-form { border-top: 1px solid var(--hairline); }
+.plateau + .plateau { border-top: 1px solid var(--hairline); margin-top: 10px; padding-top: 10px; }

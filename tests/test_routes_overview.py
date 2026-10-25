@@ -51,3 +51,19 @@ def test_focus_facts_keys(client):
 def test_requires_auth(client):
     for path in ("/api/overview", "/api/focus"):
         assert client.get(path).status_code == 401
+
+
+def test_comeback_replaces_focus_suggestions(client):
+    for name in ("zwift_ride_earlier.fit", "zwift_ride.fit"):
+        client.post("/api/fit/upload", files={"file": (name, read(name))}, headers=SYNC_HEADERS)
+    from lockedin.app import app
+    from lockedin.routes.overview import get_now
+    app.dependency_overrides[get_now] = lambda: datetime(2026, 11, 6, 12, 0, tzinfo=UTC)  # 17 days after the last ride
+    o = client.get("/api/overview", headers=H).json()
+    assert o["comeback"]["days_since"] == 16
+    assert o["focus"] == []  # the restart suggestion stands alone; no deficits or 90-min rides
+
+
+def test_overview_includes_plateaus(client):
+    o = client.get("/api/overview", headers=H).json()
+    assert o["plateaus"] == []

@@ -34,8 +34,18 @@ def _round_down(kg: float) -> float:
     return math.floor(kg / step + 1e-9) * step
 
 
+def _load(e1rm: float, reps: int = TARGET_REPS) -> float:
+    return e1rm / (1 + reps / 30)
+
+
 def suggested_load(e1rm: float, reps: int = TARGET_REPS) -> float:
-    return _round_down(e1rm / (1 + reps / 30))
+    return _round_down(_load(e1rm, reps))
+
+
+def _dumbbell_weight(raw: float, logged_as: str) -> float:
+    """Whole kilos per hand, rounded down, so the suggestion names a dumbbell that exists."""
+    per_hand = math.floor((raw / 2 if logged_as == "pair" else raw) + 1e-9)
+    return float(per_hand * 2 if logged_as == "pair" else per_hand)
 
 
 def _fmt(x: float) -> str:
@@ -70,7 +80,7 @@ def _pick(conn: Connection, muscle: str, now: datetime) -> tuple[str, str, float
     ), {"m": muscle, "since": now - timedelta(days=RECENT_DAYS), "now": now}).first()
     if own:
         best = _best_e1rm(conn, own.name, now)
-        weight = suggested_load(best) if best and own.equipment != "bodyweight" else None
+        weight = _load(best) if best and own.equipment != "bodyweight" else None
         return own.name, own.equipment, weight, False, _best_reps(conn, own.name, now)
 
     library = conn.execute(text(
@@ -82,7 +92,7 @@ def _pick(conn: Connection, muscle: str, now: datetime) -> tuple[str, str, float
         if ex.related_to and ex.ratio:
             related = _best_e1rm(conn, ex.related_to, now)
             if related:
-                return ex.name, ex.equipment, _round_down(suggested_load(related * ex.ratio) * NEW_EXERCISE_FACTOR), True, None
+                return ex.name, ex.equipment, _load(related * ex.ratio) * NEW_EXERCISE_FACTOR, True, None
     if library:
         ex = library[0]
         return ex.name, ex.equipment, None, True, None
@@ -99,11 +109,17 @@ def gym_suggestions(conn: Connection, now: datetime, limit: int = 3) -> list[Gym
         picked = _pick(conn, c.key, now)
         if not picked:
             continue
-        name, equipment, weight, estimate, best_reps = picked
+        name, equipment, raw, estimate, best_reps = picked
+        if raw is None or equipment == "bodyweight":
+            weight = None
+        elif equipment == "dumbbell":
+            weight = _dumbbell_weight(raw, dumbbell_logging)
+        else:
+            weight = _round_down(raw)
         reps = f"{round(best_reps * 0.8)}–{best_reps}" if equipment == "bodyweight" and best_reps else "8–12"
         out.append(GymSuggestion(
             muscle_key=c.key, muscle_name=c.name, exercise=name, sets=3, reps=reps,
-            weight_kg=None if equipment == "bodyweight" else weight,
+            weight_kg=weight,
             dumbbell=dumbbell_logging if equipment == "dumbbell" else None,
             estimate=estimate, reason=f"{c.name}: {_fmt(c.sets_per_week)} sets/week, aim for {_fmt(c.target_low)}–{_fmt(c.target_high)}"))
     return out

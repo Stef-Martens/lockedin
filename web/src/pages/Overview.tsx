@@ -29,18 +29,34 @@ export default function Overview() {
 
   return (
     <>
-      <h1>{c ? "Welcome back" : "Overview"}</h1>
+      <h1>{!c ? "Overview" : c.days_since == null ? "Welcome" : "Welcome back"}</h1>
       {c && (
         <section className="card note-card">
-          <p style={{ margin: 0 }}>
-            {c.days_since == null ? "Nothing logged yet. " : `Last session ${c.days_since} days ago. `}
-            {c.suggestion}
-          </p>
+          {c.days_since == null ? (
+            <p style={{ margin: 0 }}>
+              Nothing logged yet. Your Zwift rides and Watch workouts appear once the Mac sync runs, or{" "}
+              <Link to="/import">import a Hevy export</Link>. Suggestions show up after a couple of weeks of training.
+            </p>
+          ) : (
+            <p style={{ margin: 0 }}>Last session {c.days_since} days ago. {c.suggestion}</p>
+          )}
         </section>
       )}
 
-      <FocusCard items={data.focus} />
+      {!c && <FocusCard items={data.focus} />}
       <WinsStrip wins={data.wins} />
+      {data.plateaus.length > 0 && (
+        <section className="card">
+          <h2>Stalled lately</h2>
+          {data.plateaus.map((p, i) => (
+            <div key={i} className="plateau">
+              <div className="list-title">{p.title}</div>
+              <div className="muted num" style={{ fontSize: "0.85rem" }}>{p.detail}</div>
+              <div>{p.suggestion}</div>
+            </div>
+          ))}
+        </section>
+      )}
 
       <section className="card">
         <div className="chart-title">
