@@ -55,7 +55,11 @@ Free projects **pause after about a week with no activity**. Your regular syncs 
 
 ### Vercel
 
-1. Push this repo to GitHub, then **Add New → Project** in Vercel and import it. `vercel.json` already sets the build, the Python function and the Frankfurt region.
+1. Push this repo to GitHub, then **Add New → Project** in Vercel and import it. `vercel.json` defines two services in one project, in the Frankfurt region:
+   - **api**: the FastAPI app, served at `/api/*`
+   - **web**: the Vite app, serving every other path
+
+   The browser calls `/api` on the same domain, so no service bindings are needed.
 2. Add these under **Settings → Environment Variables** (for Production):
 
    | Name | Value |
@@ -127,7 +131,6 @@ In Hevy: **Profile → Settings → Export & Import Data → Export Workouts**. 
 
 ```
 lockedin/         FastAPI app (imports, dedupe, routes)
-api/index.py      Vercel entry point
 supabase/         config + SQL migrations
 sync/             Mac uploader + launchd agent
 web/              React + Vite app

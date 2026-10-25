@@ -36,3 +36,7 @@ filterwarnings = [
     # Starlette's TestClient nags about a not-yet-common httpx successor; harmless for tests.
     "ignore:Using `httpx` with `starlette.testclient`",
 ]
+
+[tool.vercel]
+# FastAPI app for the "api" service in vercel.json
+entrypoint = "lockedin.app:app"
