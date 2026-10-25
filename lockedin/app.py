@@ -1,6 +1,7 @@
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.responses import JSONResponse
 
+from lockedin.auth import require_owner
 from lockedin.config import get_settings
 
 app = FastAPI(title="LockedIn", docs_url="/api/docs", openapi_url="/api/openapi.json")
@@ -17,3 +18,8 @@ async def limit_body_size(request: Request, call_next):
 @app.get("/api/health")
 def health() -> dict:
     return {"ok": True}
+
+
+@app.get("/api/me")
+def me(email: str = Depends(require_owner)) -> dict:
+    return {"email": email}

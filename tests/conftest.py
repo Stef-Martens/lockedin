@@ -17,7 +17,7 @@ TEST_DB = "lockedin_test"
 
 OWNER_EMAIL = "me@example.com"
 JWT_SECRET = "test-secret-test-secret-test-secret-123"
-SYNC_TOKEN = "sync-test-token"
+SYNC_TOKEN = "sync-test-token-0123456789"
 
 SEED_SQL = """
 insert into profile (id) values (1);
@@ -96,3 +96,19 @@ def client(clean_db):
     with TestClient(app) as tc:
         yield tc
     app.dependency_overrides.clear()
+
+
+def token_for(email: str = OWNER_EMAIL, *, expires_in: int = 3600, secret: str = JWT_SECRET) -> str:
+    import time
+
+    import jwt
+    now = int(time.time())
+    return jwt.encode({"sub": "u1", "email": email, "aud": "authenticated", "role": "authenticated",
+                       "iat": now, "exp": now + expires_in}, secret, algorithm="HS256")
+
+
+def owner_headers() -> dict:
+    return {"Authorization": f"Bearer {token_for()}"}
+
+
+SYNC_HEADERS = {"Authorization": f"Bearer {SYNC_TOKEN}"}
