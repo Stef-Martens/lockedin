@@ -42,11 +42,20 @@ export function uploadFile<T>(path: string, file: File, fields: Record<string, s
   return apiFetch<T>(path, { method: "POST", body: fd });
 }
 
-/** Download an authenticated file (e.g. the calendar reminder) through the browser. */
-export async function apiDownload(path: string, filename: string): Promise<void> {
+/**
+ * Hand an authenticated file to the user. On iPhone (and other devices with a share sheet for files)
+ * this opens the share sheet, where "Calendar" adds an .ics; elsewhere it downloads the file.
+ */
+export async function apiDownload(path: string, filename: string, type: string): Promise<"shared" | "downloaded"> {
   const res = await fetch(path, { headers: await authHeader() });
   if (!res.ok) throw new ApiError(res.status, `Download failed (${res.status}).`);
-  const url = URL.createObjectURL(await res.blob());
+  const blob = await res.blob();
+  const file = new File([blob], filename, { type });
+  if (navigator.canShare?.({ files: [file] }) && /iPhone|iPad|Android/i.test(navigator.userAgent)) {
+    await navigator.share({ files: [file], title: filename });
+    return "shared";
+  }
+  const url = URL.createObjectURL(file);
   const a = document.createElement("a");
   a.href = url;
   a.download = filename;
@@ -54,4 +63,5 @@ export async function apiDownload(path: string, filename: string): Promise<void>
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+  return "downloaded";
 }

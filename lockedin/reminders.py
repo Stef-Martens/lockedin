@@ -28,7 +28,32 @@ def hevy_due(conn: Connection, now: datetime) -> tuple[bool, datetime | None]:
 
 
 def _escape(value: str) -> str:
-    return value.replace("\\", "\\\\").replace(";", "\;").replace(",", "\\,").replace("\n", "\\n")
+    return value.replace("\\", "\\\\").replace(";", "\\;").replace(",", "\\,").replace("\n", "\\n")
+
+
+def _fold(line: str) -> list[str]:
+    """RFC 5545: lines longer than 75 octets continue on the next line after a single space."""
+    out, current = [], ""
+    for ch in line:
+        limit = 75 if not out else 74  # continuation lines start with a space
+        if len((current + ch).encode()) > limit:
+            out.append(current)
+            current = ch
+        else:
+            current += ch
+    out.append(current)
+    return [out[0]] + [" " + part for part in out[1:]]
+
+
+# Brussels follows EU summer time: last Sunday of March 02:00 → +02:00, last Sunday of October 03:00 → +01:00.
+VTIMEZONE = [
+    "BEGIN:VTIMEZONE", "TZID:Europe/Brussels",
+    "BEGIN:DAYLIGHT", "TZOFFSETFROM:+0100", "TZOFFSETTO:+0200", "TZNAME:CEST", "DTSTART:19700329T020000",
+    "RRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=-1SU", "END:DAYLIGHT",
+    "BEGIN:STANDARD", "TZOFFSETFROM:+0200", "TZOFFSETTO:+0100", "TZNAME:CET", "DTSTART:19701025T030000",
+    "RRULE:FREQ=YEARLY;BYMONTH=10;BYDAY=-1SU", "END:STANDARD",
+    "END:VTIMEZONE",
+]
 
 
 def calendar_ics(conn: Connection, today: date, app_url: str) -> str:
@@ -38,7 +63,8 @@ def calendar_ics(conn: Connection, today: date, app_url: str) -> str:
     if hevy:
         description += "\nUpload your latest Hevy export."
     lines = [
-        "BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//LockedIn//EN", "CALSCALE:GREGORIAN",
+        "BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//LockedIn//EN", "CALSCALE:GREGORIAN", "METHOD:PUBLISH",
+        *VTIMEZONE,
         "BEGIN:VEVENT",
         "UID:lockedin-checkin@lockedin",
         f"DTSTAMP:{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}",
@@ -51,4 +77,4 @@ def calendar_ics(conn: Connection, today: date, app_url: str) -> str:
         "BEGIN:VALARM", "ACTION:DISPLAY", "DESCRIPTION:LockedIn check-in", "TRIGGER:PT0M", "END:VALARM",
         "END:VEVENT", "END:VCALENDAR",
     ]
-    return "\r\n".join(lines) + "\r\n"
+    return "\r\n".join(part for line in lines for part in _fold(line)) + "\r\n"

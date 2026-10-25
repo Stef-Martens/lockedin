@@ -53,6 +53,7 @@ def overview(weeks: int = 12, conn: Connection = Depends(get_conn), now: datetim
         "measure_due": due,
         "checkin_due": due,
         "next_checkin_on": next_checkin_due(conn, today),
+        "last_checkin_on": conn.execute(text("select max(measured_on) from measurements")).scalar(),
         "hevy_due": hevy_is_due,
         "hevy_last_upload_at": hevy_last,
         "last_tape_measurement_on": last_tape,

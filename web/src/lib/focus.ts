@@ -29,6 +29,7 @@ export interface Overview {
   last_tape_measurement_on: string | null;
   checkin_due: boolean;
   next_checkin_on: string;
+  last_checkin_on: string | null;
   hevy_due: boolean;
   hevy_last_upload_at: string | null;
 }

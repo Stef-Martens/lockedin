@@ -26,6 +26,19 @@ function CheckinCard({ types, checkins, weeks, onSaved }: { types: MeasurementTy
     return out;
   }, [checkins]);
   const filled = types.filter((t) => parseValue(values[t.id] ?? "") != null).length;
+  const existing = checkins.find((c) => c.measured_on === date);
+  const asText = (c: Checkin | undefined) =>
+    c ? Object.fromEntries(Object.entries(c.values).map(([id, v]) => [Number(id), String(v)])) : {};
+  const pickDate = (d: string) => {
+    setDate(d);
+    // Editing an earlier check-in: show its values so saving replaces them knowingly
+    setValues(asText(checkins.find((c) => c.measured_on === d)));
+  };
+  // Opening the page on a day you already checked in shows that check-in too (unless you've started typing)
+  useEffect(() => {
+    const found = checkins.find((c) => c.measured_on === date);
+    if (found) setValues((v) => (Object.keys(v).length ? v : asText(found)));
+  }, [checkins]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function save(e: FormEvent) {
     e.preventDefault();
@@ -53,11 +66,13 @@ function CheckinCard({ types, checkins, weeks, onSaved }: { types: MeasurementTy
       <div className="section-head">
         <h2 style={{ fontSize: 26 }}>Check-in</h2>
         <label className="row" style={{ gap: 10, fontSize: 14, color: "var(--ink-3)" }}>Date
-          <input type="date" value={date} max={todayLocal()} onChange={(e) => setDate(e.target.value)} required
+          <input type="date" value={date} max={todayLocal()} onChange={(e) => pickDate(e.target.value)} required
             style={{ background: "var(--sunken)", border: "1px solid var(--axis)", borderRadius: 10, padding: "9px 10px", colorScheme: "dark" }} />
         </label>
       </div>
-      {last && <p className="secondary" style={{ margin: "-4px 0 12px", fontSize: 14 }}>Last check-in {fmtDate(last)} · next on {fmtDate(addDays(last, weeks * 7))}</p>}
+      {existing ? (
+        <p className="note accent" style={{ margin: "-4px 0 12px" }}>You already checked in on {fmtDate(date)}. Its values are filled in below; saving replaces them.</p>
+      ) : last && <p className="secondary" style={{ margin: "-4px 0 12px", fontSize: 14 }}>Last check-in {fmtDate(last)} · next on {fmtDate(addDays(last, weeks * 7))}</p>}
       <div className="checkin-grid">
         {types.map((t, n) => {
           const isFilled = parseValue(values[t.id] ?? "") != null;
@@ -96,7 +111,18 @@ function CheckinCard({ types, checkins, weeks, onSaved }: { types: MeasurementTy
   );
 }
 
-function History({ types, checkins }: { types: MeasurementType[]; checkins: Checkin[] }) {
+function History({ types, checkins, onDeleted }: { types: MeasurementType[]; checkins: Checkin[]; onDeleted: () => void }) {
+  const [error, setError] = useState<string | null>(null);
+  async function remove(d: string) {
+    if (!window.confirm(`Delete the check-in of ${fmtDate(d)}?`)) return;
+    setError(null);
+    try {
+      await apiFetch(`/api/checkins/${d}`, { method: "DELETE" });
+      onDeleted();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
   const ids = types.map((t) => t.id);
   const rows = historyRows(checkins, ids);
   if (!rows.length) return null;
@@ -104,9 +130,9 @@ function History({ types, checkins }: { types: MeasurementType[]; checkins: Chec
     <Card i={2} className="pop">
       <SectionHead title="History" right={<span className="muted" style={{ fontSize: 13 }}>Change vs the previous check-in</span>} />
       <div className="table-wrap">
-        <table className="table num" style={{ minWidth: 120 + types.length * 92 }}>
+        <table className="table num" style={{ minWidth: 200 + types.length * 92 }}>
           <thead>
-            <tr><th>Date</th>{types.map((t) => <th key={t.id} className="num">{t.name}</th>)}</tr>
+            <tr><th>Date</th>{types.map((t) => <th key={t.id} className="num">{t.name}</th>)}<th><span className="sr-only">Actions</span></th></tr>
           </thead>
           <tbody>
             {rows.map((r) => (
@@ -118,58 +144,89 @@ function History({ types, checkins }: { types: MeasurementType[]; checkins: Chec
                     {c.delta != null && <span style={{ display: "block", fontSize: 12, color: "var(--ink-3)" }}>{c.delta === 0 ? "±0" : `${c.delta > 0 ? "+" : "−"}${Math.abs(c.delta).toFixed(1)}`}</span>}
                   </td>
                 ))}
+                <td className="num"><button className="btn ghost" onClick={() => remove(r.measured_on)} aria-label={`Delete check-in of ${fmtDate(r.measured_on)}`}>Delete</button></td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+      {error && <p className="error" style={{ marginBottom: 0 }}>{error}</p>}
     </Card>
   );
 }
 
-function ReminderCard({ profile, onChange }: { profile: Profile; onChange: (p: Partial<Profile>) => void }) {
-  const [note, setNote] = useState<string | null>(null);
-  const every = profile.reminder_weeks === 1 ? "week" : `${profile.reminder_weeks} weeks`;
+function ReminderCard({ profile, ready }: { profile: Profile; ready: boolean }) {
+  const [weeks, setWeeks] = useState(profile.reminder_weeks);
+  const [hevy, setHevy] = useState(profile.reminder_hevy);
+  const [note, setNote] = useState<{ text: string; ok: boolean } | null>(null);
+  useEffect(() => { setWeeks(profile.reminder_weeks); setHevy(profile.reminder_hevy); }, [profile.reminder_weeks, profile.reminder_hevy]);
+  const every = weeks === 1 ? "week" : `${weeks} weeks`;
+
+  // Only the reminder fields go to the server, so nothing else in the profile can be overwritten.
+  async function save(change: Partial<Pick<Profile, "reminder_weeks" | "reminder_hevy">>, undo: () => void) {
+    setNote(null);
+    try {
+      await apiFetch("/api/profile", { method: "PATCH", body: JSON.stringify(change) });
+      setNote({ text: "Saved. Add the calendar event again so it uses the new setting (and remove the old one).", ok: true });
+    } catch (e) {
+      undo();
+      setNote({ text: (e as Error).message, ok: false });
+    }
+  }
   async function download() {
     setNote(null);
     try {
-      await apiDownload("/api/reminders/calendar.ics", "lockedin-checkin.ics");
-      setNote(`Added: open the file to put it in your calendar. Repeats every ${every}${profile.reminder_hevy ? ", with the Hevy upload" : ""}.`);
+      const how = await apiDownload("/api/reminders/calendar.ics", "lockedin-checkin.ics", "text/calendar");
+      setNote({ ok: true, text: how === "shared"
+        ? "Choose Calendar in the share sheet to add the reminder."
+        : `Downloaded. Open lockedin-checkin.ics to add a reminder every ${every}${hevy ? ", with the Hevy upload" : ""}.` });
     } catch (e) {
-      setNote((e as Error).message);
+      if ((e as Error).name !== "AbortError") setNote({ text: (e as Error).message, ok: false });
     }
   }
   return (
     <Card i={4}>
       <SectionHead title="Reminder" />
       <p className="secondary" style={{ marginTop: -4, fontSize: 14, lineHeight: 1.5 }}>Your calendar reminds you; the event opens this check-in.</p>
-      <Segmented label="Remind me every" value={profile.reminder_weeks} onChange={(w) => { setNote(null); onChange({ reminder_weeks: w }); }}
-        options={[{ value: 1, label: "Every week" }, { value: 2, label: "Every 2 weeks" }, { value: 4, label: "Every 4 weeks" }]} />
-      <label className="row" style={{ gap: 10, marginTop: 14, fontSize: 14, color: "var(--ink-2)", cursor: "pointer" }}>
-        <input type="checkbox" checked={profile.reminder_hevy} onChange={(e) => { setNote(null); onChange({ reminder_hevy: e.target.checked }); }}
-          style={{ width: 18, height: 18, accentColor: "var(--accent)" }} />
-        Also remind me to upload my Hevy export
-      </label>
-      <div className="row" style={{ marginTop: 16 }}>
-        <button className="btn primary" onClick={download}>Add to calendar</button>
-        <span style={{ fontSize: 13, color: note ? "var(--accent)" : "var(--ink-muted)" }}>{note ?? "Downloads a repeating event for iPhone or Mac Calendar."}</span>
-      </div>
+      <fieldset disabled={!ready} style={{ border: 0, padding: 0, margin: 0 }}>
+        <Segmented label="Remind me every" value={weeks} onChange={(w) => { const prev = weeks; setWeeks(w); save({ reminder_weeks: w }, () => setWeeks(prev)); }}
+          options={[{ value: 1, label: "Every week" }, { value: 2, label: "Every 2 weeks" }, { value: 4, label: "Every 4 weeks" }]} />
+        <label className="row" style={{ gap: 10, marginTop: 14, fontSize: 14, color: "var(--ink-2)", cursor: "pointer" }}>
+          <input type="checkbox" checked={hevy} onChange={(e) => { const v = e.target.checked; setHevy(v); save({ reminder_hevy: v }, () => setHevy(!v)); }}
+            style={{ width: 18, height: 18, accentColor: "var(--accent)" }} />
+          Also remind me to upload my Hevy export
+        </label>
+        <div className="row" style={{ marginTop: 16 }}>
+          <button type="button" className="btn primary" onClick={download}>Add to calendar</button>
+          <span style={{ fontSize: 13, color: note ? (note.ok ? "var(--accent)" : "var(--danger)") : "var(--ink-muted)" }}>
+            {note?.text ?? "Adds a repeating event to iPhone or Mac Calendar."}
+          </span>
+        </div>
+      </fieldset>
     </Card>
   );
 }
 
-function ProfileCard({ profile, onSave }: { profile: Profile; onSave: (p: Profile) => Promise<void> }) {
+function ProfileCard({ profile, ready, onSave }: { profile: Profile; ready: boolean; onSave: (p: Partial<Profile>) => Promise<void> }) {
   const [p, setP] = useState<Profile>(profile);
+  const [dirty, setDirty] = useState(false);
+  // What's typed in the number fields, kept as text so "182," or "182." can be typed on the way to 182.5
+  const [raw, setRaw] = useState<Partial<Record<keyof Profile, string>>>({});
   const [msg, setMsg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  useEffect(() => setP(profile), [profile]);
+  // Fresh server data only replaces the form while you haven't started editing it
+  useEffect(() => { if (!dirty) { setP(profile); setRaw({}); } }, [profile, dirty]);
+  const edit = (next: Profile) => { setDirty(true); setP(next); };
 
   async function save(e: FormEvent) {
     e.preventDefault();
     setMsg(null);
     setError(null);
     try {
-      await onSave(p);
+      const { reminder_weeks: _w, reminder_hevy: _h, ...fields } = p;
+      await onSave(fields);
+      setRaw({});
+      setDirty(false);
       setMsg("Saved.");
     } catch (err) {
       setError((err as Error).message);
@@ -177,23 +234,24 @@ function ProfileCard({ profile, onSave }: { profile: Profile; onSave: (p: Profil
   }
   const num = (k: keyof Profile, label: string, hint?: string, accent = false) => (
     <label className="field">{label}
-      <input type="number" inputMode="decimal" value={(p[k] as number | null) ?? ""} placeholder={hint} className={accent ? "accent" : ""}
-        onChange={(e) => setP({ ...p, [k]: toNum(e.target.value) })} />
+      <input type="text" inputMode="decimal" value={raw[k] ?? String((p[k] as number | null) ?? "")} placeholder={hint} className={accent ? "accent" : ""}
+        onChange={(e) => { setRaw({ ...raw, [k]: e.target.value }); edit({ ...p, [k]: toNum(e.target.value.trim().replace(",", ".")) }); }} />
     </label>
   );
   return (
     <form className="card rise" style={stagger(3)} onSubmit={save}>
       <SectionHead title="Profile" />
+      <fieldset disabled={!ready} style={{ border: 0, padding: 0, margin: 0 }}>
       <div className="grid-form" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))" }}>
         <label className="field">Date of birth
-          <input type="date" value={p.date_of_birth ?? ""} onChange={(e) => setP({ ...p, date_of_birth: e.target.value || null })} />
+          <input type="date" value={p.date_of_birth ?? ""} onChange={(e) => edit({ ...p, date_of_birth: e.target.value || null })} />
         </label>
         {num("height_cm", "Height (cm)", "cm")}
         {num("ftp_override", "FTP (W)", "estimated from rides", !p.ftp_override)}
         {num("max_hr_override", "Max heart rate", "from your rides")}
         {num("resting_hr_override", "Resting heart rate", "optional")}
         <label className="field">Dumbbell weights in Hevy
-          <select value={p.dumbbell_weights} onChange={(e) => setP({ ...p, dumbbell_weights: e.target.value as Profile["dumbbell_weights"] })}>
+          <select value={p.dumbbell_weights} onChange={(e) => edit({ ...p, dumbbell_weights: e.target.value as Profile["dumbbell_weights"] })}>
             <option value="pair">Total of both dumbbells</option>
             <option value="each">Per dumbbell</option>
           </select>
@@ -205,6 +263,7 @@ function ProfileCard({ profile, onSave }: { profile: Profile; onSave: (p: Profil
         {msg && <span className="ok">{msg}</span>}
         {error && <span className="error">{error}</span>}
       </div>
+      </fieldset>
     </form>
   );
 }
@@ -251,31 +310,43 @@ export default function Body() {
   const [types, setTypes] = useState<MeasurementType[]>([]);
   const [checkins, setCheckins] = useState<Checkin[]>([]);
   const [profile, setProfile] = useState<Profile>(EMPTY);
+  const [ready, setReady] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const load = async () => {
-    const [t, c, p] = await Promise.all([
-      apiFetch<MeasurementType[]>("/api/measurement-types"),
-      apiFetch<Checkin[]>("/api/checkins"),
-      apiFetch<Profile>("/api/profile"),
-    ]);
-    setTypes(t);
-    setCheckins(c);
-    setProfile(p);
+    try {
+      const [t, c, p] = await Promise.all([
+        apiFetch<MeasurementType[]>("/api/measurement-types"),
+        apiFetch<Checkin[]>("/api/checkins"),
+        apiFetch<Profile>("/api/profile"),
+      ]);
+      setTypes(t);
+      setCheckins(c);
+      setProfile(p);
+      setReady(true);
+      setError(null);
+    } catch (e) {
+      setError((e as Error).message);
+    }
   };
   useEffect(() => { load(); }, []);
 
-  const saveProfile = async (p: Profile) => setProfile(await apiFetch<Profile>("/api/profile", { method: "PUT", body: JSON.stringify(p) }));
+  const saveProfile = async (change: Partial<Profile>) =>
+    setProfile(await apiFetch<Profile>("/api/profile", { method: "PATCH", body: JSON.stringify(change) }));
   const every = profile.reminder_weeks === 1 ? "week" : `${profile.reminder_weeks} weeks`;
 
   return (
     <>
       <PageHeader title="Body" sub={`A check-in every ${every}. Same time of day, before training.`} />
+      {error && (
+        <div className="note row spread"><span className="error">Couldn't load your body data: {error}</span><button className="btn" onClick={load}>Try again</button></div>
+      )}
       <CheckinCard types={types} checkins={checkins} weeks={profile.reminder_weeks} onSaved={load} />
-      <History types={types} checkins={checkins} />
+      <History types={types} checkins={checkins} onDeleted={load} />
       <div className="grid-auto" style={{ ["--min" as string]: "420px" }}>
-        <ProfileCard profile={profile} onSave={saveProfile} />
+        <ProfileCard profile={profile} ready={ready} onSave={saveProfile} />
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-          <ReminderCard profile={profile} onChange={(change) => saveProfile({ ...profile, ...change })} />
+          <ReminderCard profile={profile} ready={ready} />
           <GuideCard onAdded={load} />
         </div>
       </div>

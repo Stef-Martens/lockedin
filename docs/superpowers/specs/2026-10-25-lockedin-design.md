@@ -28,7 +28,7 @@ They want to use it **on their phone at the gym** (to see today's suggested work
 
 - Strava integration of any kind (its API terms forbid AI use). Do not add it.
 - Multi-user support, sign-up, sharing.
-- Push notifications / reminders outside the app.
+- Push notifications from the app itself. Reminders are a downloadable repeating calendar event (owner request, 2026-10-26); the phone calendar delivers them.
 - Writing data back to Hevy, Zwift or Apple Health.
 - A native mobile app (the responsive web app is enough).
 - Workout logging inside LockedIn during the gym session (Hevy stays the logger).

@@ -28,6 +28,10 @@ class Profile(BaseModel):
     reminder_hevy: bool = True
 
 
+class ProfilePatch(Profile):
+    """Same fields and limits as Profile; only the fields actually sent are changed."""
+
+
 class MeasurementType(BaseModel):
     name: str = Field(min_length=1, max_length=40)
     unit: str = Field(min_length=1, max_length=10)
@@ -54,6 +58,18 @@ def put_profile(body: Profile, conn: Connection = Depends(get_conn)) -> dict:
     conn.execute(text(f"update profile set {sets}, updated_at = now() where id = 1"), body.model_dump())
     if body.ftp_override != before:
         recompute_training_load(conn)
+    return get_profile(conn)
+
+
+@router.patch("/profile")
+def patch_profile(body: ProfilePatch, conn: Connection = Depends(get_conn)) -> dict:
+    changes = body.model_dump(exclude_unset=True)
+    if changes:
+        before = conn.execute(text("select ftp_override from profile where id = 1")).scalar()
+        sets = ", ".join(f"{f} = :{f}" for f in changes)
+        conn.execute(text(f"update profile set {sets}, updated_at = now() where id = 1"), changes)
+        if "ftp_override" in changes and changes["ftp_override"] != before:
+            recompute_training_load(conn)
     return get_profile(conn)
 
 

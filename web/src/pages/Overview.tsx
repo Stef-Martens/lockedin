@@ -24,6 +24,15 @@ function ago(iso: string): string {
   return days <= 0 ? "today" : days === 1 ? "yesterday" : `${days} days ago`;
 }
 
+const dayMonth = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" });
+
+function checkinText(d: OverviewData): string {
+  if (!d.last_checkin_on) return "No measurements yet; two minutes with a tape measure.";
+  if (!d.checkin_due) return `Next one on ${dayMonth(d.next_checkin_on)}.`;
+  const today = new Date().toLocaleDateString("en-CA", { timeZone: "Europe/Brussels" });
+  return d.next_checkin_on === today ? "Due today." : `Was due on ${dayMonth(d.next_checkin_on)}.`;
+}
+
 function TotalTile({ minutes, sessions, label }: { minutes: number; sessions: number; label: string }) {
   const shown = useCountUp(minutes);
   return (
@@ -133,9 +142,7 @@ export default function Overview() {
             {data.checkin_due && <span className="sync-dot live pulse" aria-hidden="true" />}
             <span>
               <strong style={{ color: "var(--ink)" }}>{data.checkin_due ? "Body check-in due." : "Body check-in up to date."}</strong>{" "}
-              {data.last_tape_measurement_on || !data.checkin_due
-                ? `Next one on ${new Date(`${data.next_checkin_on}T12:00:00Z`).toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" })}.`
-                : "No measurements yet; two minutes with a tape measure."}
+              {checkinText(data)}
             </span>
           </span>
           <span style={{ color: "var(--accent)", fontWeight: 600, whiteSpace: "nowrap" }}>{data.checkin_due ? "Check in" : "Open"}</span>

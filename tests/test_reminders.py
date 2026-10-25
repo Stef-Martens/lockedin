@@ -65,3 +65,33 @@ def test_overview_due_flags(client):
     o = client.get("/api/overview", headers=H).json()
     assert o["checkin_due"] is True and o["next_checkin_on"] == "2026-10-26"
     assert o["hevy_due"] is True and o["hevy_last_upload_at"] is None and o["measure_due"] is True
+
+
+def test_calendar_lines_are_folded_and_timezone_defined(conn):
+    ics = calendar_ics(conn, TODAY, "https://a-very-long-preview-host-name-for-lockedin-testing.vercel.app")
+    lines = ics.split("\r\n")
+    assert all(len(l.encode()) <= 75 for l in lines)
+    assert "BEGIN:VTIMEZONE" in lines and "TZID:Europe/Brussels" in lines
+    unfolded = ics.replace("\r\n ", "")
+    assert "URL:https://a-very-long-preview-host-name-for-lockedin-testing.vercel.app/body" in unfolded.split("\r\n")
+    assert "Upload your latest Hevy export." in unfolded
+
+
+def test_brussels_midnight_boundary(conn):
+    measure(conn, date(2026, 10, 12))
+    # 25 Oct 23:30 UTC is already 26 Oct in Brussels: the check-in is due
+    assert checkin_due(conn, datetime(2026, 10, 25, 23, 30, tzinfo=UTC).astimezone(__import__("lockedin.timeutil", fromlist=["TZ"]).TZ).date())
+
+
+def test_hevy_exactly_seven_days_is_due(conn):
+    log_hevy(conn, NOW - timedelta(days=7))
+    assert hevy_due(conn, NOW)[0] is True
+
+
+def test_overview_overdue_wording_fields(client):
+    from lockedin.app import app
+    from lockedin.routes.overview import get_now
+    client.post("/api/checkins", json={"measured_on": "2026-10-01", "values": {"1": 78}}, headers=H)
+    app.dependency_overrides[get_now] = lambda: NOW
+    o = client.get("/api/overview", headers=H).json()
+    assert (o["checkin_due"], o["next_checkin_on"], o["last_checkin_on"]) == (True, "2026-10-15", "2026-10-01")

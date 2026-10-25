@@ -1,4 +1,5 @@
-from datetime import date
+import math
+from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel
@@ -18,9 +19,17 @@ class CheckIn(BaseModel):
     values: dict[int, float | None]
 
 
+MAX_VALUE = 1000  # no body measurement in kg or cm gets near this; catches typos like 7840
+
+
 @router.post("/checkins", status_code=201)
-def save_checkin(body: CheckIn, conn: Connection = Depends(get_conn)) -> dict:
-    values = {t: round(v, 2) for t, v in body.values.items() if v is not None and v > 0}
+def save_checkin(body: CheckIn, conn: Connection = Depends(get_conn), now: datetime = Depends(get_now)) -> dict:
+    if body.measured_on > now.astimezone(TZ).date():
+        raise HTTPException(422, "That date is in the future.")
+    values = {t: v for t, v in body.values.items() if v is not None and v > 0}
+    if bad := [v for v in values.values() if not math.isfinite(v) or v >= MAX_VALUE]:
+        raise HTTPException(422, f"That value looks wrong: {bad[0]}. Check for a typo.")
+    values = {t: round(v, 2) for t, v in values.items()}
     if not values:
         raise HTTPException(422, "Fill in at least one measurement.")
     known = set(conn.execute(text("select id from measurement_types where id = any(:ids)"), {"ids": list(values)}).scalars())
@@ -40,6 +49,13 @@ def list_checkins(conn: Connection = Depends(get_conn)) -> list[dict]:
     for r in conn.execute(text("select measured_on, type_id, value from measurements order by measured_on desc, type_id")):
         out.setdefault(r.measured_on, {})[str(r.type_id)] = r.value
     return [{"measured_on": d, "values": v} for d, v in out.items()]
+
+
+@router.delete("/checkins/{measured_on}", status_code=204)
+def delete_checkin(measured_on: date, conn: Connection = Depends(get_conn)) -> Response:
+    if not conn.execute(text("delete from measurements where measured_on = :d returning id"), {"d": measured_on}).first():
+        raise HTTPException(404, "No check-in on that date.")
+    return Response(status_code=204)
 
 
 @router.get("/reminders/calendar.ics")

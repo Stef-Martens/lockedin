@@ -72,7 +72,7 @@ function Empty({ what, charts }: { what: string; charts: string[] }) {
         {charts.map((c, n) => (
           <Card key={c} i={n + 2}>
             <h2 className="muted" style={{ fontSize: 18 }}>{c}</h2>
-            <svg className="ghost" viewBox="0 0 400 140" style={{ width: "100%", height: "auto", animationDelay: `${n * 0.3}s` }}>
+            <svg className="shimmer" viewBox="0 0 400 140" style={{ width: "100%", height: "auto", animationDelay: `${n * 0.3}s` }}>
               <polyline points={n % 2 ? "10,110 80,96 150,100 220,80 290,84 390,64" : "10,100 70,90 130,104 190,76 260,82 330,62 390,58"}
                 fill="none" stroke="#3a3e42" strokeWidth="5" strokeLinejoin="round" strokeLinecap="round" />
             </svg>
@@ -262,6 +262,8 @@ function Gym() {
   const [failed, setFailed] = useState(false);
   const [picked, setPicked] = useState<number | null>(null);
   const [progress, setProgress] = useState<Progress | null>(null);
+  const [progressFailed, setProgressFailed] = useState(false);
+  const [progressTry, setProgressTry] = useState(0);
 
   const load = () => {
     setFailed(false);
@@ -283,8 +285,9 @@ function Gym() {
   useEffect(load, []);
   useEffect(() => {
     setProgress(null);
-    if (picked != null) apiFetch<Progress>(`/api/gym/exercises/${picked}`).then(setProgress).catch(() => undefined);
-  }, [picked]);
+    setProgressFailed(false);
+    if (picked != null) apiFetch<Progress>(`/api/gym/exercises/${picked}`).then(setProgress).catch(() => setProgressFailed(true));
+  }, [picked, progressTry]);
 
   if (failed) return <Failed retry={load} />;
   if (!cov || !exercises) return <p className="muted">Loading…</p>;
@@ -317,7 +320,10 @@ function Gym() {
                 <SeriesChart bare key={picked} title="" points={progress.sessions.map((s) => ({ x: dayMs(s.date), y: s.best_e1rm }))}
                   colorVar="--sport-gym" formatX={shortDate} formatY={(y) => `${y.toFixed(1)} kg`} formatTick={(y) => `${Math.round(y)}`} height={180} />
               </>
-            ) : <p className="muted">Loading…</p>}
+            ) : picked == null || (progress && !progress.sessions.length)
+              ? <p className="secondary">No weighted sets yet to chart.</p>
+              : progressFailed ? <p className="error">Couldn't load this exercise. <button className="btn ghost" onClick={() => setProgressTry((n) => n + 1)}>Try again</button></p>
+              : <p className="muted">Loading…</p>}
           </Card>
           <WeeklyBars title="Weekly volume" summary="kg × reps" rows={volume} dataKey="volume_kg" colorVar="--sport-gym"
             format={(v) => `${Math.round(v).toLocaleString("en-GB")} kg`} i={3} />
