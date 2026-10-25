@@ -40,10 +40,12 @@ export default function SeriesChart({ title, summary, points, colorVar, formatX,
 
   const chart = (
     <>
-      <div className="section-head" style={{ marginBottom: 6 }}>
-        <h2 style={{ fontSize: bare ? 18 : 22 }}>{title}</h2>
-        {summary && <span className="secondary num" style={{ fontSize: 14 }}>{summary}</span>}
-      </div>
+      {(title || summary) && (
+        <div className="section-head" style={{ marginBottom: 6 }}>
+          <h2 style={{ fontSize: bare ? 18 : 22 }}>{title}</h2>
+          {summary && <span className="secondary num" style={{ fontSize: 14 }}>{summary}</span>}
+        </div>
+      )}
       <ResponsiveContainer width="100%" height={height}>
         <LineChart data={points} margin={{ top: 12, right: 8, bottom: 0, left: 0 }} syncId={syncId}>
           <CartesianGrid vertical={false} stroke={grid} />
