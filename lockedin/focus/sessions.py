@@ -6,6 +6,11 @@ from sqlalchemy import Connection, text
 # Sessions that count toward totals, streaks, mix, wins and trends: no Watch duplicates, no casual walks.
 COUNTED_SQL = "superseded_by is null and coalesce(sub_type, '') not like 'walking%'"
 
+
+def counted(alias: str) -> str:
+    """COUNTED_SQL for a joined `activities` table alias."""
+    return f"{alias}.superseded_by is null and coalesce({alias}.sub_type, '') not like 'walking%'"
+
 FIELDS = ("id", "sport", "sub_type", "source", "start_at", "duration_s", "distance_m", "avg_hr", "max_hr", "np",
           "avg_power", "best_20m_power", "avg_pace_s_per_km", "swim_pace_s_per_100m")
 
