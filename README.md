@@ -117,6 +117,26 @@ If your Watch also recorded a Zwift ride (as "Indoor Cycle"), only the Zwift rid
 
 In Hevy: **Profile → Settings → Export & Import Data → Export Workouts**. Save the CSV and upload it on the **Import** page. Always upload the **full** export. Workouts you already have are left alone, edited ones are updated, and renamed ones are updated in place.
 
+## 6. Dashboard & focus suggestions
+
+The **Overview** page answers two questions: am I improving, and what should I focus on next. Everything there is calculated from your data. There's no AI involved yet; the coach comes in plan 3.
+
+- **Focus this week** shows up to 3 suggestions.
+  - **Gym:** each muscle gets weekly working sets: a set counts 1 for the main muscle and ½ for helping muscles, and warm-ups don't count. A muscle below its minimum is "low", and you get an exercise to add:
+    - **One you already do:** the weight comes from your recent sets (3 × 8–12, about 2 reps in reserve).
+    - **A new one:** estimated from a related lift you do, then lowered by 20% and marked "estimate, start light". With no basis for an estimate, no weight is shown.
+    - **Dumbbell weights** use the same convention as your Hevy logs. Set it under **Body → Dumbbell weights in Hevy** (default: total of both dumbbells).
+  - **Bike/run:** each session is labelled easy, steady, hard or long from time in heart-rate or power zones. If your last 3 weeks are missing a long session or a hard one, or are mostly hard, you get a concrete session with your own zone numbers.
+- **Recent wins** are personal bests from the last 2 weeks (estimated 1RM, 20-min power, longest, fastest) and "more consistent than last year".
+- **Streak** counts consecutive weeks with at least 2 sessions. After 7 days without training, the page opens with a "Welcome back" card instead of comparisons.
+- **Trends** has a page per sport: power, efficiency and best 20 min for the bike; pace and aerobic efficiency for runs; pace per 100 m for swims; and for the gym, muscle coverage, volume and progress per exercise. Exercises the library doesn't know appear under **Tag your exercises**.
+
+**Better numbers:**
+- Enter your **FTP** on the Body page. Zwift shows it in your profile. Estimating it from regular rides underestimates it, which makes rides look harder than they were.
+- Set **max heart rate** if you know it. Otherwise it's taken from your highest recorded value, or estimated as 220 − age.
+
+**Deploying an update with a new migration:** run `supabase db push` **before** `git push`, so the database is ready when the new code goes live.
+
 ## Troubleshooting
 
 | Symptom | Fix |
