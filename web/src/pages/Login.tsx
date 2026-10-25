@@ -12,7 +12,10 @@ export default function Login() {
     setBusy(true);
     setError(null);
     const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) setError("That email and password don't match. Try again.");
+    if (error) {
+      // Only a real credentials mismatch gets the friendly message; config problems show Supabase's reason.
+      setError(error.code === "invalid_credentials" ? "That email and password don't match. Try again." : error.message);
+    }
     setBusy(false);
   }
 
