@@ -8,7 +8,8 @@ from datetime import datetime, timedelta
 
 from lockedin.timeutil import parse_local
 
-DATE_FORMATS = ["%d %b %Y, %H:%M", "%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M"]
+# Hevy formats dates in the phone's locale: "24 Oct 2026, 16:29" or "Oct 24, 2026, 4:29 PM".
+DATE_FORMATS = ["%d %b %Y, %H:%M", "%b %d, %Y, %I:%M %p", "%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M"]
 REQUIRED = ("title", "start_time", "exercise_title")
 LBS_TO_KG = 0.45359237
 MILES_TO_KM = 1.609344
@@ -48,6 +49,11 @@ def _norm_header(h: str) -> str:
     return re.sub(r"\s+", "_", re.sub(r"[()]", "", h.strip().lower()))
 
 
+def _date(v: str) -> str:
+    # iOS puts narrow/no-break spaces before AM/PM
+    return v.replace("\u202f", " ").replace("\u00a0", " ").strip()
+
+
 def _blank(v: str | None) -> str | None:
     v = (v or "").strip()
     return v or None
@@ -85,9 +91,9 @@ def parse_hevy_csv(text: str) -> HevyParseResult:
             title, start_raw, exercise = r["title"].strip(), r["start_time"].strip(), r["exercise_title"].strip()
             if not exercise:
                 raise ValueError("no exercise name")
-            start = parse_local(start_raw, DATE_FORMATS)
+            start = parse_local(_date(start_raw), DATE_FORMATS)
             end_raw = _blank(r.get("end_time"))
-            end = parse_local(end_raw, DATE_FORMATS) if end_raw else start + timedelta(hours=1)
+            end = parse_local(_date(end_raw), DATE_FORMATS) if end_raw else start + timedelta(hours=1)
             if "weight_kg" in r:
                 weight = _num(r.get("weight_kg"))
             else:

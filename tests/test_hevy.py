@@ -130,3 +130,16 @@ def test_renamed_workout_updates_instead_of_duplicating(conn):
     assert (r.new, r.updated, r.unchanged) == (0, 1, 2)
     assert count(conn, "gym_workouts") == 3
     assert conn.execute(text("select title from gym_workouts order by activity_id")).scalars().all() == ["Push Day", "Pull Day", "Leg Day"]
+
+
+def test_us_style_dates_from_real_export():
+    # Real Hevy export (en-US locale): 'Oct 24, 2026, 4:29 PM'; some iOS versions use a narrow no-break space before PM
+    csv = ('title,start_time,end_time,exercise_title,set_index,set_type,weight_kg,reps\n'
+           '"Chest","Oct 24, 2026, 4:29 PM","Oct 24, 2026, 5:33 PM","Bench Press (Barbell)",0,normal,50,13\n'
+           '"Legs","Oct 2, 2026, 9:59 AM","Oct 2, 2026, 11:01 AM","Squat (Barbell)",0,normal,80,8\n')
+    p = parse_hevy_csv(csv)
+    assert p.skipped == []
+    chest, legs = p.workouts
+    assert chest.start_at == datetime(2026, 10, 24, 14, 29, tzinfo=UTC)  # 16:29 CEST
+    assert chest.end_at == datetime(2026, 10, 24, 15, 33, tzinfo=UTC)
+    assert legs.start_at == datetime(2026, 10, 2, 7, 59, tzinfo=UTC)
