@@ -258,3 +258,25 @@ a.tile { display: block; color: var(--ink); text-decoration: none; }
 .login-inner { width: 100%; max-width: 400px; display: flex; flex-direction: column; gap: 28px; }
 .wordmark { font-family: var(--display); font-weight: 700; font-size: 64px; letter-spacing: 0.04em; text-transform: uppercase; line-height: 0.95; }
 .wordmark span { color: var(--accent); }
+
+/* Activity table */
+.activity-table { display: flex; flex-direction: column; }
+.activity-row {
+  display: grid; grid-template-columns: 160px minmax(0, 1fr) 90px 100px 130px 60px; gap: 16px; align-items: center;
+  padding: 14px; border-top: 1px solid #202326; font-size: 15px;
+}
+.activity-row.head { border-top: 0; padding: 10px 14px; font-size: 12px; color: var(--ink-muted); text-transform: uppercase; letter-spacing: 0.1em; }
+.activity-row .r { text-align: right; }
+@media (max-width: 760px) {
+  .activity-row { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "act metric" "date time"; gap: 2px 12px; }
+  .activity-row > :nth-child(1) { grid-area: date; font-size: 13px; }
+  .activity-row > :nth-child(2) { grid-area: act; }
+  .activity-row > :nth-child(3) { grid-area: time; font-size: 13px; color: var(--ink-3); }
+  .activity-row > :nth-child(5) { grid-area: metric; }
+  .activity-row .hide-sm, .activity-row.head { display: none; }
+}
+
+/* Gym sets */
+.set-row { display: grid; grid-template-columns: 40px 64px 52px minmax(0, 1fr); gap: 12px; align-items: center; padding: 7px 0; border-top: 1px solid #222528; font-size: 15px; }
+.set-row.head { border-top: 0; font-size: 12px; color: var(--ink-muted); text-transform: uppercase; letter-spacing: 0.08em; padding-top: 0; }
+.set-row .r { text-align: right; }
