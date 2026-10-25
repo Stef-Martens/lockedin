@@ -8,6 +8,7 @@ import ActivityDetail from "./pages/ActivityDetail";
 import Body from "./pages/Body";
 import Import from "./pages/Import";
 import Login from "./pages/Login";
+import Overview from "./pages/Overview";
 
 export default function App() {
   const [session, setSession] = useState<Session | null | undefined>(undefined);
@@ -29,13 +30,13 @@ export default function App() {
   return (
     <Routes>
       <Route element={<Layout />}>
-        <Route index element={<Navigate to="/activities" replace />} />
+        <Route index element={<Overview />} />
         <Route path="activities" element={<Activities />} />
         <Route path="activities/:id" element={<ActivityDetail />} />
         <Route path="import" element={<Import />} />
         <Route path="body" element={<Body />} />
-        <Route path="login" element={<Navigate to="/activities" replace />} />
-        <Route path="*" element={<Navigate to="/activities" replace />} />
+        <Route path="login" element={<Navigate to="/" replace />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>
   );

@@ -102,7 +102,7 @@ h2 { font-size: 1.05rem; margin: 0 0 12px; }
   .topbar { justify-content: space-between; }
   .tabbar {
     position: fixed; bottom: 0; left: 0; right: 0; z-index: 10;
-    display: grid; grid-template-columns: repeat(3, 1fr);
+    display: grid; grid-template-columns: repeat(5, 1fr);
     padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
     background: var(--surface-raised); border-top: 1px solid var(--border);
   }
@@ -195,3 +195,16 @@ h2 { font-size: 1.05rem; margin: 0 0 12px; }
 /* Login */
 .login { max-width: 360px; margin: 12vh auto; padding: 0 var(--gutter); }
 .login h1 { font-size: 2rem; }
+
+/* Overview */
+.note-card { border-left: 3px solid var(--accent); }
+.focus-list { list-style: none; margin: 0; padding: 0; }
+.focus-list li { display: grid; grid-template-columns: auto 1fr; gap: 12px; align-items: start; padding: 10px 0; }
+.focus-list li + li { border-top: 1px solid var(--hairline); }
+.focus-list .dot { margin-top: 8px; }
+.wins { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 4px; }
+.win {
+  flex: 0 0 auto; min-width: 180px; max-width: 240px; text-decoration: none;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px;
+}
+a.win:hover { background: var(--wash); }
