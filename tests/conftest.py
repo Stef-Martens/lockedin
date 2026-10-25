@@ -19,6 +19,9 @@ OWNER_EMAIL = "me@example.com"
 JWT_SECRET = "test-secret-test-secret-test-secret-123"
 SYNC_TOKEN = "sync-test-token-0123456789"
 
+# Seeded by migrations and only read by the app (owner-tagged library rows are removed per test instead).
+REFERENCE_TABLES = {"muscles", "library_exercises", "library_muscles"}
+
 SEED_SQL = """
 insert into profile (id) values (1);
 insert into measurement_types (name, unit, kind) values
@@ -69,9 +72,11 @@ def engine():
 @pytest.fixture
 def clean_db(engine):
     with engine.begin() as c:
-        tables = c.execute(text("select tablename from pg_tables where schemaname='public'")).scalars().all()
+        tables = [t for t in c.execute(text("select tablename from pg_tables where schemaname='public'")).scalars()
+                  if t not in REFERENCE_TABLES]
         c.exec_driver_sql(f"truncate {', '.join(tables)} restart identity cascade")
         c.exec_driver_sql(SEED_SQL)
+        c.exec_driver_sql("delete from library_exercises where created_by <> 'seed'")
     return engine
 
 

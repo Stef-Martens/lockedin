@@ -3,6 +3,7 @@ from sqlalchemy import text
 TABLES = {
     "profile", "activities", "activity_streams", "fit_files", "exercises",
     "gym_workouts", "gym_sets", "measurement_types", "measurements", "import_log",
+    "muscles", "library_exercises", "library_muscles",
 }
 
 
@@ -27,3 +28,11 @@ def test_seeds(conn):
     assert conn.execute(text("select count(*) from profile")).scalar() == 1
     names = conn.execute(text("select name from measurement_types order by id")).scalars().all()
     assert names == ["Weight", "Chest", "Left arm", "Right arm", "Waist", "Hips", "Left thigh", "Right thigh", "Shoulders"]
+
+
+def test_new_tables_get_no_default_grants(conn):
+    rows = conn.execute(text(
+        "select defaclacl::text from pg_default_acl d join pg_namespace n on n.oid = d.defaclnamespace "
+        "where n.nspname = 'public'"
+    )).scalars().all()
+    assert not any("anon=" in acl or "authenticated=" in acl for acl in rows)
