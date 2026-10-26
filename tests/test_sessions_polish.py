@@ -84,3 +84,10 @@ def test_a_gps_gap_gives_no_absurd_split():
     splits = act.splits(_run(pts), (None, None))
     assert all(s["pace"] >= 120 for s in splits)
     assert splits[3]["pace"] == pytest.approx(300, abs=5) and splits[4]["pace"] == pytest.approx(300, abs=5)
+
+
+def test_an_auto_paused_run_doesnt_count_the_pause():
+    pts = [(t, t * 3.0, 3.0) for t in range(0, 301)]  # 900 m at 3 m/s
+    pts += [(300 + 120 + k, 900 + 3 + k * 3.0, 3.0) for k in range(0, 200)]  # watch paused 2 minutes, no samples
+    splits = act.splits(_run(pts), (None, None))
+    assert splits[0]["pace"] == pytest.approx(333, abs=3)

@@ -101,3 +101,11 @@ def test_body_goals_dont_tag_lifts(conn):
     add_gym(conn, NOW - timedelta(days=3), [("Chest Press (Machine)", 50, 10, "normal")], title="Push")
     conn.execute(text("insert into goals (text, area) values ('Chest 105 cm', 'body')"))
     assert goal_muscles(conn, NOW) == {}
+
+
+def test_a_goal_naming_two_lifts_tags_both():
+    from lockedin.plan.goals import goal_for
+    g = [{"id": 1, "text": "Bench press 100 kg, incline bench press 40 kg", "exercise": None, "status": "active"}]
+    known = ["Bench Press (Barbell)", "Incline Bench Press (Dumbbell)"]
+    assert goal_for("Bench Press (Barbell)", g, known) is not None
+    assert goal_for("Incline Bench Press (Dumbbell)", g, known) is not None

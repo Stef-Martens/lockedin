@@ -89,8 +89,14 @@ def splits(s, band: tuple[int | None, int | None]) -> list[dict] | None:
     speed = list(s.speed) if getattr(s, "speed", None) else None
     moving = [0.0]  # moving seconds up to each sample
     for i in range(1, len(t)):
-        still = speed is not None and (speed[i] or 0) <= MOVING and (d[i] or 0) - (d[i - 1] or 0) < 1
-        moving.append(moving[-1] + (0 if still else t[i] - t[i - 1]))
+        dt = t[i] - t[i - 1]
+        if d[i] is not None and d[i - 1] is not None and dt > 0:
+            # Judged on the distance covered in between, so a watch's auto-pause (no samples, then running speed)
+            # counts as stopped, and a GPS gap that jumped ahead counts as running.
+            still = (d[i] - d[i - 1]) / dt <= MOVING
+        else:
+            still = speed is not None and (speed[i] or 0) <= MOVING
+        moving.append(moving[-1] + (0 if still else dt))
     out: list[dict] = []
     last_m, last_i, k = 0.0, 0, 1
 

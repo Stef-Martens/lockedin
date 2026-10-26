@@ -27,19 +27,21 @@ def goal_for(exercise: str, goals: list[dict], known: list[str] | None = None) -
     base = base_name(exercise)
     longer = [b for b in {base_name(k) for k in known or []} if b != base and base and _words(base, b)]
 
-    def about_a_longer_lift(text: str, word: str) -> bool:
-        return any(_words(b, text) for b in longer if _words(word, b))
+    def mentions(word: str, text: str) -> bool:
+        """`word` in the goal, apart from where it's part of a longer lift's name ("incline bench press")."""
+        for b in longer:
+            if _words(word, b):
+                text = re.sub(rf"\b{re.escape(b)}\b", " ", text)
+        return _words(word, text)
 
     loose = [g for g in active if not g.get("exercise")]
     for g in loose:
-        text = g["text"].lower()
-        if base and _words(base, text) and not about_a_longer_lift(text, base):
+        if base and mentions(base, g["text"].lower()):
             return g
     first = base.split()[0] if base else ""
     if len(first) >= 4 and first not in STOP_WORDS:
         for g in loose:
-            text = g["text"].lower()
-            if _words(first, text) and not about_a_longer_lift(text, first):
+            if mentions(first, g["text"].lower()):
                 return g
     return None
 
