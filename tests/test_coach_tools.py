@@ -14,7 +14,8 @@ def run(conn, engine, name, args):
 
 def test_tool_definitions_are_strict_and_stream_eagerly():
     names = {t["name"] for t in TOOLS}
-    assert names == {"get_schema", "run_sql", "get_focus_facts", "get_goals", "save_goal", "mark_goals_reviewed"}
+    assert names == {"get_schema", "run_sql", "get_focus_facts", "get_goals", "save_goal", "mark_goals_reviewed",
+                     "get_agenda", "save_agenda"}
     for t in TOOLS:
         assert t["eager_input_streaming"] is True
         assert t["input_schema"]["additionalProperties"] is False

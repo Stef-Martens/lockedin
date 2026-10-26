@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 
 from sqlalchemy import Connection, text
 
+from lockedin.agenda.store import items_between
 from lockedin.focus.preferences import load_preferences
 from lockedin.timeutil import TZ
 
@@ -33,6 +34,12 @@ suggest seeing a professional.
 Training preferences: the context lists muscles the owner has left out (often because of an injury), exercises \
 they never want suggested, and their own notes. Respect them: never program left-out muscles or never-suggest \
 exercises, and take the notes into account.
+
+Agenda: the owner has a week agenda. When you work out a plan together, offer to put it in the agenda; call \
+save_agenda only after they agree to that exact plan (or change). Give Zwift rides as structured blocks, never as \
+XML: the app writes the Zwift file and the owner's Mac puts it into Zwift (they restart Zwift to see it). Gym days \
+use their Hevy routine names exactly. Keep titles short and without dates. The context shows today's and \
+tomorrow's agenda; use get_agenda for more.
 
 Goals:
 - Read their goals with get_goals when they're relevant. When a goal is about one lift, pass that exercise's exact \
@@ -71,6 +78,12 @@ def turn_context(conn: Connection, now: datetime) -> str:
         lines.append("Never suggest: " + ", ".join(prefs.never_exercises) + ".")
     if prefs.coach_notes:
         lines.append(f"Owner's notes: {prefs.coach_notes}")
+    today = local.date()
+    planned = items_between(conn, now, today, today + timedelta(days=1))
+    for label, d in (("today", today), ("tomorrow", today + timedelta(days=1))):
+        todo = [i["title"] + (" (optional)" if i["optional"] else "") + (" (done)" if i["done"] else "")
+                for i in planned if i["day"] == d.isoformat()]
+        lines.append(f"Agenda {label}: " + ("; ".join(todo) if todo else "nothing planned") + ".")
     return (f"Today is {local:%A} {local.day} {local:%B %Y}, {local:%H:%M} in Brussels. "
             f"The owner has {count}{':' + listed if goals else '.'}\n{checkin}"
             + "".join("\n" + line for line in lines))
