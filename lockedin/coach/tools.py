@@ -8,6 +8,7 @@ from pydantic import ValidationError
 from sqlalchemy import Connection, Engine, text
 
 from lockedin.agenda import store as agenda
+from lockedin.goals.progress import progress
 
 from lockedin.coach.sql import QueryRejected, run_readonly
 from lockedin.focus.facts import focus_facts
@@ -95,7 +96,8 @@ TOOLS = [
           {"action": {"type": "string", "enum": ["create", "update", "achieved", "dropped"]},
            "goal_id": {"type": "integer"},
            "text": {"type": "string", "description": "The goal in the owner's words, e.g. 'Bench press 100 kg'."},
-           "area": {"type": "string", "description": "bike, run, swim, gym, body or general."},
+           "area": {"type": "string", "enum": ["gym", "bike", "run", "swim", "body", "general"],
+                    "description": "What kind of goal: the app steers by it (focus tips, planner, agenda)."},
            "target": {"type": "string", "description": "When or how it's measured, e.g. 'by March 2027'."},
            "exercise": {"type": "string", "description": "Exact exercise name when the goal is about one lift, "
                         "e.g. 'Bench Press (Barbell)'."}},
@@ -158,12 +160,14 @@ def _save_goal(conn: Connection, args: dict, now: datetime) -> dict:
         goal_id = conn.execute(text(
             "insert into goals (text, area, target, exercise, created_at, updated_at) "
             "values (:text, :area, :target, :exercise, :now, :now) returning id"),
-            {"area": None, "target": None, "exercise": None, **fields, "now": now}).scalar_one()
+            {"target": None, "exercise": None, **fields, "area": fields.get("area") or "general", "now": now}).scalar_one()
     else:
         if "goal_id" not in args:
             raise ValueError(f"'{action}' needs goal_id.")
         if "text" in fields and not fields["text"]:
             raise ValueError("A goal's text can't be empty.")
+        if "area" in fields and not fields["area"]:
+            fields["area"] = "general"
         status = {"achieved": "achieved", "dropped": "dropped"}.get(action)
         sets = [f"{k} = :{k}" for k in fields] + (["status = :status"] if status else []) + ["updated_at = :now"]
         goal_id = conn.execute(text(f"update goals set {', '.join(sets)} where id = :id returning id"),
@@ -231,8 +235,10 @@ def execute_tool(name: str, args: object, *, conn: Connection, engine: Engine, n
         if name == "get_focus_facts":
             return _dump(focus_facts(conn, now)), False
         if name == "get_goals":
-            rows = conn.execute(text(f"select {GOAL_FIELDS} from goals order by created_at desc, id desc")).mappings()
-            return _dump([dict(r) for r in rows]), False
+            rows = [dict(r) for r in conn.execute(text(f"select {GOAL_FIELDS} from goals order by created_at desc, id desc")).mappings()]
+            for g in rows:
+                g["progress"] = progress(conn, now, g) if g["status"] == "active" else None
+            return _dump(rows), False
         if name == "save_goal":
             return _dump(_save_goal(conn, args, now)), False
         if name == "get_agenda":

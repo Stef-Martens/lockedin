@@ -33,7 +33,7 @@ def goal_for(exercise: str, goals: list[dict]) -> dict | None:
 
 def active_goals(conn: Connection) -> list[dict]:
     return [dict(r) for r in conn.execute(text(
-        "select id, text, target, exercise, status from goals where status = 'active' order by created_at, id"
+        "select id, text, target, exercise, status, area, created_at from goals where status = 'active' order by created_at, id"
     )).mappings()]
 
 

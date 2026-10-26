@@ -10,6 +10,7 @@ from lockedin.db import get_conn
 from lockedin.focus.consistency import comeback
 from lockedin.focus.preferences import load_preferences, prefs_hash
 from lockedin.plan.build import NoRoutine, build_plan, swap_item
+from lockedin.goals.progress import progress
 from lockedin.plan.goals import active_goals
 from lockedin.plan.routines import routine, routines
 from lockedin.routes.overview import get_now
@@ -130,5 +131,6 @@ def never(plan_id: int, item_id: str, conn: Connection = Depends(get_conn), now:
 
 
 @router.get("/goals/active")
-def goals_active(conn: Connection = Depends(get_conn)) -> list[dict]:
-    return [{"id": g["id"], "text": g["text"], "target": g["target"]} for g in active_goals(conn)]
+def goals_active(conn: Connection = Depends(get_conn), now: datetime = Depends(get_now)) -> list[dict]:
+    return jsonable_encoder([{"id": g["id"], "text": g["text"], "target": g["target"], "area": g["area"],
+                              "exercise": g["exercise"], "progress": progress(conn, now, g)} for g in active_goals(conn)])
