@@ -182,7 +182,33 @@ Before the gym, tap **Plan a workout**, on the Overview or the Muscles page.
 
 To deploy: `supabase db push`, then `git push`.
 
-## 8. AI coach
+## 8. Agenda
+
+The **Agenda** tab shows your week, Monday to Sunday, with what to do each day.
+
+- **Planning with the coach:** work out a week with the coach, then say something like "put it in my agenda". It only writes after you agree.
+  - **Changing it by chat:** "move the sweet spot to Friday" works too.
+  - **What the coach sees:** today's and tomorrow's plan, in every chat.
+- **Your own changes:**
+  - Tap a session to change its title, day or note, mark it optional, or delete it.
+  - Use **+ Add** on a day to add a gym routine, a run, a swim, a rest day or a note.
+- **Zwift workouts land in Zwift by themselves.** Rides the coach plans come with power targets.
+  - **How:** your Mac sync writes them into Zwift's custom workouts folder (`Documents/Zwift/Workouts/<your Zwift ID>`) as `YYYY-MM-DD Title.zwo`.
+  - **Finding them:** restart Zwift and they're under **Custom Workouts**, sorted by date.
+  - **When you move or delete one,** the file follows at the next sync. Past days are cleaned up.
+  - **Your own files are safe:** the sync keeps a list (`.lockedin-workouts.json`) and only ever changes files it wrote itself.
+  - **The tag:** a session shows **In Zwift ✓** once your Mac has fetched it.
+- **Ticking off happens by itself:**
+  - A Zwift session ticks off when a ride comes in that day.
+  - A gym day ticks off when a Hevy workout with that routine's name comes in.
+  - Runs and swims tick off by a run or swim that day.
+  - Anything left unticked just stays that way. There's no red.
+- **Today** shows at the top of the Overview.
+- **The sync now runs every 15 minutes,** so plans reach Zwift quickly. Run `sync/install.sh` once more to switch your Mac over.
+
+To deploy: `supabase db push`, then `git push`, then re-run `sync/install.sh` on your Mac.
+
+## 9. AI coach
 
 The **Coach** page is a chat with Claude about your training. Ask things like "what should I focus on this week?", "plan my next gym session" or "am I getting fitter on the bike?". It looks at your data before answering, so the advice uses your own lifts, zones and sessions.
 
