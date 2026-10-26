@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { Link, MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AgendaItem, AgendaWeek } from "../lib/agenda";
 import Agenda from "./Agenda";
@@ -23,7 +23,7 @@ const WEEK: AgendaWeek = {
   ],
 };
 
-const apiFetch = vi.fn((path: string, _init?: RequestInit) => {
+const apiFetch = vi.fn((path: string, _init?: RequestInit): Promise<unknown> => {
   if (path.startsWith("/api/plan/days")) return Promise.resolve({ days: [{ title: "Rug - Bicep", last_done: "2026-10-21", exercise_count: 6 }], missed_available: true, comeback: false, goals: [] });
   return Promise.resolve(WEEK);
 });
@@ -65,5 +65,69 @@ describe("Agenda page", () => {
     expect(screen.getByText("Done · 52′")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /Sweet Spot 3x10/ }));
     expect(navigate).toHaveBeenCalledWith("/agenda/2");
+  });
+
+  it("counts quick clicks on the week arrows from the URL", async () => {
+    await open();
+    apiFetch.mockImplementation(() => new Promise(() => undefined));  // the next weeks never arrive
+    fireEvent.click(screen.getByRole("button", { name: "Previous week" }));
+    fireEvent.click(screen.getByRole("button", { name: "Previous week" }));
+    const asked = apiFetch.mock.calls.map((c) => c[0]);
+    expect(asked).toContain("/api/agenda?week=2026-10-19");
+    expect(asked).toContain("/api/agenda?week=2026-10-12");
+    apiFetch.mockReset();
+  });
+
+  it("keeps the week asked for last when an older answer arrives late", async () => {
+    let slow!: (w: AgendaWeek) => void;
+    apiFetch.mockImplementation((path: string) => {
+      if (path === "/api/agenda?week=2026-10-26") return new Promise((r) => { slow = r as (w: AgendaWeek) => void; });
+      return Promise.resolve({ ...WEEK, week_start: "2026-11-02", items: [item({ id: 5, day: "2026-11-03", title: "Next week's ride", sport: "bike", routine: null })] });
+    });
+    render(<MemoryRouter initialEntries={["/agenda?week=2026-10-26"]}><Link to="/agenda?week=2026-11-02">go</Link><Agenda /></MemoryRouter>);
+    fireEvent.click(screen.getByText("go"));
+    await screen.findByText("Next week's ride");
+    slow(WEEK);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(screen.queryByText("Sweet Spot 3x10")).toBeNull();
+    expect(screen.getByText("Next week's ride")).toBeTruthy();
+    apiFetch.mockReset();
+  });
+
+  it("clears an error when you move to another week", async () => {
+    apiFetch.mockImplementation((path: string) => path === "/api/agenda?week=2026-10-19"
+      ? Promise.reject(new Error("Server hiccup")) : Promise.resolve(WEEK));
+    render(<MemoryRouter initialEntries={["/agenda?week=2026-10-19"]}><Link to="/agenda?week=2026-10-26">go</Link><Agenda /></MemoryRouter>);
+    await screen.findByText("Server hiccup");
+    fireEvent.click(screen.getByText("go"));
+    expect(await screen.findByText("Sweet Spot 3x10")).toBeTruthy();
+    apiFetch.mockReset();
+  });
+
+  it("drops the routine's name as title when you switch away from gym", async () => {
+    apiFetch.mockImplementation((path: string) => path.startsWith("/api/plan/days")
+      ? Promise.resolve({ days: [{ title: "Rug - Bicep", last_done: "2026-10-21", exercise_count: 6 }], missed_available: true, comeback: false, goals: [] })
+      : Promise.resolve(WEEK));
+    await open();
+    fireEvent.click(screen.getByRole("button", { name: "Add to Wednesday" }));
+    const dialog = await screen.findByRole("dialog");
+    await waitFor(() => expect((within(dialog).getByLabelText("Title") as HTMLInputElement).value).toBe("Rug - Bicep"));
+    fireEvent.change(within(dialog).getByLabelText("What"), { target: { value: "run" } });
+    expect((within(dialog).getByLabelText("Title") as HTMLInputElement).value).toBe("");
+    apiFetch.mockReset();
+  });
+
+  it("gives focus back to the + Add button when the sheet closes", async () => {
+    apiFetch.mockImplementation((path: string) => path.startsWith("/api/plan/days")
+      ? Promise.resolve({ days: [], missed_available: false, comeback: false, goals: [] }) : Promise.resolve(WEEK));
+    await open();
+    const add = screen.getByRole("button", { name: "Add to Wednesday" });
+    add.focus();
+    fireEvent.click(add);
+    await screen.findByRole("dialog");
+    fireEvent.keyDown(window, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(document.activeElement).toBe(add);
+    apiFetch.mockReset();
   });
 });

@@ -21,22 +21,23 @@ const TABS = ["/", "/agenda", "/coach", "/activities", "/muscles"];
 function MoreMenu({ links, active }: { links: typeof LINKS; active: boolean }) {
   const [open, setOpen] = useState(false);
   const wrap = useRef<HTMLDivElement>(null);
+  const button = useRef<HTMLButtonElement>(null);
   const { pathname } = useLocation();
   useEffect(() => setOpen(false), [pathname]);
   useEffect(() => {
     if (!open) return;
     const outside = (e: PointerEvent) => { if (!wrap.current?.contains(e.target as Node)) setOpen(false); };
-    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
+    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") { setOpen(false); button.current?.focus(); } };
     document.addEventListener("pointerdown", outside);
     document.addEventListener("keydown", esc);
     return () => { document.removeEventListener("pointerdown", outside); document.removeEventListener("keydown", esc); };
   }, [open]);
   return (
     <div className="tab-more" ref={wrap}>
-      <button className={active ? "active" : ""} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((o) => !o)}>More</button>
+      <button ref={button} className={active ? "active" : ""} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((o) => !o)}>More</button>
       {open && (
         <div className="tab-more-menu pop" role="menu">
-          {links.map((l) => <NavLink key={l.to} to={l.to} role="menuitem">{l.label}</NavLink>)}
+          {links.map((l) => <NavLink key={l.to} to={l.to} role="menuitem" onClick={() => setOpen(false)}>{l.label}</NavLink>)}
         </div>
       )}
     </div>

@@ -35,12 +35,15 @@ function ItemCard({ item, past, onOpen, i }: { item: AgendaItem; past: boolean; 
 
 function Sheet({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
+  const close = useRef(onClose);
+  close.current = onClose;
   useEffect(() => {
+    const opener = document.activeElement as HTMLElement | null;
     ref.current?.querySelector<HTMLElement>("input, select, textarea, button")?.focus();
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") close.current(); };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+    return () => { window.removeEventListener("keydown", onKey); opener?.focus(); };
+  }, []);
   return (
     <div className="sheet-backdrop" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div ref={ref} className="sheet pop" role="dialog" aria-modal="true" aria-label={title}>
@@ -68,7 +71,8 @@ function AddSheet({ day, onDone, onClose }: { day: string; onDone: () => void; o
   }, []);
   const setSport = (sport: AgendaSport) => setForm((f) => ({
     ...f, sport,
-    title: sport === "rest" ? "Rest" : sport === "gym" && f.routine ? f.routine : f.title === "Rest" ? "" : f.title,
+    title: sport === "rest" ? "Rest" : sport === "gym" && f.routine ? f.routine
+      : f.title === "Rest" || (f.sport === "gym" && f.title === f.routine) ? "" : f.title,
   }));
   const add = (e: FormEvent) => {
     e.preventDefault();
@@ -119,24 +123,32 @@ export default function Agenda() {
   const [adding, setAdding] = useState<string | null>(null);
   const navigate = useNavigate();
 
-  const load = () => apiFetch<AgendaWeek>(`/api/agenda${week ? `?week=${week}` : ""}`).then(setData).catch((e) => setError(e.message));
-  useEffect(() => { load(); }, [week]);  // eslint-disable-line react-hooks/exhaustive-deps
+  const [reloads, setReloads] = useState(0);
+  useEffect(() => {
+    let current = true;  // a slower, older week must not overwrite the one asked for last
+    setError(null);
+    apiFetch<AgendaWeek>(`/api/agenda${week ? `?week=${week}` : ""}`)
+      .then((d) => { if (current) setData(d); })
+      .catch((e) => { if (current) setError(e.message); });
+    return () => { current = false; };
+  }, [week, reloads]);
 
   if (error) return <p className="error">{error}</p>;
   if (!data) return <p className="muted">Loading…</p>;
   const days = weekDays(data.week_start);
   const range = `${fmt(days[0], { day: "numeric", month: "short" })} – ${fmt(days[6], { day: "numeric", month: "short" })}`;
   const isThisWeek = days.includes(data.today);
-  const done = () => { setAdding(null); load(); };
+  const done = () => { setAdding(null); setReloads((n) => n + 1); };
+  const from = week ?? data.week_start;  // from the URL, so quick clicks add up before the data arrives
   const training = data.items.filter((i) => !["rest", "other"].includes(i.sport));
 
   return (
     <>
       <PageHeader eyebrow={isThisWeek ? `This week · ${training.length} sessions planned` : `${training.length} sessions planned`} title="Agenda"
         right={<div className="row" style={{ gap: 8 }}>
-          <button className="btn" aria-label="Previous week" onClick={() => setParams({ week: shiftWeek(data.week_start, -1) })}>‹</button>
+          <button className="btn" aria-label="Previous week" onClick={() => setParams({ week: shiftWeek(from, -1) })}>‹</button>
           <span className="agenda-range">{range}</span>
-          <button className="btn" aria-label="Next week" onClick={() => setParams({ week: shiftWeek(data.week_start, 1) })}>›</button>
+          <button className="btn" aria-label="Next week" onClick={() => setParams({ week: shiftWeek(from, 1) })}>›</button>
           {!isThisWeek && <button className="btn" onClick={() => setParams({})}>Today</button>}
           <Link to="/coach" className="btn primary" style={{ textDecoration: "none" }}>Plan with coach</Link>
         </div>} />

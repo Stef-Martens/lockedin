@@ -18,4 +18,20 @@ describe("Layout", () => {
     fireEvent.click(screen.getByRole("button", { name: "More" }));
     expect(screen.getAllByRole("menuitem").map((m) => m.textContent)).toEqual(["Trends", "Body", "Import"]);
   });
+
+  it("gives focus back to More on Escape", () => {
+    render(<MemoryRouter><Routes><Route element={<Layout />}><Route index element={<p>home</p>} /></Route></Routes></MemoryRouter>);
+    const more = screen.getByRole("button", { name: "More" });
+    fireEvent.click(more);
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(document.activeElement).toBe(more);
+  });
+
+  it("closes More when you pick the page you're already on", () => {
+    render(<MemoryRouter initialEntries={["/body"]}><Routes><Route element={<Layout />}><Route path="body" element={<p>body</p>} /></Route></Routes></MemoryRouter>);
+    fireEvent.click(screen.getByRole("button", { name: "More" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Body" }));
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
 });
