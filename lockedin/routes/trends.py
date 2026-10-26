@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -9,6 +9,7 @@ from sqlalchemy import Connection, text
 from lockedin.auth import require_owner
 from lockedin.db import get_conn
 from lockedin.focus.coverage import muscle_coverage, unmapped_exercises
+from lockedin.focus.musclemap import muscle_map
 from lockedin.focus.sessions import counted
 from lockedin.focus.suggest import gym_suggestions
 from lockedin.focus.trends import bike_trends, gym_exercise_progress, gym_weekly_volume, run_trends, swim_trends
@@ -35,6 +36,12 @@ def trends(sport: str, weeks: int = 26, conn: Connection = Depends(get_conn), no
 @router.get("/muscles")
 def muscles(conn: Connection = Depends(get_conn)) -> list[dict]:
     return [dict(r._mapping) for r in conn.execute(text("select * from muscles order by sort"))]
+
+
+@router.get("/muscle-map")
+def muscle_map_week(week: date | None = None, conn: Connection = Depends(get_conn),
+                    now: datetime = Depends(get_now)) -> dict:
+    return jsonable_encoder(muscle_map(conn, now, week))
 
 
 @router.get("/gym/coverage")

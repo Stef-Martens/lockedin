@@ -26,6 +26,24 @@ def _gym_window(days: int, now: datetime) -> dict:
     return {"since": now - timedelta(days=days), "now": now}
 
 
+# One row per (muscle, working set): primary muscles get 1, secondary ½. Callers add a time filter on `a`.
+CREDIT_FROM = (
+    "from gym_sets s join activities a on a.id = s.workout_id join exercises e on e.id = s.exercise_id "
+    "join library_muscles lm on lm.exercise_name = e.name "
+    f"where {counted('a')} and s.set_type <> 'warmup' "
+)
+CREDIT = "case lm.role when 'primary' then 1.0 else 0.5 end"
+
+
+def set_credit(conn: Connection, since: datetime, until: datetime) -> dict[str, float]:
+    """Working sets per muscle for gym sessions with since < start_at <= until."""
+    rows = conn.execute(text(
+        f"select lm.muscle_key, sum({CREDIT}) {CREDIT_FROM} and a.start_at > :since and a.start_at <= :until "
+        "group by lm.muscle_key"
+    ), {"since": since, "until": until}).all()
+    return {k: float(v) for k, v in rows}
+
+
 def muscle_coverage(conn: Connection, now: datetime, days: int = 28) -> list[MuscleCoverage]:
     params = _gym_window(days, now)
     trained = conn.execute(text(
@@ -33,13 +51,7 @@ def muscle_coverage(conn: Connection, now: datetime, days: int = 28) -> list[Mus
     ), params).first()
     if not trained:
         return []
-    credit = dict(conn.execute(text(
-        "select lm.muscle_key, sum(case lm.role when 'primary' then 1.0 else 0.5 end) "
-        "from gym_sets s join activities a on a.id = s.workout_id join exercises e on e.id = s.exercise_id "
-        "join library_muscles lm on lm.exercise_name = e.name "
-        f"where {counted('a')} and a.start_at > :since and a.start_at <= :now "
-        "and s.set_type <> 'warmup' group by lm.muscle_key"
-    ), params).all())
+    credit = set_credit(conn, params["since"], now)
     weeks = days / 7
     out = []
     for m in conn.execute(text("select * from muscles order by sort")):
