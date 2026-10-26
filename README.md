@@ -71,6 +71,7 @@ Free projects **pause after about a week with no activity**. Your regular syncs 
    | `SYNC_TOKEN` | a long random string: `python3 -c "import secrets; print(secrets.token_urlsafe(32))"` |
    | `VITE_SUPABASE_URL` | same as `SUPABASE_URL` |
    | `VITE_SUPABASE_ANON_KEY` | the **anon / publishable** key (safe for the browser) |
+   | `ANTHROPIC_API_KEY` | for the AI coach (section 7); from [console.anthropic.com](https://console.anthropic.com) → API keys. Optional: without it, the Coach page shows a setup message |
 
    The service-role key does **not** go into Vercel.
 3. Deploy. Open `https://<your-app>.vercel.app` on your phone and sign in. To make it feel like an app, use Safari's **Share → Add to Home Screen**.
@@ -119,7 +120,7 @@ In Hevy: **Profile → Settings → Export & Import Data → Export Workouts**. 
 
 ## 6. Dashboard & focus suggestions
 
-The **Overview** page answers two questions: am I improving, and what should I focus on next. Everything there is calculated from your data. There's no AI involved yet; the coach comes in plan 3.
+The **Overview** page answers two questions: am I improving, and what should I focus on next. Everything there is calculated from your data, not by AI. The AI coach (section 7) builds on the same numbers.
 
 - **Focus this week** shows up to 3 suggestions.
   - **Gym:** each muscle gets weekly working sets: a set counts 1 for the main muscle and ½ for helping muscles, and warm-ups don't count. A muscle below its minimum is "low", and you get an exercise to add:
@@ -142,6 +143,24 @@ The **Overview** page answers two questions: am I improving, and what should I f
 
 **Deploying an update with a new migration:** run `supabase db push` **before** `git push`, so the database is ready when the new code goes live.
 
+## 7. AI coach
+
+The **Coach** page is a chat with Claude about your training. Ask things like "what should I focus on this week?", "plan my next gym session" or "am I getting fitter on the bike?". It looks at your data before answering, so the advice uses your own lifts, zones and sessions.
+
+- **What it can see:** your activities, gym sets, exercises, body measurements, profile and goals. It starts from the same focus analysis as the Overview, and it can run its own queries for anything else.
+- **What it can't do:**
+  - It can't see your raw uploaded files, the import log or your login details.
+  - It can't change any of your data. Its queries run under a separate read-only database role, inside a read-only transaction, with a 3-second time limit and at most 200 rows per query.
+  - The only thing it can write is a goal, and only after you agree in the chat.
+- **Goals:** tell it what you want to work on and it proposes a goal. Say yes and it's saved; active goals show next to the chat. About every 4 weeks it asks whether your goals still fit.
+- **Chats are saved**, so you can come back to one and continue.
+- **Setup:** add `ANTHROPIC_API_KEY` in Vercel (section 2) and redeploy. The key stays on the server; the browser never sees it.
+- **Model:** `claude-opus-5-5` by default. To change it, set `ANTHROPIC_MODEL`.
+- **If Claude declines a request:** Anthropic automatically retries it on another Claude model. This is the API's "fallbacks" option, and it's always on.
+- **Cost:** pay-as-you-go on your Anthropic account, at $4 per million tokens in and $20 per million out. A typical question costs roughly 5–15 cents; long chats cost more, because the whole chat is sent each time. Start a new chat when you change topic, and set a monthly spend limit in the Anthropic console.
+
+To deploy the coach: `supabase db push`, add `ANTHROPIC_API_KEY` in Vercel, then `git push`.
+
 ## Troubleshooting
 
 | Symptom | Fix |
@@ -151,6 +170,8 @@ The **Overview** page answers two questions: am I improving, and what should I f
 | Sync log shows `server said 401` | `SYNC_TOKEN` in `sync.env` doesn't match Vercel's, or is shorter than 16 characters. |
 | You're logged out right after signing in | `OWNER_EMAIL` on the server doesn't match the account you signed in with. |
 | Everything is slow or failing after a quiet week | Supabase paused the project; restore it in the dashboard. |
+| Coach says "The Anthropic API key was rejected" | Check `ANTHROPIC_API_KEY` in Vercel, then redeploy (env changes only apply to new deployments). |
+| Coach says "Claude is busy right now" | Rate limit or a temporary outage. Wait a minute and press Retry. |
 
 ## Layout
 
