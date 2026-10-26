@@ -50,12 +50,15 @@ const BACK_CENTER: Record<string, string> = {
 };
 const MIRROR = "matrix(-1 0 0 1 200 0)";
 
-export default function BodyFigure({ side, muscles, focused, pinned, onHover, onPin }: {
+export default function BodyFigure({ side, muscles, focused, pinned, onHover, onFocusMuscle, onPin }: {
   side: "front" | "back";
   muscles: MapMuscle[];
   focused: string | null;
   pinned: string | null;
+  /** Mouse over a muscle (null when it leaves). */
   onHover: (key: string | null) => void;
+  /** Keyboard focus on a muscle (null on blur). */
+  onFocusMuscle?: (key: string | null) => void;
   onPin: (key: string) => void;
 }) {
   const uid = useId().replace(/:/g, "");
@@ -85,7 +88,7 @@ export default function BodyFigure({ side, muscles, focused, pinned, onHover, on
           ? { tabIndex: 0, role: "button", "aria-label": m ? muscleLabel(m) : key, "aria-pressed": pinned === key }
           : { "aria-hidden": true })}
         onMouseEnter={() => onHover(key)} onMouseLeave={() => onHover(null)}
-        onFocus={() => onHover(key)} onBlur={() => onHover(null)}
+        onFocus={() => onFocusMuscle?.(key)} onBlur={() => onFocusMuscle?.(null)}
         onClick={() => onPin(key)} onKeyDown={primary ? onKey : undefined} />
     );
   };
@@ -104,7 +107,7 @@ export default function BodyFigure({ side, muscles, focused, pinned, onHover, on
         {[...combos.values()].map((sports) => (
           <pattern key={sports.join("-")} id={patternId(sports)} width={6 * sports.length} height="6"
             patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
-            {sports.map((s, i) => <rect key={s} x={i * 6} width="2.6" height="6" fill={CARDIO_COLOR[s]} />)}
+            {sports.map((s, i) => <rect key={s} x={i * 6} width="2.6" height="6" style={{ fill: CARDIO_COLOR[s] }} />)}
           </pattern>
         ))}
       </defs>

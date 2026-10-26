@@ -381,6 +381,8 @@ a.tile { display: block; color: var(--ink); text-decoration: none; }
 .muscle.pinned, .muscle:focus-visible { stroke: var(--ink); stroke-width: 1.8; }
 .muscle-stripes { pointer-events: none; transition: opacity 0.45s ease; }
 .mm-side { min-width: 0; }
+.mm-pinned { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--hairline); }
+.chip.on { background: var(--ink); color: var(--page); border-color: var(--ink); }
 .mm-big { font-family: var(--display); font-weight: 700; font-size: 34px; line-height: 1; color: var(--accent); }
 .mm-details h3 { margin: 0 0 4px; font-family: var(--display); text-transform: uppercase; letter-spacing: 0.06em; font-size: 20px; color: var(--ink); }
 .mm-bar { position: relative; height: 7px; background: var(--hairline); border-radius: 4px; margin: 8px 0 10px; }

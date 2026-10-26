@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type MouseEvent } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent } from "react";
 import { useSearchParams } from "react-router-dom";
 import BodyFigure from "../components/BodyFigure";
 import { Card, PageHeader } from "../components/ui";
@@ -11,6 +11,16 @@ const day = (iso: string, opts: Intl.DateTimeFormatOptions = { weekday: "short",
   new Date(`${iso}T12:00`).toLocaleDateString("en-GB", opts);
 const num = (x: number) => (Number.isInteger(x) ? `${x}` : x.toFixed(1));
 const SHADES = ["No gym sets", "A little", "On target", "Lots"];
+const GAP = 12;
+
+type Point = { x: number; y: number };
+/** Below-right of the cursor, kept inside the viewport (a panel taller than the screen starts at the top). */
+export function placeTip(cursor: Point, size: { w: number; h: number }, viewport: { w: number; h: number }): Point {
+  return {
+    x: Math.max(GAP, Math.min(cursor.x + 18, viewport.w - size.w - GAP)),
+    y: Math.max(GAP, Math.min(cursor.y + 18, viewport.h - size.h - GAP)),
+  };
+}
 
 function Details({ m, map }: { m: MapMuscle; map: MuscleMap }) {
   const max = Math.max(m.target_high, m.sets, 1);
@@ -74,9 +84,12 @@ export default function Muscles() {
   const week = raw && /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : null;  // anything else means this week
   const [map, setMap] = useState<MuscleMap | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [hover, setHover] = useState<string | null>(null);
+  const [hover, setHover] = useState<string | null>(null);         // mouse over a muscle on the body
+  const [chipHover, setChipHover] = useState<string | null>(null);  // mouse or focus on a "no gym work" chip
+  const [focusKey, setFocusKey] = useState<string | null>(null);    // keyboard focus on the body
   const [pinned, setPinned] = useState<string | null>(null);
-  const [tipAt, setTipAt] = useState<{ x: number; y: number } | null>(null);
+  const [cursor, setCursor] = useState<Point | null>(null);
+  const [tipPos, setTipPos] = useState<Point | null>(null);
   const [asList, setAsList] = useState(false);
   const tipRef = useRef<HTMLDivElement>(null);
 
@@ -96,12 +109,20 @@ export default function Muscles() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  const tipKey = hover && cursor && hover !== pinned ? hover : null;
+  // Place the panel after it has rendered, so it's measured with the muscle it's actually showing.
+  useLayoutEffect(() => {
+    if (!tipKey || !cursor || !tipRef.current) { setTipPos(null); return; }
+    const box = tipRef.current;
+    setTipPos(placeTip(cursor, { w: box.offsetWidth, h: box.offsetHeight }, { w: window.innerWidth, h: window.innerHeight }));
+  }, [tipKey, cursor]);
+
   if (error) return <p className="error">{error}</p>;
   if (!map) return <p className="muted">Loading…</p>;
 
   const byKey = new Map(map.muscles.map((m) => [m.key, m]));
-  // Pinned details stay in the side column; keyboard focus shows there too (the floating panel follows the mouse).
-  const sideKey = pinned ?? (tipAt ? null : hover);
+  // The side column shows the keyboard-focused muscle, else the pinned one; the floating panel follows the mouse.
+  const sideKey = focusKey ?? pinned;
   const untrained = map.muscles.filter((m) => m.sets === 0);
   const canBack = !!map.first_week && map.week_start > map.first_week;
   const go = (by: number) => {
@@ -112,11 +133,7 @@ export default function Muscles() {
   const sportsThisWeek = map.cardio.map((c) => c.sport);
   const togglePin = (key: string) => setPinned((p) => (p === key ? null : key));
 
-  const onMove = (e: MouseEvent) => {
-    const box = tipRef.current;
-    const w = box?.offsetWidth ?? 280, h = box?.offsetHeight ?? 200;
-    setTipAt({ x: Math.min(e.clientX + 18, window.innerWidth - w - 12), y: Math.min(e.clientY + 18, window.innerHeight - h - 12) });
-  };
+  const onMove = (e: MouseEvent) => setCursor({ x: e.clientX, y: e.clientY });
 
   return (
     <>
@@ -142,10 +159,11 @@ export default function Muscles() {
         {!map.first_week && <div className="note" style={{ marginBottom: 12 }}>Log a gym session in Hevy and import it to see your week fill in.</div>}
 
         <div className="mm-grid">
-          <div className="mm-figures" onMouseMove={onMove} onMouseLeave={() => setTipAt(null)}>
+          <div className="mm-figures" onMouseMove={onMove} onMouseLeave={() => setCursor(null)}>
             {(["front", "back"] as const).map((side) => (
               <figure key={side} className="mm-figure">
-                <BodyFigure side={side} muscles={map.muscles} focused={hover} pinned={pinned} onHover={setHover} onPin={togglePin} />
+                <BodyFigure side={side} muscles={map.muscles} focused={hover ?? chipHover ?? focusKey} pinned={pinned}
+                  onHover={setHover} onFocusMuscle={setFocusKey} onPin={togglePin} />
                 <figcaption>{side === "front" ? "Front" : "Back"}</figcaption>
               </figure>
             ))}
@@ -154,26 +172,28 @@ export default function Muscles() {
           <aside className="mm-side">
             <div className="mm-big num">{map.trained_count} / {map.muscles.length}</div>
             <div className="secondary" style={{ marginBottom: 16 }}>muscles trained in the gym</div>
-            {sideKey && byKey.get(sideKey) ? (
-              <>
-                <Details m={byKey.get(sideKey)!} map={map} />
-                {pinned && <button className="link-btn" style={{ marginTop: 10 }} onClick={() => setPinned(null)}>Unpin (Esc)</button>}
-              </>
-            ) : untrained.length > 0 ? (
+            {untrained.length > 0 ? (
               <>
                 <h2 style={{ fontSize: 16, marginBottom: 8 }}>No gym work yet</h2>
                 <div className="chips">
                   {untrained.map((m) => (
-                    <button key={m.key} className="chip" onMouseEnter={() => setHover(m.key)} onMouseLeave={() => setHover(null)}
+                    <button key={m.key} className={`chip${pinned === m.key ? " on" : ""}`} aria-pressed={pinned === m.key}
+                      onMouseEnter={() => setChipHover(m.key)} onMouseLeave={() => setChipHover(null)}
+                      onFocus={() => setChipHover(m.key)} onBlur={() => setChipHover(null)}
                       onClick={() => togglePin(m.key)}>
                       {m.cardio.map((c) => <span key={c.sport} className="dot" style={{ background: CARDIO_COLOR[c.sport], borderRadius: "50%" }} />)}
                       {m.name}
                     </button>
                   ))}
                 </div>
-                <p className="muted" style={{ fontSize: 13, marginBottom: 0 }}>Hover a muscle for details, click to keep them here.</p>
               </>
             ) : <p className="ok" style={{ margin: 0 }}>Every muscle got gym work this week.</p>}
+            {sideKey && byKey.get(sideKey) ? (
+              <div className="mm-pinned">
+                <Details m={byKey.get(sideKey)!} map={map} />
+                {pinned === sideKey && <button className="link-btn" style={{ marginTop: 10 }} onClick={() => setPinned(null)}>Unpin (Esc)</button>}
+              </div>
+            ) : <p className="muted" style={{ fontSize: 13, marginBottom: 0 }}>Hover a muscle for details, click to keep them here.</p>}
           </aside>
         </div>
 
@@ -201,9 +221,10 @@ export default function Muscles() {
         )}
       </Card>
 
-      {hover && !pinned && tipAt && byKey.get(hover) && (
-        <div ref={tipRef} className="mm-tip" style={{ left: tipAt.x, top: tipAt.y }} role="tooltip">
-          <Details m={byKey.get(hover)!} map={map} />
+      {tipKey && byKey.get(tipKey) && (
+        <div ref={tipRef} className="mm-tip" role="tooltip"
+          style={tipPos ? { left: tipPos.x, top: tipPos.y } : { left: cursor!.x + 18, top: cursor!.y + 18, visibility: "hidden" }}>
+          <Details m={byKey.get(tipKey)!} map={map} />
         </div>
       )}
     </>

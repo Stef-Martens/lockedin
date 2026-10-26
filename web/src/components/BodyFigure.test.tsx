@@ -38,4 +38,8 @@ describe("BodyFigure", () => {
     expect((front.match(/data-m="quads"[^>]*tabindex="0"|tabindex="0"[^>]*data-m="quads"/g) ?? []).length).toBe(1);
     expect(front).toContain('aria-label="quads: 0 sets this week, 46 minutes on the bike"');
   });
+
+  it("colours stripes through style, which every browser resolves for CSS variables", () => {
+    expect(html("front")).toMatch(/<rect[^>]*style="fill:var\(--sport-bike\)"/);
+  });
 });
