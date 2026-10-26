@@ -70,6 +70,7 @@ _BLOCK = {"type": "object", "required": ["type"], "properties": {
     "power": {"type": "number", "description": "steady, fraction of FTP"},
     "repeat": {"type": "integer"}, "on_s": {"type": "integer"}, "off_s": {"type": "integer"},
     "on_power": {"type": "number"}, "off_power": {"type": "number"}}}
+MAX_AGENDA_CHANGES = 30
 AGENDA_CHANGE = {"type": "object", "required": ["op"], "properties": {
     "op": {"type": "string", "enum": ["add", "update", "delete"]},
     "id": {"type": "integer", "description": "For update/delete: the item id from get_agenda."},
@@ -121,7 +122,7 @@ TOOLS = [
           "this exact plan or change in this conversation. All changes apply together or not at all. For Zwift "
           "rides, give structured `zwift.blocks` (powers as fractions of FTP); the app turns them into a Zwift "
           "workout file that the owner's Mac puts into Zwift. Don't put dates in titles.",
-          {"changes": {"type": "array", "maxItems": 30, "items": AGENDA_CHANGE}}, ["changes"]),
+          {"changes": {"type": "array", "maxItems": MAX_AGENDA_CHANGES, "items": AGENDA_CHANGE}}, ["changes"]),
 ]
 SCHEMAS = {t["name"]: t["input_schema"] for t in TOOLS}
 TYPES = {"string": str, "integer": int, "object": dict, "array": list, "number": (int, float), "boolean": bool}
@@ -204,6 +205,8 @@ def _get_agenda(conn: Connection, args: dict, now: datetime) -> list[dict]:
 
 
 def _save_agenda(conn: Connection, args: dict, now: datetime) -> list[dict]:
+    if len(args["changes"]) > MAX_AGENDA_CHANGES:
+        raise ValueError(f"At most {MAX_AGENDA_CHANGES} changes at a time; split them up.")
     out = []
     with conn.begin_nested():  # all changes or none
         for n, change in enumerate(args["changes"], 1):
@@ -215,7 +218,7 @@ def _save_agenda(conn: Connection, args: dict, now: datetime) -> list[dict]:
                 if op == "add":
                     out.append({"op": "added", **agenda.create(conn, now, agenda.ItemIn(**fields), "coach")})
                 elif op in ("update", "delete"):
-                    if not isinstance(change.get("id"), int):
+                    if type(change.get("id")) is not int:  # bool is an int to Python, not an id
                         raise ValueError(f"'{op}' needs the item's id (from get_agenda)")
                     if op == "update":
                         out.append({"op": "updated", **agenda.update(conn, now, change["id"], agenda.ItemPatch(**fields))})

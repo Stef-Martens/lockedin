@@ -81,11 +81,16 @@ def turn_context(conn: Connection, now: datetime) -> str:
     if prefs.coach_notes:
         lines.append(f"Owner's notes: {prefs.coach_notes}")
     today = local.date()
-    planned = items_between(conn, now, today, today + timedelta(days=1))
-    for label, d in (("today", today), ("tomorrow", today + timedelta(days=1))):
-        todo = [i["title"] + (" (optional)" if i["optional"] else "") + (" (done)" if i["done"] else "")
-                for i in planned if i["day"] == d.isoformat()]
-        lines.append(f"Agenda {label}: " + ("; ".join(todo) if todo else "nothing planned") + ".")
+    try:
+        with conn.begin_nested():  # a failed query mustn't poison the rest of the turn
+            planned = items_between(conn, now, today, today + timedelta(days=1))
+    except Exception:  # the chat works without it
+        lines.append("Agenda: unavailable right now.")
+    else:
+        for label, d in (("today", today), ("tomorrow", today + timedelta(days=1))):
+            todo = [i["title"] + (" (optional)" if i["optional"] else "") + (" (done)" if i["done"] else "")
+                    for i in planned if i["day"] == d.isoformat()]
+            lines.append(f"Agenda {label}: " + ("; ".join(todo) if todo else "nothing planned") + ".")
     return (f"Today is {local:%A} {local.day} {local:%B %Y}, {local:%H:%M} in Brussels. "
             f"The owner has {count}{':' + listed if goals else '.'}\n{checkin}"
             + "".join("\n" + line for line in lines))

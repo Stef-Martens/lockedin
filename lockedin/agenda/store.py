@@ -9,7 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from sqlalchemy import Connection, text
 
 from lockedin.agenda.actual import result_line
-from lockedin.agenda.zwo import ZwiftWorkout, duration_s, filename, render, summary
+from lockedin.agenda.zwo import ZwiftWorkout, duration_s, filename, render, strip_control, summary
 from lockedin.fitness import ftp_at
 from lockedin.focus.sessions import counted
 from lockedin.plan.routines import routines
@@ -54,9 +54,15 @@ class ItemIn(BaseModel):
     @field_validator("title")
     @classmethod
     def _title(cls, v: str) -> str:
-        if not v.strip():
+        v = strip_control(v).strip()
+        if not v:
             raise ValueError("Give it a title.")
-        return v.strip()
+        return v
+
+    @field_validator("note")
+    @classmethod
+    def _note(cls, v: str | None) -> str | None:
+        return strip_control(v, "\t\n") if v is not None else None
 
     @model_validator(mode="after")
     def _fits_sport(self):
@@ -89,6 +95,16 @@ class ItemPatch(BaseModel):
     targets: Targets | None = None
     goal_id: int | None = None
     sort: int | None = Field(None, ge=0, le=100)
+
+    @field_validator("title")
+    @classmethod
+    def _title(cls, v: str | None) -> str | None:
+        return strip_control(v) if v is not None else None
+
+    @field_validator("note")
+    @classmethod
+    def _note(cls, v: str | None) -> str | None:
+        return strip_control(v, "\t\n") if v is not None else None
 
 
 def local_today(now: datetime) -> date:

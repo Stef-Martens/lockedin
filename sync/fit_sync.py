@@ -39,6 +39,7 @@ WAIT_S = 90
 MAX_WAITS = 10
 SKIP_NAMES = {"inprogressactivity.fit"}  # Zwift's partial file during a ride
 MANIFEST = ".lockedin-workouts.json"
+RELEASED = "released"  # manifest value for a file of ours the owner edited: theirs now, left alone quietly
 
 Http = Callable[[str, str, bytes, dict], tuple[int, bytes]]
 
@@ -224,7 +225,7 @@ def _digest(data: bytes) -> str:
 
 
 def _load_manifest(path: Path) -> dict | None:
-    """{file name: sha256} of the files this script wrote; None if the file is damaged."""
+    """{file name: sha256, or RELEASED once the owner edited it} of the files this script wrote; None if damaged."""
     if not path.exists():
         return {}
     try:
@@ -281,12 +282,15 @@ def sync_workouts(cfg: dict, http: Http = urllib_http) -> tuple[int, int, list[s
         try:
             current = _digest(path.read_bytes()) if path.exists() else None
             if current is not None and current != digest:
+                if manifest.get(name) == RELEASED:  # edited by the owner earlier; already told them
+                    keep[name] = RELEASED
+                    continue
                 if name not in manifest:
                     warnings.append(f"Zwift workouts: {name} already exists and isn't from LockedIn; left it alone.")
                     continue
                 if current != manifest[name]:
                     warnings.append(f"Zwift workouts: {name} was changed in Zwift, so it's yours now; left it alone.")
-                    state.pop(name, None)
+                    state[name] = keep[name] = RELEASED
                     _save_manifest(folder, state)
                     continue
             if current != digest:

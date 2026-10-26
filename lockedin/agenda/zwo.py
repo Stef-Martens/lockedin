@@ -1,6 +1,7 @@
 """Structured Zwift workouts: validation, the .zwo file Zwift reads, its file name and a one-line summary."""
 
 import re
+import unicodedata
 import xml.etree.ElementTree as ET
 from datetime import date
 from typing import Annotated, Literal
@@ -70,10 +71,15 @@ def _num(x: float) -> str:
     return f"{x:g}"
 
 
+def strip_control(s: str, keep: str = "") -> str:
+    """Drop control characters (no XML file can hold most of them), apart from those in `keep`."""
+    return "".join(c for c in s if c in keep or unicodedata.category(c) != "Cc")
+
+
 def render(title: str, day: date, note: str | None, w: ZwiftWorkout) -> str:
     root = ET.Element("workout_file")
-    for tag, value in (("author", "LockedIn"), ("name", f"{day.isoformat()} {title}"),
-                       ("description", note or ""), ("sportType", "bike")):
+    for tag, value in (("author", "LockedIn"), ("name", f"{day.isoformat()} {strip_control(title)}"),
+                       ("description", strip_control(note or "", "\t\n")), ("sportType", "bike")):
         ET.SubElement(root, tag).text = value
     workout = ET.SubElement(root, "workout")
     for b in w.blocks:
@@ -94,7 +100,8 @@ def render(title: str, day: date, note: str | None, w: ZwiftWorkout) -> str:
 
 def filename(title: str, day: date) -> str:
     """'2026-10-29 Sweet Spot 3x10.zwo': safe on any file system, never a path."""
-    safe = re.sub(r"[^A-Za-z0-9 ._()×x-]", "-", title).strip(" .-") or "workout"
+    plain = "".join(c for c in unicodedata.normalize("NFKD", title) if not unicodedata.combining(c))  # Vélo → Velo
+    safe = re.sub(r"[^A-Za-z0-9 ._()×x-]", "-", plain).strip(" .-") or "workout"
     return f"{day.isoformat()} {safe}"[:80].rstrip(" .") + ".zwo"
 
 

@@ -1,4 +1,6 @@
 from fastapi import Depends, FastAPI, Request
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from lockedin.auth import require_owner
@@ -6,6 +8,16 @@ from lockedin.config import get_settings
 from lockedin.routes import activities, agenda, body, checkins, coach, fit, hevy, overview, plan, preferences, status, trends
 
 app = FastAPI(title="LockedIn", docs_url="/api/docs", openapi_url="/api/openapi.json")
+
+
+@app.exception_handler(RequestValidationError)
+async def _plain_messages(request: Request, exc: RequestValidationError) -> JSONResponse:
+    """Our own validators' messages are written for people; drop pydantic's "Value error, " in front."""
+    for err in exc.errors():
+        if isinstance(err.get("msg"), str):
+            err["msg"] = err["msg"].removeprefix("Value error, ")
+    return await request_validation_exception_handler(request, exc)
+
 app.include_router(fit.router)
 app.include_router(hevy.router)
 app.include_router(activities.router)

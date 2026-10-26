@@ -427,3 +427,16 @@ def test_a_damaged_manifest_means_hands_off(tmp_path):
     feed = Feed(served("a.zwo"))
     written, removed, warnings = fit_sync.sync_workouts(cfg, feed)
     assert (written, removed) == (0, 0) and warnings and feed.calls == 0
+
+
+def test_an_edited_lockedin_file_is_left_alone_quietly_after_the_first_note(tmp_path):
+    cfg, folder = zwift_cfg(tmp_path)
+    fit_sync.sync_workouts(cfg, Feed(served("a.zwo")))
+    (folder / "a.zwo").write_text("<workout_file>tweaked in Zwift's editor</workout_file>")
+    changed = [{"item_id": 1, "filename": "a.zwo", "content": "<workout_file>new plan</workout_file>"}]
+    assert fit_sync.sync_workouts(cfg, Feed(changed))[2]  # told once
+    written, _, warnings = fit_sync.sync_workouts(cfg, Feed(changed))
+    assert written == 0 and warnings == [] and "tweaked" in (folder / "a.zwo").read_text()
+    fit_sync.sync_workouts(cfg, Feed([]))  # no longer planned: still the owner's file
+    assert "tweaked" in (folder / "a.zwo").read_text()
+    assert "a.zwo" not in json.loads((folder / ".lockedin-workouts.json").read_text())
