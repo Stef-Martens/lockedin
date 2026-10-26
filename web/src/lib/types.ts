@@ -1,3 +1,4 @@
+import type { FocusItem } from "./focus";
 import type { Sport } from "./format";
 
 export interface ActivitySummary {
@@ -120,4 +121,32 @@ export interface Measurement {
   measured_on: string;
   value: number;
   note: string | null;
+}
+
+export type CardioSport = "bike" | "run" | "swim";
+/** A focus-engine gym suggestion; render it with focusLine({ type: "gym", ...s }). */
+export type GymSuggestion = Omit<Extract<FocusItem, { type: "gym" }>, "type">;
+
+export interface MapMuscle {
+  key: string;
+  name: string;
+  region: string;
+  target_low: number;
+  target_high: number;
+  sets: number;
+  days: { date: string; exercises: { name: string; sets: number }[] }[];
+  history: { week_start: string; sets: number }[];
+  last_trained: string | null;
+  lift: { exercise: string; first_e1rm: number; latest_e1rm: number; status: "trend" | "new" | "not_lately" } | null;
+  cardio: { sport: CardioSport; minutes: number }[];
+  suggestion: GymSuggestion | null;
+}
+
+export interface MuscleMap {
+  week_start: string;
+  is_current: boolean;
+  first_week: string | null;
+  trained_count: number;
+  cardio: { sport: CardioSport; minutes: number; days: string[] }[];
+  muscles: MapMuscle[];
 }
