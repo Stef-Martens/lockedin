@@ -8,6 +8,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from sqlalchemy import Connection, text
 
+from lockedin.agenda.actual import result_line
 from lockedin.agenda.zwo import ZwiftWorkout, duration_s, filename, render, summary
 from lockedin.fitness import ftp_at
 from lockedin.focus.sessions import counted
@@ -174,7 +175,10 @@ def items_between(conn: Connection, now: datetime, start: date, end: date) -> li
     done = _ticks(conn, rows, start, end)
     ftp = ftp_at(conn, now)
     goals = _goal_labels(conn, {r.goal_id for r in rows})
-    return [_out(r, ftp, local_today(now), done, goals) for r in rows]
+    items = [_out(r, ftp, local_today(now), done, goals) for r in rows]
+    for item in items:
+        item["result"] = result_line(conn, item) if item["done"] else None
+    return items
 
 
 def week(conn: Connection, now: datetime, any_day: date | None) -> dict:

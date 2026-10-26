@@ -4,7 +4,10 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import Connection
 
+from fastapi.encoders import jsonable_encoder
+
 from lockedin.agenda import store
+from lockedin.agenda.detail import detail
 from lockedin.auth import require_owner, require_sync
 from lockedin.db import get_conn
 from lockedin.routes.overview import get_now
@@ -24,6 +27,14 @@ def _problem(e: Exception) -> HTTPException:
 @router.get("")
 def get_week(week: date | None = None, conn: Connection = Depends(get_conn), now: datetime = Depends(get_now)) -> dict:
     return store.week(conn, now, week)
+
+
+@router.get("/{item_id}/detail")
+def item_detail(item_id: int, conn: Connection = Depends(get_conn), now: datetime = Depends(get_now)) -> dict:
+    try:
+        return jsonable_encoder(detail(conn, now, item_id))
+    except LookupError as e:
+        raise _problem(e) from None
 
 
 @router.post("", status_code=201)
