@@ -23,8 +23,11 @@ function block(kind: Kind, lines: string[], key: number): ReactNode {
     return kind === "ul" ? <ul key={key}>{items}</ul> : <ol key={key}>{items}</ol>;
   }
   if (kind === "table") {
-    const rows = lines.filter((l) => !/^\s*\|?\s*:?-{2,}/.test(l)).map(cells);
+    // The separator row (|---|---|) is the second line, or the first if the header went missing.
+    const isSeparator = (row: string[]) => row.every((c) => /^:?-+:?$/.test(c));
+    const rows = lines.map(cells).filter((r, i) => i > 1 || !isSeparator(r));
     const [head, ...body] = rows;
+    if (!head) return null;
     return (
       <div key={key} className="table-wrap">
         <table className="table">

@@ -17,18 +17,26 @@ ToolRunner = Callable[[str, object], tuple[str, bool]]
 
 def run_turn(llm: CoachLLM, *, history: list[dict], user_text: str, context: str, tool_runner: ToolRunner,
              max_rounds: int = 8) -> Iterator[dict]:
-    """Yields text/tool/done/error events, plus an `appended` event for each message added to `history`.
+    """Yields text/tool/done/error events, plus `appended` events listing messages added to `history`.
 
-    The user and context messages are only appended once the model has answered, so a failed turn leaves
-    the stored conversation valid (a system message must be followed by an assistant turn).
+    Each `appended` batch must be stored in one go: it always leaves the conversation valid to replay.
+    The user and context messages wait for the model's first answer (a system message must be followed
+    by an assistant turn), and a tool call waits for its results.
     """
     pending = [{"role": "user", "content": user_text}, {"role": "system", "content": context}]
 
-    def append(message: dict) -> Iterator[dict]:
-        for m in [*pending, message]:
-            history.append(m)
-            yield {"type": "appended", "message": m}
+    def append(*messages: dict) -> Iterator[dict]:
+        batch = [*pending, *messages]
+        history.extend(batch)
         pending.clear()
+        yield {"type": "appended", "messages": batch}
+
+    def run_tool(name: str, args: object) -> tuple[str, bool]:
+        try:
+            return tool_runner(name, args)
+        except Exception:
+            log.exception("coach tool %s crashed", name)
+            return f"The {name} tool failed. Try a different approach or tell the owner it isn't working.", True
 
     rounds = 0
     retries = 0
@@ -63,6 +71,11 @@ def run_turn(llm: CoachLLM, *, history: list[dict], user_text: str, context: str
         if final.stop_reason == "max_tokens" and uses:
             yield {"type": "error", "message": "That answer got too long; try a narrower question."}
             return
+        has_text = any(b.get("type") == "text" and b.get("text") for b in final.content)
+        if not uses and not has_text:
+            # An empty assistant turn can't be replayed, so it's never stored.
+            yield {"type": "error", "message": "The coach didn't answer. Try again."}
+            return
         if not uses:
             yield from append({"role": "assistant", "content": final.content})
             if final.stop_reason == "pause_turn":
@@ -73,14 +86,13 @@ def run_turn(llm: CoachLLM, *, history: list[dict], user_text: str, context: str
             yield {"type": "error", "message": "That took too many steps; try a narrower question."}
             return
 
-        yield from append({"role": "assistant", "content": final.content})
         results = []
         for use in uses:
             yield {"type": "tool", "name": use["name"], "status": "start"}
-            content, is_error = tool_runner(use["name"], use.get("input"))
+            content, is_error = run_tool(use["name"], use.get("input"))
             yield {"type": "tool", "name": use["name"], "status": "error" if is_error else "done"}
             results.append({"type": "tool_result", "tool_use_id": use["id"], "content": content, "is_error": is_error})
-        yield from append({"role": "user", "content": results})
+        yield from append({"role": "assistant", "content": final.content}, {"role": "user", "content": results})
         rounds += 1
         if rounds >= max_rounds:
             pending.append({"role": "system", "content": ANSWER_NOW})

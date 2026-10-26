@@ -19,6 +19,9 @@ from lockedin.routes.overview import get_now
 router = APIRouter(prefix="/api/coach", dependencies=[Depends(require_owner)])
 
 TITLE_CHARS = 60
+# Longer than the function's maxDuration, so a lock left behind by a killed function frees itself.
+TURN_LOCK = "5 minutes"
+INTERRUPTED = "Interrupted before the tool finished."
 
 
 def get_llm(settings: Settings = Depends(get_settings)) -> CoachLLM:
@@ -50,7 +53,15 @@ def _exists(conn: Connection, cid: int) -> None:
 def _history(conn: Connection, cid: int) -> list[dict]:
     rows = conn.execute(text("select role, content from coach_messages where conversation_id = :c order by id"),
                         {"c": cid})
-    return [{"role": r.role, "content": r.content} for r in rows]
+    history = [{"role": r.role, "content": r.content} for r in rows]
+    # Every tool call must have a result before the next turn; answer one left unanswered by a crash.
+    last = history[-1] if history else None
+    if last and last["role"] == "assistant" and isinstance(last["content"], list):
+        ids = [b["id"] for b in last["content"] if b.get("type") == "tool_use"]
+        if ids:
+            history.append({"role": "user", "content": [
+                {"type": "tool_result", "tool_use_id": i, "content": INTERRUPTED, "is_error": True} for i in ids]})
+    return history
 
 
 def display(history: list[dict]) -> list[dict]:
@@ -102,6 +113,12 @@ def send_message(cid: int, body: Message, llm: CoachLLM = Depends(get_llm),
                  engine: Engine = Depends(get_coach_engine), now: datetime = Depends(get_now)) -> StreamingResponse:
     with engine.begin() as conn:
         _exists(conn, cid)
+        locked = conn.execute(text(
+            "update coach_conversations set turn_started_at = now() where id = :c and "
+            f"(turn_started_at is null or turn_started_at < now() - interval '{TURN_LOCK}') returning id"
+        ), {"c": cid}).first()
+        if locked is None:
+            raise HTTPException(409, "The coach is still answering your last message in this chat. Give it a moment.")
         history = _history(conn, cid)
         context = turn_context(conn, now)
 
@@ -109,21 +126,26 @@ def send_message(cid: int, body: Message, llm: CoachLLM = Depends(get_llm),
         with engine.begin() as conn:
             return execute_tool(name, args, conn=conn, engine=engine, now=now)
 
-    def save(message: dict) -> None:
+    def save(messages: list[dict]) -> None:
         with engine.begin() as conn:
-            conn.execute(text("insert into coach_messages (conversation_id, role, content) "
-                              "values (:c, :r, cast(:content as jsonb))"),
-                         {"c": cid, "r": message["role"], "content": json.dumps(message["content"])})
+            for message in messages:
+                conn.execute(text("insert into coach_messages (conversation_id, role, content) "
+                                  "values (:c, :r, cast(:content as jsonb))"),
+                             {"c": cid, "r": message["role"], "content": json.dumps(message["content"])})
             conn.execute(text("update coach_conversations set updated_at = now(), "
                               "title = coalesce(title, :title) where id = :c"),
                          {"c": cid, "title": body.text[:TITLE_CHARS] + ("…" if len(body.text) > TITLE_CHARS else "")})
 
     def stream() -> Iterator[str]:
-        for event in run_turn(llm, history=history, user_text=body.text, context=context, tool_runner=run_tool):
-            if event["type"] == "appended":
-                save(event["message"])
-            else:
-                yield f"data: {json.dumps(event)}\n\n"
+        try:
+            for event in run_turn(llm, history=history, user_text=body.text, context=context, tool_runner=run_tool):
+                if event["type"] == "appended":
+                    save(event["messages"])
+                else:
+                    yield f"data: {json.dumps(event)}\n\n"
+        finally:
+            with engine.begin() as conn:
+                conn.execute(text("update coach_conversations set turn_started_at = null where id = :c"), {"c": cid})
 
     return StreamingResponse(stream(), media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})

@@ -29,4 +29,9 @@ describe("renderMarkdown", () => {
   it("keeps line breaks inside a paragraph", () => {
     expect(html("line one\nline two")).toBe("<p>line one<br/>line two</p>");
   });
+
+  it("survives a table that starts with its separator row and keeps rows that start with dashes", () => {
+    expect(() => html("|---|---|\n| a | b |")).not.toThrow();
+    expect(html("| Set | Note |\n|---|---|\n| -- | rest |")).toContain("<td>--</td>");
+  });
 });

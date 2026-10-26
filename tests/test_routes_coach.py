@@ -146,3 +146,34 @@ def test_goals_active_first(client, clean_db):
 ])
 def test_requires_owner(client, method, path):
     assert getattr(client, method)(path).status_code == 401
+
+
+def test_one_answer_at_a_time_per_chat(client, fake, clean_db):
+    fake.turns = [answer("ok")]
+    cid = new_conversation(client)
+    with clean_db.begin() as c:
+        c.execute(text("update coach_conversations set turn_started_at = now() where id = :c"), {"c": cid})
+    r = send(client, cid)
+    assert r.status_code == 409
+    assert r.json()["detail"] == "The coach is still answering your last message in this chat. Give it a moment."
+    with clean_db.begin() as c:  # a lock left by a killed function expires
+        c.execute(text("update coach_conversations set turn_started_at = now() - interval '6 minutes' where id = :c"),
+                  {"c": cid})
+    assert events(send(client, cid))[-1] == {"type": "done"}
+    with clean_db.begin() as c:
+        assert c.execute(text("select turn_started_at from coach_conversations where id = :c"), {"c": cid}).scalar() is None
+
+
+def test_a_dangling_tool_call_is_answered_before_replay(client, fake, clean_db):
+    cid = new_conversation(client)
+    with clean_db.begin() as c:
+        for role, content in [("user", "hi"), ("system", "CTX"),
+                              ("assistant", [tool_use(9, "get_goals")])]:
+            c.execute(text("insert into coach_messages (conversation_id, role, content) values (:c, :r, cast(:j as jsonb))"),
+                      {"c": cid, "r": role, "j": json.dumps(content)})
+    fake.turns = [answer("back")]
+    assert events(send(client, cid))[-1] == {"type": "done"}
+    sent = fake.calls[0]["messages"]
+    assert sent[3] == {"role": "user", "content": [
+        {"type": "tool_result", "tool_use_id": "tu_9", "content": "Interrupted before the tool finished.", "is_error": True}]}
+    assert sent[4] == {"role": "user", "content": "What should I focus on this week?"}

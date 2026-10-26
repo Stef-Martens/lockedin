@@ -70,7 +70,7 @@ def test_text_answer_streams_and_appends():
     assert kinds(events) == ["text", "done"]
     assert [m["role"] for m in history] == ["user", "system", "assistant"]
     assert history[0]["content"] == "What should I focus on?" and history[1]["content"] == "CTX"
-    assert [e["message"] for e in events if e["type"] == "appended"] == history
+    assert [m for e in events if e["type"] == "appended" for m in e["messages"]] == history
     assert llm.calls[0]["system"] == SYSTEM_PROMPT
 
 
@@ -191,7 +191,8 @@ def test_turn_context_mentions_date_and_goal_checkin(conn):
     conn.execute(text("update profile set last_goal_review_at = :t"), {"t": now - timedelta(days=10)})
     conn.execute(text("insert into goals (text) values ('Bench 100 kg')"))
     ctx = turn_context(conn, now)
-    assert "not due" in ctx and "1 active goal" in ctx
+    assert "not due" in ctx and "1 active goal" in ctx and "Bench 100 kg" in ctx
+    assert "clear shift" in ctx
     conn.execute(text("update profile set last_goal_review_at = :t"), {"t": now - timedelta(days=29)})
     assert "check-in is due" in turn_context(conn, now)
 
@@ -235,3 +236,58 @@ def test_anthropic_adapter_request_shape(monkeypatch):
     assert sent["model"] == "claude-opus-5-5" and sent["fallbacks"] == "default"
     assert sent["betas"] == ["server-side-fallback-2026-07-01"] and sent["cache_control"] == {"type": "ephemeral"}
     assert sent["output_config"] == {"effort": "medium"} and sent["system"] == [{"type": "text", "text": "SYS"}]
+
+
+
+def appended_batches(events):
+    return [[m["role"] for m in e["messages"]] for e in events if e["type"] == "appended"]
+
+
+def test_tool_call_and_its_results_are_stored_together():
+    llm = FakeLLM([tools_turn(tool_use(1, "get_goals")), answer("done")])
+    _, events = go(llm)
+    assert appended_batches(events) == [["user", "system", "assistant", "user"], ["assistant"]]
+    # nothing is handed over for storage before the tools have finished
+    first = next(i for i, e in enumerate(events) if e["type"] == "appended")
+    assert first > max(i for i, e in enumerate(events) if e["type"] == "tool")
+
+
+def test_a_crashing_tool_becomes_an_error_result():
+    def explode(name, args):
+        raise RuntimeError("db went away")
+
+    llm = FakeLLM([tools_turn(tool_use(1, "get_focus_facts")), answer("Sorry, couldn't read that.")])
+    history, events = go(llm, tool_runner=explode)
+    result = history[3]["content"][0]
+    assert result["is_error"] is True and result["tool_use_id"] == "tu_1" and "failed" in result["content"]
+    assert kinds(events)[-1] == "done"
+
+
+def test_an_empty_answer_is_an_error_and_not_stored():
+    for content, stop in [([], "end_turn"), ([{"type": "thinking", "thinking": "", "signature": "s"}], "max_tokens")]:
+        history, events = go(FakeLLM([([], content, stop)]))
+        assert events[-1] == {"type": "error", "message": "The coach didn't answer. Try again."}
+        assert history == []
+
+
+def test_mid_stream_overload_says_try_again(monkeypatch):
+    import anthropic
+    import httpx
+
+    from lockedin.coach.llm import AnthropicLLM
+
+    llm = AnthropicLLM(api_key="sk-test", model="claude-opus-5-5")
+    response = httpx.Response(200, request=httpx.Request("POST", "https://api.anthropic.com/v1/messages"))
+    err = anthropic.APIStatusError("Overloaded", response=response,
+                                   body={"type": "error", "error": {"type": "overloaded_error", "message": "Overloaded"}})
+
+    def stream(**kw):
+        raise err
+
+    monkeypatch.setattr(llm.client.beta.messages, "stream", stream)
+    try:
+        list(llm.stream(system="S", messages=[], tools=[]))
+    except CoachUnavailable as e:
+        assert str(e) == "Claude is having trouble right now; try again in a minute."
+    else:
+        raise AssertionError("expected CoachUnavailable")

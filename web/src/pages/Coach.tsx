@@ -83,6 +83,7 @@ export default function Coach() {
   const [goals, setGoals] = useState<Goal[]>([]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [live, setLive] = useState<ChatMessage | null>(null);
+  const [liveFor, setLiveFor] = useState<number | null>(null);  // the chat the live answer belongs to
   const [activity, setActivity] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<{ message: string; retry?: string } | null>(null);
@@ -92,6 +93,8 @@ export default function Coach() {
   const endRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const busy = live !== null;
+  const viewing = useRef(cid);
+  viewing.current = cid;
 
   const refreshSide = useCallback(() => {
     apiFetch<Conversation[]>("/api/coach/conversations").then(setList).catch(() => undefined);
@@ -99,16 +102,17 @@ export default function Coach() {
   }, []);
   useEffect(refreshSide, [refreshSide]);
 
+  const load = useCallback((chat: number) =>
+    apiFetch<{ messages: ChatMessage[] }>(`/api/coach/conversations/${chat}`)
+      .then((c) => { if (viewing.current === chat) setMessages(c.messages); }), []);
+
   useEffect(() => {
     setError(null);
     if (cid === null) { setMessages([]); return; }
     if (created.current === cid) { created.current = null; return; }  // we just made it and are streaming into it
     setLoading(true);
-    apiFetch<{ messages: ChatMessage[] }>(`/api/coach/conversations/${cid}`)
-      .then((c) => setMessages(c.messages))
-      .catch((e) => setError({ message: e.message }))
-      .finally(() => setLoading(false));
-  }, [cid]);
+    load(cid).catch((e) => setError({ message: e.message })).finally(() => setLoading(false));
+  }, [cid, load]);
 
   useEffect(() => {
     endRef.current?.scrollIntoView?.({ block: "end", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
@@ -125,11 +129,15 @@ export default function Coach() {
     let afterTool = false;
     setLive(current);
     let target = cid;
+    setLiveFor(target);
     let failed: string | null = null;
+    let ended = false;
+    let notSetUp = false;
     try {
       if (target === null) {
         target = (await apiFetch<{ id: number }>("/api/coach/conversations", { method: "POST" })).id;
         created.current = target;
+        setLiveFor(target);
         navigate(`/coach/${target}`, { replace: true });
         refreshSide();
       }
@@ -143,21 +151,25 @@ export default function Coach() {
           if (e.status === "start") setActivity(TOOL_ACTIVE[e.name] ?? "Working…");
           else { current = { ...current, tools: [...current.tools, e.name] }; afterTool = true; }
         } else if (e.type === "error") failed = e.message;
+        if (e.type === "done" || e.type === "error") ended = true;
         setLive(current);
       });
     } catch (e) {
-      if (e instanceof ApiError && e.status === 503) setSetup(e.detail);
+      if (e instanceof ApiError && e.status === 503) { setSetup(e.detail); notSetUp = true; }
       else failed = e instanceof Error ? e.message : "Something went wrong.";
     }
+    if (!failed && !ended && !notSetUp) failed = "The connection dropped. Try again.";
     setActivity(null);
     setLive(null);
-    if (current.text) setMessages((ms) => [...ms, current]);
-    if (failed || !current.text) {
-      // A failed turn isn't stored, so drop it from view and offer to send it again.
-      if (!current.text) setMessages((ms) => ms.slice(0, -1));
-      if (failed) setError({ message: failed, retry: message });
-    }
     refreshSide();
+    if (viewing.current !== target) return;  // the owner moved to another chat meanwhile
+    if (failed) {
+      setError({ message: failed, retry: message });
+      // Part of a failed turn may or may not have been stored; show exactly what was.
+      if (target !== null) load(target).catch(() => undefined);
+      else setMessages((ms) => ms.slice(0, -1));
+    } else if (notSetUp || !current.text) setMessages((ms) => ms.slice(0, -1));
+    else setMessages((ms) => [...ms, current]);
   }
 
   function onKey(e: KeyboardEvent<HTMLTextAreaElement>) {
@@ -222,7 +234,7 @@ export default function Coach() {
           )}
           <div className="msgs" aria-live="polite">
             {messages.map((m, n) => <Bubble key={n} m={m} />)}
-            {live && <Bubble m={live} live activity={activity} />}
+            {live && liveFor === cid && <Bubble m={live} live activity={activity} />}
           </div>
           {error && (
             <div className="note row spread" role="alert">

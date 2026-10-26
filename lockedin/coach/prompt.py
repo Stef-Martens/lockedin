@@ -45,17 +45,16 @@ tables wider than four columns. Use metric units. Talk to them directly as "you"
 
 def turn_context(conn: Connection, now: datetime) -> str:
     local = now.astimezone(TZ)
-    last, active = conn.execute(text(
-        "select (select last_goal_review_at from profile where id = 1), "
-        "(select count(*) from goals where status = 'active')"
-    )).one()
+    last = conn.execute(text("select last_goal_review_at from profile where id = 1")).scalar()
+    goals = conn.execute(text("select text, target from goals where status = 'active' order by created_at, id")).all()
     if last is None:
         checkin = "A goal check-in is due: their goals have never been reviewed."
     elif now - last >= GOAL_REVIEW_EVERY:
         checkin = f"A goal check-in is due: goals were last reviewed {(now - last).days} days ago."
     else:
-        checkin = (f"The goal check-in is not due (last reviewed {(now - last).days} days ago); "
-                   "only talk about goals if they bring it up.")
-    goals = f"{active} active goal{'' if active == 1 else 's'}."
+        checkin = (f"The regular goal check-in is not due (last reviewed {(now - last).days} days ago), but do "
+                   "bring goals up if their data shows a clear shift: a goal reached, or a sport they've stopped.")
+    count = f"{len(goals)} active goal{'' if len(goals) == 1 else 's'}"
+    listed = "".join(f"\n- {g.text}" + (f" ({g.target})" if g.target else "") for g in goals)
     return (f"Today is {local:%A} {local.day} {local:%B %Y}, {local:%H:%M} in Brussels. "
-            f"The owner has {goals} {checkin}")
+            f"The owner has {count}{':' + listed if goals else '.'}\n{checkin}")

@@ -71,7 +71,9 @@ class AnthropicLLM:
             raise CoachUnavailable("Couldn't reach Claude; check the connection and try again.") from None
         except a.APIStatusError as e:
             log.warning("coach API error %s: %s", e.status_code, e.message)
-            if e.status_code >= 500:
+            # Errors that arrive on an already-open stream carry the HTTP 200 of the stream itself.
+            kind = (e.body or {}).get("error", {}).get("type") if isinstance(e.body, dict) else None
+            if e.status_code >= 500 or e.status_code < 400 or kind in ("overloaded_error", "api_error"):
                 raise CoachUnavailable("Claude is having trouble right now; try again in a minute.") from None
             raise CoachUnavailable("The coach request was rejected; try starting a new conversation.") from None
         content = final.to_dict(mode="json")["content"]
