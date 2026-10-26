@@ -15,6 +15,14 @@ spec.loader.exec_module(fit_sync)
 NOW = 1_800_000_000.0
 
 
+@pytest.fixture(autouse=True)
+def fake_home(tmp_path, monkeypatch):
+    """Defaults like ~/Documents/Zwift/Workouts must never reach the real home folder in tests."""
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+
+
 def make(path: Path, data: bytes = b"fitdata", age_s: float = 3600) -> Path:
     path.write_bytes(data)
     os.utime(path, (NOW - age_s, NOW - age_s))
@@ -260,3 +268,108 @@ def test_empty_upload_is_not_an_error(tmp_path):
 
     report = fit_sync.sync_once(cfg(tmp_path), NOW, http=http)
     assert report.errors == [] and report.duplicates == 1
+
+
+# --- Zwift workouts from the agenda -----------------------------------------------------------------
+
+ZWO = "<workout_file><name>{}</name></workout_file>\n"
+
+
+def zwift_cfg(tmp_path, activities=None):
+    folder = tmp_path / "Workouts" / "8171441"
+    folder.mkdir(parents=True)
+    acts = activities or (tmp_path / "Activities")
+    acts.mkdir(exist_ok=True)
+    return {"LOCKEDIN_API": "https://x.test", "SYNC_TOKEN": "tok", "ZWIFT_ACTIVITIES_DIR": str(acts),
+            "ZWIFT_WORKOUTS_DIR": str(tmp_path / "Workouts")}, folder
+
+
+class Feed:
+    def __init__(self, served):
+        self.served = served
+        self.calls = 0
+
+    def __call__(self, url, token, body, headers):
+        if url.endswith("/api/agenda/zwift/sync"):
+            self.calls += 1
+            return 200, json.dumps(self.served).encode()
+        if url.endswith("/known"):
+            return 200, b'{"known": []}'
+        return 200, b'{"status": "imported"}'
+
+
+def served(*names):
+    return [{"item_id": i, "filename": n, "content": ZWO.format(n)} for i, n in enumerate(names, 1)]
+
+
+def test_writes_planned_workouts_and_a_manifest(tmp_path):
+    cfg, folder = zwift_cfg(tmp_path)
+    feed = Feed(served("2026-10-26 Recovery Spin 30.zwo", "2026-10-29 Sweet Spot 3x10.zwo"))
+    assert fit_sync.sync_workouts(cfg, feed)[:2] == (2, 0)
+    assert (folder / "2026-10-29 Sweet Spot 3x10.zwo").read_text() == ZWO.format("2026-10-29 Sweet Spot 3x10.zwo")
+    manifest = json.loads((folder / ".lockedin-workouts.json").read_text())
+    assert set(manifest) == {"2026-10-26 Recovery Spin 30.zwo", "2026-10-29 Sweet Spot 3x10.zwo"}
+    assert fit_sync.sync_workouts(cfg, feed)[:2] == (0, 0)  # unchanged: nothing rewritten
+
+
+def test_removes_only_its_own_unmodified_files(tmp_path):
+    cfg, folder = zwift_cfg(tmp_path)
+    fit_sync.sync_workouts(cfg, Feed(served("a.zwo", "b.zwo", "c.zwo")))
+    (folder / "b.zwo").write_text("<workout_file>edited by hand</workout_file>")
+    (folder / "mine.zwo").write_text("<workout_file>my own</workout_file>")
+    written, removed, _ = fit_sync.sync_workouts(cfg, Feed(served("c.zwo")))
+    assert (written, removed) == (0, 1)
+    assert not (folder / "a.zwo").exists()
+    assert (folder / "b.zwo").exists() and (folder / "mine.zwo").exists()  # edited and foreign files stay
+    assert set(json.loads((folder / ".lockedin-workouts.json").read_text())) == {"c.zwo"}
+
+
+def test_never_overwrites_a_file_it_did_not_write(tmp_path):
+    cfg, folder = zwift_cfg(tmp_path)
+    (folder / "a.zwo").write_text("<workout_file>my own</workout_file>")
+    written, _, warnings = fit_sync.sync_workouts(cfg, Feed(served("a.zwo")))
+    assert written == 0 and "my own" in (folder / "a.zwo").read_text() and warnings
+
+
+def test_rejects_unsafe_names(tmp_path):
+    cfg, folder = zwift_cfg(tmp_path)
+    written, _, warnings = fit_sync.sync_workouts(cfg, Feed(served("../escape.zwo", ".hidden.zwo", "sub/x.zwo")))
+    assert written == 0 and len(warnings) == 3
+    assert not (tmp_path / "Workouts" / "escape.zwo").exists()
+
+
+def test_no_zwift_folder_means_no_call(tmp_path):
+    feed = Feed(served("a.zwo"))
+    cfg = {"LOCKEDIN_API": "https://x.test", "SYNC_TOKEN": "tok", "ZWIFT_WORKOUTS_DIR": str(tmp_path / "nope")}
+    assert fit_sync.sync_workouts(cfg, feed)[2] and feed.calls == 0
+    (tmp_path / "two" / "111").mkdir(parents=True)
+    (tmp_path / "two" / "222").mkdir(parents=True)
+    cfg["ZWIFT_WORKOUTS_DIR"] = str(tmp_path / "two")
+    assert fit_sync.sync_workouts(cfg, feed)[2] and feed.calls == 0
+
+
+def test_feed_errors_never_block_uploads(tmp_path):
+    cfg, _ = zwift_cfg(tmp_path)
+    make(Path(cfg["ZWIFT_ACTIVITIES_DIR"]) / "ride.fit", b"ride")
+
+    def http(url, token, body, headers):
+        if url.endswith("/zwift/sync"):
+            raise OSError("network down")
+        if url.endswith("/known"):
+            return 200, b'{"known": []}'
+        return 200, b'{"status": "imported"}'
+
+    reports = fit_sync.run(cfg, now=lambda: NOW, sleep=lambda s: None, http=http)
+    assert reports[-1].uploaded == 1 and not reports[-1].errors
+    assert any("Zwift workouts" in w for w in reports[-1].warnings)
+
+
+def test_run_reports_workouts(tmp_path):
+    cfg, _ = zwift_cfg(tmp_path)
+    reports = fit_sync.run(cfg, now=lambda: NOW, sleep=lambda s: None, http=Feed(served("a.zwo")))
+    assert (reports[-1].workouts_written, reports[-1].workouts_removed) == (1, 0)
+
+
+def test_plist_runs_every_15_minutes():
+    plist = (ROOT / "sync" / "com.lockedin.fitsync.plist.template").read_text()
+    assert "<integer>900</integer>" in plist
