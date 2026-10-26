@@ -41,6 +41,9 @@ def run_readonly(engine: Engine, sql: str, max_rows: int = 200) -> dict:
             conn.exec_driver_sql("set local time zone 'Europe/Brussels'")
             raw = conn.execute(text("select coach.run_query(:q, :n)::text"), {"q": query, "n": max_rows + 1}).scalar_one()
             conn.rollback()
+            # Session-level advisory locks survive a rollback; behind a pooler the connection lives on.
+            conn.exec_driver_sql("select pg_advisory_unlock_all()")
+            conn.rollback()
     except DBAPIError as e:
         message = str(e.orig).splitlines()[0] if e.orig else str(e)
         raise QueryRejected(f"Postgres said: {message}") from None

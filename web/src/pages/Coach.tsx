@@ -13,6 +13,7 @@ type CoachEvent =
   | { type: "text"; text: string }
   | { type: "tool"; name: string; status: "start" | "done" | "error" }
   | { type: "done" }
+  | { type: "reset" }
   | { type: "error"; message: string };
 
 const TOOL_ACTIVE: Record<string, string> = {
@@ -101,6 +102,11 @@ export default function Coach() {
     apiFetch<Goal[]>("/api/coach/goals").then(setGoals).catch(() => undefined);
   }, []);
   useEffect(refreshSide, [refreshSide]);
+  useEffect(() => {  // say so up front when there's no API key, instead of after the first message
+    apiFetch<{ ready: boolean }>("/api/coach/status")
+      .then((s) => { if (!s.ready) setSetup("The coach isn't set up yet: add ANTHROPIC_API_KEY in Vercel."); })
+      .catch(() => undefined);
+  }, []);
 
   const load = useCallback((chat: number) =>
     apiFetch<{ messages: ChatMessage[] }>(`/api/coach/conversations/${chat}`)
@@ -115,7 +121,8 @@ export default function Coach() {
   }, [cid, load]);
 
   useEffect(() => {
-    endRef.current?.scrollIntoView?.({ block: "end", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+    const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    endRef.current?.scrollIntoView?.({ block: "end", behavior: reduced ? "auto" : "smooth" });
   }, [messages.length, live?.text.length, activity]);
 
   async function send(text: string) {
@@ -127,6 +134,7 @@ export default function Coach() {
     setMessages((ms) => [...ms, { role: "user", text: message, tools: [] }]);
     let current: ChatMessage = { role: "assistant", text: "", tools: [] };
     let afterTool = false;
+    let roundStart = 0;  // where this round's text began, so a restarted round can be dropped
     setLive(current);
     let target = cid;
     setLiveFor(target);
@@ -147,9 +155,11 @@ export default function Coach() {
           current = { ...current, text: current.text + (afterTool && current.text ? "\n\n" : "") + e.text };
           afterTool = false;
           setActivity(null);
+        } else if (e.type === "reset") {
+          current = { ...current, text: current.text.slice(0, roundStart) };
         } else if (e.type === "tool") {
           if (e.status === "start") setActivity(TOOL_ACTIVE[e.name] ?? "Working…");
-          else { current = { ...current, tools: [...current.tools, e.name] }; afterTool = true; }
+          else { current = { ...current, tools: [...current.tools, e.name] }; afterTool = true; roundStart = current.text.length; }
         } else if (e.type === "error") failed = e.message;
         if (e.type === "done" || e.type === "error") ended = true;
         setLive(current);

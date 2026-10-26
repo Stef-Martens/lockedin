@@ -1,4 +1,5 @@
 import { ApiError, authHeader, errorFrom } from "./api";
+import { supabase } from "./supabase";
 
 /** Split a chunk of a server-sent-event stream into JSON `data:` events, carrying any unfinished event over. */
 export function parseSSE(chunk: string, carry: string): { events: unknown[]; carry: string } {
@@ -15,6 +16,11 @@ export async function postStream(path: string, body: unknown, onEvent: (event: u
     method: "POST", signal, body: JSON.stringify(body),
     headers: { ...(await authHeader()), "Content-Type": "application/json" },
   });
+  if (res.status === 401) {  // same as apiFetch: the session expired, so sign in again
+    await supabase.auth.signOut();
+    window.location.assign("/login");
+    throw new ApiError(401, "Not signed in.");
+  }
   if (!res.ok) throw await errorFrom(res);
   if (!res.body) throw new ApiError(0, "No response stream.");
   const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();

@@ -23,7 +23,7 @@ class FakeLLM:
         self.turns = list(turns)
         self.calls = []
 
-    def stream(self, *, system, messages, tools):
+    def stream(self, *, system, messages, tools, tool_choice=None):
         self.calls.append({"system": system, "messages": copy.deepcopy(messages), "tools": tools})
         turn = self.turns.pop(0)
         if isinstance(turn, Exception):
@@ -165,7 +165,7 @@ def test_llm_failure_is_a_friendly_error():
 def test_unparseable_tool_json_retries_the_round():
     llm = FakeLLM([ValueError("bad json"), answer("ok")])
     history, events = go(llm)
-    assert kinds(events) == ["text", "done"] and len(llm.calls) == 2
+    assert kinds(events) == ["reset", "text", "done"] and len(llm.calls) == 2  # reset drops any partial text
 
 
 def test_history_is_sent_as_prefix():

@@ -246,13 +246,13 @@ The **Coach** page is a chat with Claude about your training. Ask things like "w
 
 - **What it can see:** your activities, gym sets, exercises, body measurements, profile and goals. It starts from the same focus analysis as the Overview, and it can run its own queries for anything else.
 - **What it can't do:**
-  - It can't see your raw uploaded files, the import log or your login details.
+  - It can't see your raw uploaded files, the import log, its own chat history or the login accounts table.
   - It can't change any of your data. Its queries run under a separate read-only database role, inside a read-only transaction, with a 3-second time limit and at most 200 rows per query.
   - The only thing it can write is a goal, and only after you agree in the chat.
 - **Goals:** tell it what you want to work on and it proposes a goal. Say yes and it's saved; active goals show next to the chat. About every 4 weeks it asks whether your goals still fit.
 - **Chats are saved**, so you can come back to one and continue.
 - **Setup:** add `ANTHROPIC_API_KEY` in Vercel (section 2) and redeploy. The key stays on the server; the browser never sees it.
-- **Model:** `claude-opus-5-5` by default. To change it, set `ANTHROPIC_MODEL`.
+- **Model:** `claude-opus-5-5` by default. To change it, set `ANTHROPIC_MODEL` to a model that supports mid-conversation system messages and `fallbacks: "default"`: Opus 5.5, Opus 5 or Fable 5.1. Others reject every message.
 - **If Claude declines a request:** Anthropic automatically retries it on another Claude model. This is the API's "fallbacks" option, and it's always on.
 - **Cost:** pay-as-you-go on your Anthropic account, at $4 per million tokens in and $20 per million out. A typical question costs roughly 5–15 cents; long chats cost more, because the whole chat is sent each time. Start a new chat when you change topic, and set a monthly spend limit in the Anthropic console.
 

@@ -23,7 +23,8 @@ class CoachUnavailable(Exception):
 
 
 class CoachLLM(Protocol):
-    def stream(self, *, system: str, messages: list[dict], tools: list[dict]) -> Iterator[dict | Final]:
+    def stream(self, *, system: str, messages: list[dict], tools: list[dict],
+               tool_choice: dict | None = None) -> Iterator[dict | Final]:
         """Yields {"type": "text", "text": ...} deltas, then one Final."""
 
 
@@ -44,8 +45,10 @@ class AnthropicLLM:
         self.client = anthropic.Anthropic(api_key=api_key, max_retries=2, timeout=120)
         self.model = model
 
-    def stream(self, *, system: str, messages: list[dict], tools: list[dict]) -> Iterator[dict | Final]:
+    def stream(self, *, system: str, messages: list[dict], tools: list[dict],
+               tool_choice: dict | None = None) -> Iterator[dict | Final]:
         a = self._anthropic
+        extra = {"tool_choice": tool_choice} if tool_choice else {}
         try:
             with self.client.beta.messages.stream(
                 model=self.model,
@@ -58,6 +61,7 @@ class AnthropicLLM:
                 cache_control={"type": "ephemeral"},
                 betas=["server-side-fallback-2026-07-01"],
                 fallbacks="default",
+                **extra,
             ) as stream:
                 for event in stream:
                     if event.type == "text":
@@ -69,6 +73,11 @@ class AnthropicLLM:
             raise CoachUnavailable("Claude is busy right now; try again in a minute.") from None
         except a.APIConnectionError:
             raise CoachUnavailable("Couldn't reach Claude; check the connection and try again.") from None
+        except a.BadRequestError as e:
+            if "too long" in str(e.message).lower() or "context" in str(e.message).lower():
+                raise CoachUnavailable("This chat got too long; start a new one.") from None
+            log.warning("coach API error 400: %s", e.message)
+            raise CoachUnavailable("The coach request was rejected; try starting a new conversation.") from None
         except a.APIStatusError as e:
             log.warning("coach API error %s: %s", e.status_code, e.message)
             # Errors that arrive on an already-open stream carry the HTTP 200 of the stream itself.

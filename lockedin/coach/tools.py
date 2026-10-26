@@ -40,8 +40,9 @@ profile (single row): avoid_muscles (left-out muscle keys), never_exercises, coa
   dumbbell_weights ('pair' = logged weight is both dumbbells together, 'each' = per hand), reminder_weeks,
   last_goal_review_at.
 agenda_items: id, day, sport ('gym'|'bike'|'run'|'swim'|'rest'|'other'), title, note, optional, routine (Hevy
-  routine name for gym), zwift (jsonb workout blocks), source ('coach'|'manual'). Use get_agenda to see done state.
-goals: id, text, area, target, exercise (exact lift name, if about one), status ('active'|'achieved'|'dropped'),
+  routine name for gym), zwift (jsonb workout blocks), targets (jsonb: distance_m, duration_s, pace_low/pace_high in
+  s/km or s/100 m, hr_zone), goal_id (the goal it serves), source ('coach'|'manual'). Use get_agenda for done state.
+goals: id, text, area ('gym'|'bike'|'run'|'swim'|'body'|'general'), target, exercise (exact lift name, if about one), status ('active'|'achieved'|'dropped'),
   source, created_at, updated_at.
 
 Tips: prefer get_focus_facts for coverage, suggestions, zones, plateaus and wins; use SQL for anything else.

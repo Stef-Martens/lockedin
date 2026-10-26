@@ -82,6 +82,12 @@ def display(history: list[dict]) -> list[dict]:
     return out
 
 
+@router.get("/status")
+def status(settings: Settings = Depends(get_settings)) -> dict:
+    """Whether the coach can answer (an API key is set), so the page can say so before you type."""
+    return {"ready": bool(settings.anthropic_api_key), "model": settings.anthropic_model}
+
+
 @router.get("/conversations")
 def conversations(conn: Connection = Depends(get_conn)) -> list[dict]:
     # A chat whose first message failed has nothing to show, so it stays out of the list.

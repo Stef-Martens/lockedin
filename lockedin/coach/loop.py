@@ -43,7 +43,9 @@ def run_turn(llm: CoachLLM, *, history: list[dict], user_text: str, context: str
     while True:
         final = None
         try:
-            for item in llm.stream(system=SYSTEM_PROMPT, messages=history + pending, tools=TOOLS):
+            final_round = rounds >= max_rounds
+            for item in llm.stream(system=SYSTEM_PROMPT, messages=history + pending, tools=TOOLS,
+                                   tool_choice={"type": "none"} if final_round else None):
                 if isinstance(item, Final):
                     final = item
                 else:
@@ -55,6 +57,7 @@ def run_turn(llm: CoachLLM, *, history: list[dict], user_text: str, context: str
             # Tool input JSON the SDK couldn't parse at all: there's no tool_use id to answer, so re-ask.
             retries += 1
             if retries <= JSON_RETRIES:
+                yield {"type": "reset"}  # drop this round's partial text; the round is asked again
                 continue
             yield {"type": "error", "message": "Something went wrong talking to the coach. Try again."}
             return
