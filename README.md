@@ -156,7 +156,33 @@ The **Overview** page answers two questions: am I improving, and what should I f
 
 **Deploying an update with a new migration:** run `supabase db push` **before** `git push`, so the database is ready when the new code goes live.
 
-## 7. AI coach
+## 7. Workout planner
+
+Before the gym, tap **Plan a workout**, on the Overview or the Muscles page.
+
+- **Your days are your Hevy routines.** When you start a workout from a routine in Hevy, the workout gets the routine's name. Every name you've used in the last 60 days becomes a day you can pick, e.g. "Chest - Schouders - Triceps". Its exercises are the ones from the last time you did it.
+- **A plan is that routine with today's changes marked:**
+  - **Targets:** each exercise shows what you did last time. If every set at your top weight reached 12 reps, it says go up: 2.5 kg, or 2 kg per dumbbell. Otherwise: same weight, aim for one more rep.
+  - **Variety:** at most one stuck lift (no progress in 6 weeks) is swapped for another exercise for the same muscle. A lift one of your goals is about is never swapped.
+  - **Extras, if you have time:** at most two exercises for muscles this day trains but your routine misses, with weights from your own lifts. New exercises are marked "start light".
+  - **Just what I've missed** is an alternative day: up to 5 exercises for your least-trained muscles.
+  - **After a week or more off,** plans keep last time's weights and skip the extras.
+- **Per exercise:**
+  - **Swap** gives another exercise for the same muscle.
+  - **⋯ → Skip for today** greys an exercise out.
+  - **⋯ → Don't suggest this again** is only shown on suggested exercises.
+- **Plans are saved for the day,** so they're the same when you reopen them at the gym. They rebuild by themselves the next day, after a newer Hevy import for that routine, or when you change preferences.
+- **Preferences** (from the planner):
+  - **Muscles to leave out**, e.g. lower back. The planner never targets them, they don't show as "no gym work yet" on the Muscles page, and the focus tips skip them. Exercises that only load them along the way (squats, rows) can still appear.
+  - **Exercises never to suggest.**
+  - **Notes for the coach.**
+
+  The AI coach reads all of these.
+- **Goals:** goals you set with the coach show on the Overview. A goal about one lift (e.g. "Bench 100 kg") also shows next to that exercise in your plans.
+
+To deploy: `supabase db push`, then `git push`.
+
+## 8. AI coach
 
 The **Coach** page is a chat with Claude about your training. Ask things like "what should I focus on this week?", "plan my next gym session" or "am I getting fitter on the bike?". It looks at your data before answering, so the advice uses your own lifts, zones and sessions.
 
