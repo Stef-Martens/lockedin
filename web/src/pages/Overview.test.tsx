@@ -20,8 +20,10 @@ const AGENDA = { week_start: "2026-10-26", today: "2026-10-29", items: [
 ] };
 const GOALS = [{ id: 1, text: "Bench 100 kg", target: "by March 2027", progress: { label: "96 / 100 kg est. 1RM", fraction: 0.96 } }];
 
+let failGoals = false;
 vi.mock("../lib/api", () => ({
-  apiFetch: (path: string) => Promise.resolve(path.startsWith("/api/overview") ? OVERVIEW : path.startsWith("/api/agenda") ? AGENDA : GOALS),
+  apiFetch: (path: string) => path.startsWith("/api/goals") && failGoals ? Promise.reject(new Error("down"))
+    : Promise.resolve(path.startsWith("/api/overview") ? OVERVIEW : path.startsWith("/api/agenda") ? AGENDA : GOALS),
 }));
 vi.mock("../components/WeeklyVolumeChart", () => ({ default: () => null }));
 afterEach(cleanup);
@@ -37,5 +39,12 @@ describe("Overview", () => {
     expect(screen.getByText(/Next · Friday: Rest/)).toBeTruthy();
     expect(await screen.findByText("96 / 100 kg est. 1RM")).toBeTruthy();
     expect(screen.getByText("toward: Run a 10K")).toBeTruthy();
+  });
+
+  it("says when goals couldn't be loaded instead of 'no goals'", async () => {
+    failGoals = true;
+    render(<MemoryRouter><Overview /></MemoryRouter>);
+    expect(await screen.findByText("Couldn't load your goals.")).toBeTruthy();
+    failGoals = false;
   });
 });

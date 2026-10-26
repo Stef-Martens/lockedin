@@ -22,8 +22,16 @@ function ItemMenu({ item, onAction }: { item: PlanItem; onAction: (action: "skip
     return () => document.removeEventListener("pointerdown", outside);
   }, [open]);
   const close = () => { setOpen(false); button.current?.focus(); };
-  const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { e.stopPropagation(); close(); } };
-  const choose = (action: "skip" | "never") => { setOpen(false); onAction(action); };
+  const onKey = (e: KeyboardEvent) => {
+    if (e.key === "Escape") { e.stopPropagation(); close(); return; }
+    const items = [...(menu.current?.querySelectorAll<HTMLButtonElement>("[role=menuitem]") ?? [])];
+    const at = items.indexOf(document.activeElement as HTMLButtonElement);
+    const next = { ArrowDown: at + 1, ArrowUp: at - 1, Home: 0, End: items.length - 1 }[e.key];
+    if (next === undefined || !items.length) return;
+    e.preventDefault();
+    items[(next + items.length) % items.length].focus();
+  };
+  const choose = (action: "skip" | "never") => { close(); onAction(action); };
   return (
     <span className="plan-menu" ref={wrap}>
       <button ref={button} className="btn small ghost" aria-label={`More for ${item.exercise}`} aria-haspopup="menu"
@@ -51,7 +59,7 @@ function ItemCard({ item, n, onAction }: { item: PlanItem; n: string; onAction: 
           {item.exercise}
         </div>
         <div className="row" style={{ gap: 4, flexWrap: "nowrap" }}>
-          <button className="btn small" aria-label={`Swap ${item.exercise}`} onClick={() => onAction("swap")}>Swap</button>
+          {item.muscle && <button className="btn small" aria-label={`Swap ${item.exercise}`} onClick={() => onAction("swap")}>Swap</button>}
           <ItemMenu item={item} onAction={onAction} />
         </div>
       </div>
@@ -108,17 +116,22 @@ function PlanView({ dayTitle, open }: { dayTitle: string | null; open: (params: 
   const [notice, setNotice] = useState<string | null>(null);
   const query = dayTitle ? `?day=${encodeURIComponent(dayTitle)}` : "";
 
+  const load = () => apiFetch<PlanData>(`/api/plan${query}`).then(setPlan).catch((e) => setError(e.message));
   useEffect(() => {
     setPlan(null);
     setError(null);
-    apiFetch<PlanData>(`/api/plan${query}`).then(setPlan).catch((e) => setError(e.message));
-  }, [query]);
+    load();
+  }, [query]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const act = (item: PlanItem) => (action: "swap" | "skip" | "never") => {
     setNotice(null);
     apiFetch<PlanData>(`/api/plan/${plan!.id}/items/${item.id}/${action}`, { method: "POST" })
       .then(setPlan)
-      .catch((e) => setNotice(e instanceof ApiError || e instanceof Error ? e.message : "That didn't work."));
+      .catch((e) => {
+        // The plan was rebuilt elsewhere (new day, new preferences): show the current one.
+        if (e instanceof ApiError && e.status === 404) { load(); return; }
+        setNotice(e instanceof Error ? e.message : "That didn't work.");
+      });
   };
   const rebuild = () => {
     setPlan(null);
@@ -138,11 +151,12 @@ function PlanView({ dayTitle, open }: { dayTitle: string | null; open: (params: 
       <PageHeader eyebrow={`${day(plan.built_on)} · ${main.length} exercises · ${working} working sets`}
         title={plan.day ?? "Just what I've missed"}
         right={<div className="row" style={{ gap: 8 }}>
-          <button className="btn" onClick={() => open({ prefs: "1", ...(dayTitle ? { from: dayTitle } : {}) })}>Preferences</button>
+          <button className="btn" onClick={() => open({ prefs: "1", ...(dayTitle ? { from: dayTitle } : { missed: "1" }) })}>Preferences</button>
           <button className="btn" onClick={rebuild}>New plan</button>
         </div>} />
       {plan.comeback && <div className="note accent rise">Welcome back: same weights as last time, no extras today. Ease in.</div>}
       {notice && <div className="note" role="status">{notice}</div>}
+      {plan.items.length === 0 && <p className="muted">Nothing stands out: every muscle has had its share lately. Pick one of your days instead.</p>}
       <div className="plan-list">
         {main.map((item, i) => <ItemCard key={item.id} item={item} n={`${i + 1}`} onAction={act(item)} />)}
       </div>
@@ -162,9 +176,10 @@ function PreferencesPanel({ done }: { done: () => void }) {
   const [muscles, setMuscles] = useState<{ key: string; name: string }[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [musclesFailed, setMusclesFailed] = useState(false);
   useEffect(() => {
     apiFetch<Preferences>("/api/preferences").then(setPrefs).catch((e) => setError(e.message));
-    apiFetch<{ key: string; name: string }[]>("/api/muscles").then(setMuscles).catch(() => undefined);
+    apiFetch<{ key: string; name: string }[]>("/api/muscles").then(setMuscles).catch(() => setMusclesFailed(true));
   }, []);
   if (error) return <p className="error">{error}</p>;
   if (!prefs) return <p className="muted">Loading…</p>;
@@ -182,6 +197,7 @@ function PreferencesPanel({ done }: { done: () => void }) {
       <Card i={1}>
         <h2>Leave these muscles out</h2>
         <p className="secondary" style={{ fontSize: 14, marginTop: -4 }}>Never planned or flagged as missing. Exercises that only load them along the way (squats, rows) can still show up.</p>
+        {musclesFailed && <p className="error">Couldn't load the muscle list.</p>}
         <div className="chips">
           {muscles.map((m) => (
             <button key={m.key} className={`chip${prefs.avoid_muscles.includes(m.key) ? " left-out" : ""}`}
@@ -216,7 +232,7 @@ export default function Plan() {
   const open = (next: Record<string, string>) => setParams(next);
   if (params.get("prefs") === "1") {
     const from = params.get("from");
-    return <PreferencesPanel done={() => setParams(from ? { day: from } : {})} />;
+    return <PreferencesPanel done={() => setParams(from ? { day: from } : params.get("missed") === "1" ? { missed: "1" } : {})} />;
   }
   const dayTitle = params.get("day");
   if (dayTitle || params.get("missed") === "1") return <PlanView dayTitle={dayTitle} open={open} />;

@@ -80,7 +80,7 @@ function TodayBlock({ items, upcoming }: { items: AgendaItem[]; upcoming: Agenda
   );
 }
 
-function GymCards({ goals }: { goals: Goal[] | null }) {
+function GymCards({ goals, goalsFailed }: { goals: Goal[] | null; goalsFailed: boolean }) {
   return (
     <div className="grid-auto" style={{ ["--min" as string]: "300px" }}>
       <Link to="/plan" className="card accent lift rise" style={{ ...stagger(1), display: "block", color: "var(--ink)", textDecoration: "none" }}>
@@ -95,7 +95,9 @@ function GymCards({ goals }: { goals: Goal[] | null }) {
           <span className="eyebrow">Your goals</span>
           <Link to="/coach" style={{ fontSize: 13, fontWeight: 600, textDecoration: "none" }}>Coach</Link>
         </div>
-        {goals && goals.length > 0 ? (
+        {goalsFailed ? (
+          <p className="muted" style={{ margin: "8px 0 0", fontSize: 14 }}>Couldn't load your goals.</p>
+        ) : goals && goals.length > 0 ? (
           <div style={{ marginTop: 6 }}>
             {goals.map((g) => (
               <div key={g.id} className="goal-progress">
@@ -122,11 +124,12 @@ export default function Overview() {
   const [period, setPeriod] = useState<"week" | "month">("week");
   const [error, setError] = useState<string | null>(null);
   const [goals, setGoals] = useState<Goal[] | null>(null);
+  const [goalsFailed, setGoalsFailed] = useState(false);
   const [today, setToday] = useState<AgendaItem[] | null>(null);
   const [upcoming, setUpcoming] = useState<AgendaItem[]>([]);
 
   useEffect(() => {
-    apiFetch<Goal[]>("/api/goals/active").then(setGoals).catch(() => setGoals([]));
+    apiFetch<Goal[]>("/api/goals/active").then(setGoals).catch(() => setGoalsFailed(true));
     apiFetch<AgendaWeek>("/api/agenda").then((w) => {
       setToday(w.items.filter((i) => i.day === w.today));
       const later = w.items.filter((i) => i.day > w.today);
@@ -168,7 +171,7 @@ export default function Overview() {
       )}
 
       {today && <TodayBlock items={today} upcoming={upcoming} />}
-      <GymCards goals={goals} />
+      <GymCards goals={goals} goalsFailed={goalsFailed} />
 
       <div className="grid-auto" style={{ ["--min" as string]: "200px" }}>
         <TotalTile key={period} minutes={Math.round(total)} sessions={sessions} label={period === "week" ? "This week" : monthName} />

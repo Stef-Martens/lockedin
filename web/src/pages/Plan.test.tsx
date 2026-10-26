@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Plan as PlanData, PlanItem } from "../lib/plan";
+import { ApiError } from "../lib/api";
 import Plan from "./Plan";
 
 const item = (over: Partial<PlanItem>): PlanItem => ({
@@ -18,7 +19,7 @@ const PLAN: PlanData = {
 const DAYS = { days: [{ title: "Chest - Schouders - Triceps", last_done: "2026-10-24", exercise_count: 7 },
   { title: "Rug - Bicep", last_done: "2026-10-21", exercise_count: 6 }], missed_available: true, comeback: false, goals: [] };
 
-const apiFetch = vi.fn((path: string, init?: RequestInit) => {
+const apiFetch = vi.fn((path: string, init?: RequestInit): Promise<unknown> => {
   if (path.startsWith("/api/plan/days")) return Promise.resolve(DAYS);
   if (path.startsWith("/api/preferences")) return Promise.resolve({ avoid_muscles: [], never_exercises: [], coach_notes: "" });
   if (path.startsWith("/api/muscles")) return Promise.resolve([]);
@@ -27,7 +28,7 @@ const apiFetch = vi.fn((path: string, init?: RequestInit) => {
 });
 vi.mock("../lib/api", () => ({
   apiFetch: (path: string, init?: RequestInit) => apiFetch(path, init),
-  ApiError: class ApiError extends Error { status = 0; detail = ""; },
+  ApiError: class ApiError extends Error { constructor(public status: number, public detail: string) { super(detail); } },
 }));
 
 afterEach(() => { cleanup(); apiFetch.mockClear(); });
@@ -85,5 +86,58 @@ describe("Plan page", () => {
     fireEvent.click(screen.getByRole("button", { name: "More for Face Pull" }));
     fireEvent.pointerDown(document.body);
     expect(screen.queryByRole("menu")).toBeNull();
+  });
+
+  it("hides Swap for an exercise the app can't find alternatives for", async () => {
+    PLAN.items.push(item({ id: "u1", exercise: "Mystery Machine", muscle: null }));
+    await open("/plan?day=Chest%20-%20Schouders%20-%20Triceps");
+    await screen.findByText("Mystery Machine");
+    expect(screen.queryByRole("button", { name: "Swap Mystery Machine" })).toBeNull();
+    PLAN.items.pop();
+  });
+
+  it("moves through the menu with arrow keys and gives focus back", async () => {
+    await open("/plan?day=Chest%20-%20Schouders%20-%20Triceps");
+    await screen.findByText("Face Pull");
+    const more = screen.getByRole("button", { name: "More for Face Pull" });
+    fireEvent.click(more);
+    const items = screen.getAllByRole("menuitem");
+    await waitFor(() => expect(document.activeElement).toBe(items[0]));
+    fireEvent.keyDown(screen.getByRole("menu"), { key: "ArrowDown" });
+    expect(document.activeElement).toBe(items[1]);
+    fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" });
+    expect(document.activeElement).toBe(more);
+  });
+
+  it("says so when there's nothing missed to plan", async () => {
+    const empty = { ...PLAN, day: null, items: [] };
+    apiFetch.mockImplementationOnce(() => Promise.resolve(empty));
+    await open("/plan?missed=1");
+    expect(await screen.findByText(/Nothing stands out/)).toBeTruthy();
+  });
+
+  it("comes back to the missed plan after Preferences", async () => {
+    await open("/plan?missed=1");
+    await screen.findByText("Face Pull");
+    fireEvent.click(screen.getByRole("button", { name: "Preferences" }));
+    fireEvent.click(await screen.findByRole("button", { name: "‹ Back" }));
+    await screen.findByText("Face Pull");
+    expect(apiFetch).toHaveBeenLastCalledWith("/api/plan", undefined);
+  });
+
+  it("reloads the plan when an item is gone", async () => {
+    await open("/plan?day=Chest%20-%20Schouders%20-%20Triceps");
+    await screen.findByText("Face Pull");
+    apiFetch.mockImplementationOnce(() => Promise.reject(new ApiError(404, "Not found")));
+    fireEvent.click(screen.getByRole("button", { name: "Swap Face Pull" }));
+    await waitFor(() => expect(apiFetch).toHaveBeenLastCalledWith("/api/plan?day=Chest%20-%20Schouders%20-%20Triceps", undefined));
+    expect(await screen.findByText("Face Pull")).toBeTruthy();
+  });
+
+  it("says when the muscle list couldn't load in Preferences", async () => {
+    apiFetch.mockImplementationOnce(() => Promise.resolve({ avoid_muscles: [], never_exercises: [], coach_notes: "" }))
+      .mockImplementationOnce(() => Promise.reject(new Error("down")));
+    await open("/plan?prefs=1");
+    expect(await screen.findByText("Couldn't load the muscle list.")).toBeTruthy();
   });
 });
