@@ -16,5 +16,6 @@ describe("session formatters", () => {
     expect(statusLabel("skipped_by_you").text).toBe("Skipped by you");
     expect(statusLabel("close").text).toBe("Close");
     expect(statusLabel(null).text).toBe("Not ridden");
+    expect(statusLabel("no_target").text).toBe("–");
   });
 });

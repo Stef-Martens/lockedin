@@ -49,18 +49,23 @@ type Goal = { id: number; text: string; target: string | null; progress?: GoalPr
 
 type GoalProgress = { label: string; fraction: number } | null;
 
+// Rest days and notes can't be ticked off, so they don't count as to-dos.
+const trackable = (i: AgendaItem) => !["rest", "other"].includes(i.sport);
+
 function TodayBlock({ items, upcoming }: { items: AgendaItem[]; upcoming: AgendaItem[] }) {
-  const done = items.filter((i) => i.done).length;
+  const todo = items.filter(trackable);
+  const done = todo.filter((i) => i.done).length;
   const next = upcoming.length
     ? `${new Date(`${upcoming[0].day}T12:00`).toLocaleDateString("en-GB", { weekday: "long" })}: ${upcoming.map((u) => u.title + (u.optional ? " (optional)" : "")).join(", ")}`
     : null;
   return (
     <Card variant="accent" i={0}>
-      <SectionHead title="Today" right={items.length ? <span className="secondary" style={{ fontSize: 13 }}>{done} of {items.length} done</span> : undefined} />
+      <SectionHead title="Today" right={todo.length ? <span className="secondary" style={{ fontSize: 13 }}>{done} of {todo.length} done</span> : undefined} />
       {items.length === 0 && <p className="secondary" style={{ margin: 0 }}>Nothing planned today. <Link to="/agenda">Open the agenda</Link></p>}
       {items.map((it) => (
         <div key={it.id} className={`today-row${it.done ? " done" : ""}`}>
-          <span className={`today-check${it.done ? " done pop" : ""}`} aria-hidden="true">{it.done ? "✓" : ""}</span>
+          {trackable(it) ? <span className={`today-check${it.done ? " done pop" : ""}`} aria-hidden="true">{it.done ? "✓" : ""}</span>
+            : <span className="today-check note" aria-hidden="true" />}
           <div style={{ minWidth: 0 }}>
             <div className="today-title">{it.title}{it.goal && <span className="goal-tag">for: {it.goal}</span>}{it.optional && <span className="muted"> · optional</span>}</div>
             <div className="secondary" style={{ fontSize: 13 }}>{it.done ? it.result : it.zwift?.summary ?? it.note ?? (it.routine ? "Your routine" : "")}</div>

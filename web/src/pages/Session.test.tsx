@@ -84,4 +84,21 @@ describe("Session page", () => {
     fireEvent.click(screen.getByRole("button", { name: "Yes, delete it" }));
     await waitFor(() => expect(apiFetch).toHaveBeenCalledWith("/api/agenda/2", { method: "DELETE" }));
   });
+
+  it("reads comma decimals and leaves untouched targets alone", async () => {
+    open({ item: { ...base, sport: "run", title: "Steady run", zwift: null, zwift_status: null,
+      targets: { pace_low: 335, distance_m: 8000, pace_high: 350 } }, plan: { kind: "targets", hr_bpm: null }, actual: null });
+    await screen.findByRole("heading", { name: "Steady run" });
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.change(screen.getByLabelText("Title"), { target: { value: "Steady run 8" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(apiFetch).toHaveBeenCalledWith("/api/agenda/2", { method: "PATCH", body: JSON.stringify({ title: "Steady run 8" }) }));
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.change(screen.getByLabelText("Distance (km)"), { target: { value: "8,5" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => {
+      const body = JSON.parse(apiFetch.mock.calls.filter((c) => c[1]?.method === "PATCH").at(-1)![1]!.body as string);
+      expect(body.targets.distance_m).toBe(8500);
+    });
+  });
 });

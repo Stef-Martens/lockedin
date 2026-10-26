@@ -193,7 +193,7 @@ def _get_agenda(conn: Connection, args: dict, now: datetime) -> list[dict]:
     end = date.fromisoformat(args["to"]) if args.get("to") else start + timedelta(days=13)
     if end < start or (end - start).days > 62:
         raise ValueError("'to' must be on or after 'from', at most 62 days later.")
-    return agenda.items_between(conn, now, start, end)
+    return agenda.items_between(conn, now, start, end, results=True)
 
 
 def _save_agenda(conn: Connection, args: dict, now: datetime) -> list[dict]:

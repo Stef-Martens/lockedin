@@ -2,7 +2,8 @@ import type { AgendaItem, Targets } from "./agenda";
 import type { PlanItem } from "./plan";
 
 export interface Part { label: string; start_s: number; end_s: number; from_w: number | null; to_w: number | null; from_frac: number; to_frac: number; work: boolean }
-export type Status = "on_target" | "above" | "below" | "faster" | "slower" | "done" | "close" | "skipped" | "skipped_by_you" | "added" | null;
+export type Status = "on_target" | "above" | "below" | "faster" | "slower" | "done" | "close" | "skipped" | "skipped_by_you" | "added"
+  | "no_target" | null;
 
 export type SessionPlan =
   | { kind: "zwift"; ftp: number | null; ftp_is_set: boolean; parts: Part[]; duration_s: number; sweet_spot_min: number; tss_est: number }
@@ -47,6 +48,7 @@ const LABELS: Record<string, { text: string; tone: "good" | "near" | "muted" }> 
   skipped: { text: "Skipped", tone: "muted" },
   skipped_by_you: { text: "Skipped by you", tone: "muted" },
   added: { text: "Added", tone: "muted" },
+  no_target: { text: "–", tone: "muted" },  // ridden, but no FTP to compare with
 };
 
 /** Words for a comparison, never red: "below" and "close" are information, not failure. */

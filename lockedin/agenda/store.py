@@ -168,7 +168,8 @@ def _ticks(conn: Connection, rows: list, start: date, end: date) -> dict[int, in
     return done
 
 
-def items_between(conn: Connection, now: datetime, start: date, end: date) -> list[dict]:
+def items_between(conn: Connection, now: datetime, start: date, end: date, results: bool = False) -> list[dict]:
+    """Items with done state; `results` adds the one-line result for done items (reads the activities)."""
     rows = conn.execute(text(
         f"select {FIELDS} from agenda_items where day between :s and :e order by day, sort, id"
     ), {"s": start, "e": end}).all()
@@ -177,14 +178,14 @@ def items_between(conn: Connection, now: datetime, start: date, end: date) -> li
     goals = _goal_labels(conn, {r.goal_id for r in rows})
     items = [_out(r, ftp, local_today(now), done, goals) for r in rows]
     for item in items:
-        item["result"] = result_line(conn, item) if item["done"] else None
+        item["result"] = result_line(conn, item) if results and item["done"] else None
     return items
 
 
 def week(conn: Connection, now: datetime, any_day: date | None) -> dict:
     start = monday(any_day or local_today(now))
     return {"week_start": start.isoformat(), "today": local_today(now).isoformat(),
-            "items": items_between(conn, now, start, start + timedelta(days=6))}
+            "items": items_between(conn, now, start, start + timedelta(days=6), results=True)}
 
 
 def get_item(conn: Connection, now: datetime, item_id: int) -> dict:

@@ -176,3 +176,21 @@ def test_gym_done_without_a_saved_plan(client, clean_db, clock):
 def test_detail_errors(client, clock):
     assert client.get("/api/agenda/999/detail", headers=H).status_code == 404
     assert client.get("/api/agenda/1/detail").status_code == 401
+
+
+def test_no_ftp_means_no_target_not_not_ridden(client, clean_db, clock):
+    with clean_db.begin() as c:
+        iid = add(c, day="2026-10-29", sport="bike", title="Sweet Spot 3x10", zwift=SWEET_SPOT)
+        add_session(c, "bike", datetime(2026, 10, 29, 6, 12, tzinfo=UTC), 3900, source="zwift", power=ride_power((151, 149, 153)))
+    parts = detail(client, iid)["actual"]["parts"]
+    assert [p["status"] for p in parts] == ["no_target"] * 3 and parts[0]["avg_w"] == 151
+
+
+def test_result_lines_only_when_asked(clean_db):
+    from lockedin.agenda.store import items_between
+    with clean_db.begin() as c:
+        add(c, day="2026-10-29", sport="bike", title="Ride")
+        add_session(c, "bike", datetime(2026, 10, 29, 6, tzinfo=UTC), 3600, source="zwift", avg_power=150)
+        assert items_between(c, NOW, datetime(2026, 10, 29).date(), datetime(2026, 10, 29).date())[0]["result"] is None
+        lines = items_between(c, NOW, datetime(2026, 10, 29).date(), datetime(2026, 10, 29).date(), results=True)
+        assert lines[0]["result"] == "Done · 60′ · 150 W"

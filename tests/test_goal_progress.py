@@ -69,3 +69,33 @@ def test_save_goal_area_is_a_known_kind(clean_db):
         out, err = execute_tool("save_goal", {"action": "create", "text": "Faster", "area": "cardio"},
                                 conn=c, engine=clean_db, now=NOW)
     assert err
+
+
+@pytest.mark.parametrize("words, area", [
+    ("Raise FTP by 20 W", "bike"), ("Add 10 kg to my bench", "gym"), ("Bench +10 kg", "gym"), ("FTP 4 W/kg", "bike"),
+])
+def test_relative_and_ratio_goals_get_no_bar(conn, words, area):
+    conn.execute(text("update profile set ftp_override = 168"))
+    add_gym(conn, datetime(2026, 10, 20, 17, tzinfo=UTC), [(BENCH, 72, 10, "normal")])
+    assert progress(conn, NOW, goal(conn, words, area, exercise=BENCH if area == "gym" else None)) is None
+
+
+def test_a_target_far_below_today_is_a_misread(conn):
+    add_gym(conn, datetime(2026, 10, 20, 17, tzinfo=UTC), [(BENCH, 72, 10, "normal")])  # e1RM 96
+    assert progress(conn, NOW, goal(conn, "Bench 40 kg for 10 reps", "gym", exercise=BENCH)) is None
+
+
+def test_thousands_separators(conn):
+    add_session(conn, "swim", datetime(2026, 10, 12, 8, tzinfo=UTC), 1800, distance_m=1200)
+    for words in ("Swim 1.500 m", "Swim 1,500 m"):
+        assert progress(conn, NOW, goal(conn, words, "swim"))["label"] == "1.2 / 1.5 km"
+
+
+def test_arm_goals_use_both_arms(conn):
+    ids = dict(conn.execute(text("select name, id from measurement_types")).all())
+    for d, left, right in ((date(2026, 9, 1), 36.0, 37.0), (date(2026, 10, 20), 37.5, 38.5)):
+        for name, v in (("Left arm", left), ("Right arm", right)):
+            conn.execute(text("insert into measurements (type_id, measured_on, value) values (:t, :d, :v)"),
+                         {"t": ids[name], "d": d, "v": v})
+    p = progress(conn, NOW, goal(conn, "40 cm arms", "body", created=datetime(2026, 9, 5, tzinfo=UTC)))
+    assert p["current"] == 38 and p["fraction"] == pytest.approx(1.5 / 3.5)  # from 36.5 (avg at goal time) toward 40

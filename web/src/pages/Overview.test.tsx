@@ -15,6 +15,7 @@ const item = { sport: "bike", note: null, optional: false, routine: null, zwift:
 const AGENDA = { week_start: "2026-10-26", today: "2026-10-29", items: [
   { ...item, id: 1, day: "2026-10-29", title: "Sweet Spot 3x10", done: true, activity_id: 5, result: "Done · 66′ · 128 W", goal: "FTP 200 W" },
   { ...item, id: 2, day: "2026-10-29", sport: "gym", title: "Push", routine: "Push" },
+  { ...item, id: 4, day: "2026-10-29", sport: "rest", title: "Stretch a bit" },
   { ...item, id: 3, day: "2026-10-30", sport: "rest", title: "Rest" },
 ] };
 const GOALS = [{ id: 1, text: "Bench 100 kg", target: "by March 2027", progress: { label: "96 / 100 kg est. 1RM", fraction: 0.96 } }];
@@ -28,7 +29,8 @@ afterEach(cleanup);
 describe("Overview", () => {
   it("shows today's to-dos with what's done, goals with progress, and goal tags on tips", async () => {
     render(<MemoryRouter><Overview /></MemoryRouter>);
-    expect(await screen.findByText("1 of 2 done")).toBeTruthy();
+    expect(await screen.findByText("1 of 2 done")).toBeTruthy(); // the rest/other note can't be ticked, so it doesn't count
+    expect(screen.getByText("Stretch a bit")).toBeTruthy();
     expect(screen.getByText("Done · 66′ · 128 W")).toBeTruthy();
     expect(screen.getByRole("link", { name: "See how it went" }).getAttribute("href")).toBe("/agenda/1");
     expect(screen.getByRole("link", { name: "Plan it" }).getAttribute("href")).toBe("/plan?day=Push");

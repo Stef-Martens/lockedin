@@ -87,6 +87,12 @@ function Edit({ item, onSaved, onCancel }: { item: AgendaItem; onSaved: () => vo
   const t = item.targets ?? {};
   const toClock = (s?: number) => (s ? mmss(s) : "");
   const fromClock = (v: string) => { const [m, s] = v.split(":").map(Number); return v ? m * 60 + (s || 0) : undefined; };
+  // Phones with a Dutch/Belgian keyboard type "8,5".
+  const num = (v: string) => Number(v.replace(",", "."));
+  const sameTargets = (a: object, b: object) => {
+    const norm = (o: object) => JSON.stringify(Object.entries(o).filter(([, v]) => v != null).sort(([x], [y]) => x.localeCompare(y)));
+    return norm(a) === norm(b);
+  };
   const [form, setForm] = useState({
     title: item.title, note: item.note ?? "", day: item.day, optional: item.optional,
     distance: t.distance_m ? String(t.distance_m / 1000) : "", duration: t.duration_s ? String(Math.round(t.duration_s / 60)) : "",
@@ -102,14 +108,20 @@ function Edit({ item, onSaved, onCancel }: { item: AgendaItem; onSaved: () => vo
     if (form.day !== item.day) changes.day = form.day;
     if (form.optional !== item.optional) changes.optional = form.optional;
     if (withTargets) {
+      const values = [form.distance, form.duration].filter(Boolean).map(num);
+      const clocks = [form.low, form.high].filter(Boolean);
+      if (values.some((v) => !Number.isFinite(v)) || clocks.some((c) => !/^\d{1,2}:\d{2}$/.test(c.trim()))) {
+        setError("Use numbers for distance and minutes, and m:ss for paces (e.g. 5:35).");
+        return;
+      }
       const next = {
-        distance_m: form.distance ? Math.round(Number(form.distance) * 1000) : undefined,
-        duration_s: form.duration ? Math.round(Number(form.duration) * 60) : undefined,
+        distance_m: form.distance ? Math.round(num(form.distance) * 1000) : undefined,
+        duration_s: form.duration ? (t.duration_s && Math.round(t.duration_s / 60) === num(form.duration) ? t.duration_s : Math.round(num(form.duration) * 60)) : undefined,
         pace_low: fromClock(form.low), pace_high: fromClock(form.high),
         hr_zone: form.zone && item.sport === "run" ? Number(form.zone) : undefined,
       };
       const clean = Object.fromEntries(Object.entries(next).filter(([, v]) => v !== undefined));
-      if (JSON.stringify(clean) !== JSON.stringify(Object.fromEntries(Object.entries(t).filter(([, v]) => v != null)))) {
+      if (!sameTargets(clean, t)) {
         changes.targets = Object.keys(clean).length ? clean : null;
       }
     }

@@ -22,8 +22,8 @@ def activity(conn: Connection, activity_id: int):
     return conn.execute(text(f"select {ACTIVITY} from activities where id = :i"), {"i": activity_id}).first()
 
 
-def streams(conn: Connection, activity_id: int):
-    return conn.execute(text("select * from activity_streams where activity_id = :i"), {"i": activity_id}).first()
+def streams(conn: Connection, activity_id: int, columns: str = "*"):
+    return conn.execute(text(f"select {columns} from activity_streams where activity_id = :i"), {"i": activity_id}).first()
 
 
 def status(actual: float, target: float) -> str:
@@ -68,9 +68,10 @@ def zwift_parts(plan_parts: list[dict], s, ftp: float | None) -> tuple[list[dict
             "avg_w": round(avg_w) if avg_w is not None else None,
             "avg_hr": round(h) if avg_w is not None and s.hr and (h := _mean(s.hr[i] for i in idx)) else None,
             "avg_cadence": round(c) if avg_w is not None and s.cadence and (c := _mean(s.cadence[i] for i in idx)) else None,
-            "status": status(avg_w, target) if avg_w is not None and target else None,
+            # Ridden but no FTP to compare with: say nothing rather than "not ridden".
+            "status": None if avg_w is None else status(avg_w, target) if target else "no_target",
         })
-    if not rows or any(r["status"] is None for r in rows):
+    if not rows or any(r["status"] in (None, "no_target") for r in rows):
         return rows, None
     return rows, all(r["status"] == "on_target" for r in rows)
 
@@ -130,7 +131,8 @@ def result_line(conn: Connection, item: dict) -> str | None:
         bits = [minutes] + ([f"{a.avg_power} W"] if a.avg_power else [])
         if item.get("zwift"):
             ftp = ftp_at(conn, a.start_at)
-            _, on = zwift_parts(parts(ZwiftWorkout(blocks=item["zwift"]["blocks"]), ftp), streams(conn, a.id), ftp)
+            s = streams(conn, a.id, "t_offset, power, null as hr, null as cadence")
+            _, on = zwift_parts(parts(ZwiftWorkout(blocks=item["zwift"]["blocks"]), ftp), s, ftp)
             if on:
                 bits.append("intervals on target")
     elif item["sport"] == "run":

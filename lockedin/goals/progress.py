@@ -11,8 +11,12 @@ from lockedin.plan.goals import goal_for
 
 WINDOW = timedelta(weeks=8)
 LIFT_SEARCH = timedelta(days=90)
-NUMBER = re.compile(r"(\d+(?:[.,]\d+)?)\s*(kg|w\b|watts?\b|km\b|k\b|m\b|cm\b)?", re.I)
-RELATIVE = re.compile(r"\b(lose|gain|drop|add|more|less|increase|decrease)\b|[+-]\s*\d", re.I)
+# A number and its unit. "1.500 m" / "10,000 m" are thousands; "W/kg" is a ratio, not watts.
+NUMBER = re.compile(r"(\d{1,3}(?:[.,]\d{3})+(?![.,]?\d)|\d+(?:[.,]\d+)?)\s*(kg|w(?!\s*/)\b|watts?\b|km\b|k\b|m\b|cm\b)?", re.I)
+THOUSANDS = re.compile(r"^\d{1,3}(?:[.,]\d{3})+$")
+# Goals about a change ("lose 5 kg", "raise FTP by 20 W", "+10 kg") have no fixed target to measure against.
+RELATIVE = re.compile(r"\b(lose|gain|drop|add|more|less|increase|decrease|raise|improve)\b|\bby\s+[+-]?\d|[+-]\s*\d", re.I)
+MISREAD = 0.5  # a lift/FTP target below half of today's value is almost certainly a misread number
 
 
 def _numbers(goal: dict) -> list[tuple[float, str]]:
@@ -20,7 +24,8 @@ def _numbers(goal: dict) -> list[tuple[float, str]]:
     out = []
     for source in (goal.get("text") or "", goal.get("target") or ""):
         for value, unit in NUMBER.findall(source):
-            out.append((float(value.replace(",", ".")), (unit or "").lower().rstrip("s")))
+            number = float(re.sub(r"[.,]", "", value)) if THOUSANDS.match(value) else float(value.replace(",", "."))
+            out.append((number, (unit or "").lower().rstrip("s")))
     return out
 
 
@@ -63,9 +68,17 @@ def _longest(conn: Connection, now: datetime, sport: str) -> float | None:
     return float(m) if m else None
 
 
+def _sane(result: dict | None) -> dict | None:
+    if result and result["target"] < MISREAD * result["current"]:
+        return None
+    return result
+
+
 def progress(conn: Connection, now: datetime, goal: dict) -> dict | None:
     area = goal.get("area") or "general"
     lowered = (goal.get("text") or "").lower()
+    if RELATIVE.search(lowered):
+        return None
 
     lift = goal_lift(conn, now, goal) if area in ("gym", "general") or goal.get("exercise") else None
     if lift and (n := _first(goal, ("kg",))):
@@ -73,13 +86,13 @@ def progress(conn: Connection, now: datetime, goal: dict) -> dict | None:
             "select max(s.e1rm) from gym_sets s join exercises e on e.id = s.exercise_id join activities a on a.id = s.workout_id "
             f"where e.name = :n and s.set_type <> 'warmup' and {counted('a')} and a.start_at > :since and a.start_at <= :now"
         ), {"n": lift, "since": now - WINDOW, "now": now}).scalar()
-        return _result(float(best) if best else None, n[0], "kg", " est. 1RM")
+        return _sane(_result(float(best) if best else None, n[0], "kg", " est. 1RM"))
 
     if area == "bike":
         n = _first(goal, ("w", "watt")) or (next(((v, "") for v, _ in _numbers(goal) if v >= 50), None) if "ftp" in lowered else None)
         if n:
             ftp = ftp_at(conn, now)
-            return _result(round(ftp) if ftp else None, n[0], "W")
+            return _sane(_result(round(ftp) if ftp else None, n[0], "W"))
 
     if area in ("run", "swim"):
         n = _first(goal, ("km", "k", "m"))
@@ -88,20 +101,25 @@ def progress(conn: Connection, now: datetime, goal: dict) -> dict | None:
             longest = _longest(conn, now, area)
             return _result(longest / 1000 if longest else None, target_km, "km")
 
-    if area == "body" and not RELATIVE.search(lowered):
+    if area == "body":
         n = _first(goal, ("kg", "cm"))
         if n:
             types = conn.execute(text("select id, name, unit from measurement_types where unit = :u"),
                                  {"u": n[1]}).all()
-            kind = next((t for t in types if t.name.lower() in lowered), None) or \
-                (next((t for t in types if t.name.lower() == "weight"), None) if n[1] == "kg" else None)
-            if kind:
+            # "chest" matches Chest; "arms" matches both Left arm and Right arm (averaged).
+            kinds = [t for t in types if t.name.lower() in lowered] or \
+                [t for t in types if re.search(rf"\b{re.escape(t.name.lower().split()[-1])}s?\b", lowered)] or \
+                ([t for t in types if t.name.lower() == "weight"] if n[1] == "kg" else [])
+            created = (goal.get("created_at") or now).date()
+            starts, currents = [], []
+            for kind in kinds:
                 values = conn.execute(text(
                     "select measured_on, value from measurements where type_id = :t order by measured_on"
                 ), {"t": kind.id}).all()
                 if values:
-                    created = (goal.get("created_at") or now).date()
                     before = [v for d, v in values if d <= created]
-                    start = before[-1] if before else values[0][1]
-                    return _result(values[-1][1], n[0], n[1], start=start)
+                    starts.append(before[-1] if before else values[0][1])
+                    currents.append(values[-1][1])
+            if currents:
+                return _result(sum(currents) / len(currents), n[0], n[1], start=sum(starts) / len(starts))
     return None

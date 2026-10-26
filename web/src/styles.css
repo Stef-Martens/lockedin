@@ -510,6 +510,7 @@ a.tile { display: block; color: var(--ink); text-decoration: none; }
 .today-row:first-of-type { border-top: 0; }
 .today-check { width: 26px; height: 26px; border-radius: 50%; border: 2px solid var(--axis); display: grid; place-items: center; font-weight: 800; color: var(--accent-ink); }
 .today-check.done { background: var(--accent); border-color: var(--accent); }
+.today-check.note { border-style: dashed; border-color: var(--hairline); }
 .today-title { font-weight: 600; overflow-wrap: anywhere; }
 .today-row.done .today-title { color: var(--ink-3); }
 .goal-progress { padding: 8px 0; border-top: 1px solid var(--hairline); font-size: 14px; }
