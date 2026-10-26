@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { apiFetch } from "../lib/api";
 import { supabase } from "../lib/supabase";
@@ -6,6 +6,7 @@ import type { Status } from "../lib/types";
 
 const LINKS = [
   { to: "/", label: "Overview", short: "Home", end: true },
+  { to: "/agenda", label: "Agenda", short: "Agenda" },
   { to: "/coach", label: "Coach", short: "Coach" },
   { to: "/activities", label: "Activities", short: "Activities" },
   { to: "/trends/bike", label: "Trends", short: "Trends", match: "/trends" },
@@ -13,6 +14,34 @@ const LINKS = [
   { to: "/body", label: "Body", short: "Body" },
   { to: "/import", label: "Import", short: "Import" },
 ];
+
+// The phone tab bar keeps the everyday pages; the rest sit under "More".
+const TABS = ["/", "/agenda", "/coach", "/activities", "/muscles"];
+
+function MoreMenu({ links, active }: { links: typeof LINKS; active: boolean }) {
+  const [open, setOpen] = useState(false);
+  const wrap = useRef<HTMLDivElement>(null);
+  const { pathname } = useLocation();
+  useEffect(() => setOpen(false), [pathname]);
+  useEffect(() => {
+    if (!open) return;
+    const outside = (e: PointerEvent) => { if (!wrap.current?.contains(e.target as Node)) setOpen(false); };
+    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
+    document.addEventListener("pointerdown", outside);
+    document.addEventListener("keydown", esc);
+    return () => { document.removeEventListener("pointerdown", outside); document.removeEventListener("keydown", esc); };
+  }, [open]);
+  return (
+    <div className="tab-more" ref={wrap}>
+      <button className={active ? "active" : ""} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((o) => !o)}>More</button>
+      {open && (
+        <div className="tab-more-menu pop" role="menu">
+          {links.map((l) => <NavLink key={l.to} to={l.to} role="menuitem">{l.label}</NavLink>)}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function ago(iso: string | null): string {
   if (!iso) return "never";
@@ -60,10 +89,12 @@ export default function Layout() {
           <Outlet />
         </div>
       </main>
-      <nav className="tabbar" aria-label="Main">
-        {LINKS.map((l) => (
+      <nav className="tabbar" aria-label="Tabs">
+        {LINKS.filter((l) => TABS.includes(l.to)).map((l) => (
           <NavLink key={l.to} to={l.to} end={l.end} className={cls("", l)}>{l.short}</NavLink>
         ))}
+        <MoreMenu links={LINKS.filter((l) => !TABS.includes(l.to))}
+          active={LINKS.some((l) => !TABS.includes(l.to) && pathname.startsWith(l.match ?? l.to))} />
       </nav>
     </div>
   );

@@ -4,6 +4,7 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import Layout from "./components/Layout";
 import { supabase } from "./lib/supabase";
 import Activities from "./pages/Activities";
+import Agenda from "./pages/Agenda";
 import ActivityDetail from "./pages/ActivityDetail";
 import Body from "./pages/Body";
 import Coach from "./pages/Coach";
@@ -40,6 +41,7 @@ export default function App() {
         <Route path="import" element={<Import />} />
         <Route path="trends" element={<Navigate to="/trends/bike" replace />} />
         <Route path="trends/:sport" element={<Trends />} />
+        <Route path="agenda" element={<Agenda />} />
         <Route path="muscles" element={<Muscles />} />
         <Route path="plan" element={<Plan />} />
         <Route path="body" element={<Body />} />

@@ -4,6 +4,7 @@ import FocusCard from "../components/FocusCard";
 import { Card, PageHeader, SectionHead, Segmented } from "../components/ui";
 import WeeklyVolumeChart from "../components/WeeklyVolumeChart";
 import WinsStrip from "../components/WinsStrip";
+import type { AgendaItem, AgendaWeek } from "../lib/agenda";
 import { apiFetch } from "../lib/api";
 import { formatMinutes, type Overview as OverviewData } from "../lib/focus";
 import { formatDistance, SPORT_LABEL, type Sport } from "../lib/format";
@@ -46,6 +47,27 @@ function TotalTile({ minutes, sessions, label }: { minutes: number; sessions: nu
 
 type Goal = { id: number; text: string; target: string | null };
 
+function TodayCard({ items }: { items: AgendaItem[] }) {
+  if (!items.length) return null;
+  return (
+    <Link to="/agenda" className="card accent lift rise" style={{ ...stagger(0), display: "block", color: "var(--ink)", textDecoration: "none" }}>
+      <div className="eyebrow">Today</div>
+      {items.map((it) => (
+        <div key={it.id} className="row spread" style={{ marginTop: 8, flexWrap: "nowrap" }}>
+          <span>
+            <strong>{it.title}</strong>
+            {(it.zwift?.summary ?? it.note) && <span className="secondary"> · {it.zwift?.summary ?? it.note}</span>}
+            {it.optional && <span className="muted"> · optional</span>}
+          </span>
+          <span className="secondary" style={{ fontSize: 13, whiteSpace: "nowrap" }}>
+            {it.done ? "Done ✓" : it.zwift_status === "synced" ? "In Zwift ✓" : it.sport === "gym" ? "Plan it →" : ""}
+          </span>
+        </div>
+      ))}
+    </Link>
+  );
+}
+
 function GymCards({ goals }: { goals: Goal[] | null }) {
   return (
     <div className="grid-auto" style={{ ["--min" as string]: "300px" }}>
@@ -79,9 +101,11 @@ export default function Overview() {
   const [period, setPeriod] = useState<"week" | "month">("week");
   const [error, setError] = useState<string | null>(null);
   const [goals, setGoals] = useState<Goal[] | null>(null);
+  const [today, setToday] = useState<AgendaItem[]>([]);
 
   useEffect(() => {
     apiFetch<Goal[]>("/api/goals/active").then(setGoals).catch(() => setGoals([]));
+    apiFetch<AgendaWeek>("/api/agenda").then((w) => setToday(w.items.filter((i) => i.day === w.today))).catch(() => undefined);
   }, []);
 
   useEffect(() => {
@@ -117,6 +141,7 @@ export default function Overview() {
         </Card>
       )}
 
+      <TodayCard items={today} />
       <GymCards goals={goals} />
 
       <div className="grid-auto" style={{ ["--min" as string]: "200px" }}>
