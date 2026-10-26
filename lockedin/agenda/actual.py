@@ -1,6 +1,5 @@
 """What actually happened in the activity that ticked an agenda item, compared with the plan."""
 
-import math
 from datetime import datetime
 
 from sqlalchemy import Connection, text
@@ -9,6 +8,7 @@ from lockedin.agenda.parts import parts
 from lockedin.agenda.zwo import ZwiftWorkout
 from lockedin.fitness import ftp_at
 from lockedin.focus.zones import hr_zone, max_hr_at
+from lockedin.routes.activities import downsample
 
 ON_TARGET = 0.03
 MAX_POINTS = 600
@@ -43,14 +43,13 @@ def series(t: list[int], ys: list | None, smooth: bool = True, transform=None) -
         return None
     step = (t[-1] - t[0]) / (len(t) - 1) if len(t) > 1 else 1
     window = max(1, round(SMOOTH_S / step)) if smooth else 1
-    size = max(1, math.ceil(len(t) / MAX_POINTS))
+    smoothed = [_mean(ys[max(0, i - window + 1): i + 1]) for i in range(len(t))]
+    thin = downsample({"t_offset": t, "y": smoothed}, MAX_POINTS, ("y",))
     out = []
-    for i in range(0, len(t), size):
-        m = _mean(ys[max(0, i - window + 1): i + 1])
-        if m is not None:
-            v = transform(m) if transform else m
-            if v is not None:
-                out.append([t[i], round(v, 1)])
+    for x, m in zip(thin["t_offset"], thin["y"] or []):
+        v = transform(m) if transform and m is not None else m
+        if v is not None:
+            out.append([x, round(v, 1)])
     return out
 
 
@@ -60,7 +59,9 @@ def zwift_parts(plan_parts: list[dict], s, ftp: float | None) -> tuple[list[dict
     t = list(s.t_offset) if s and s.t_offset else []
     for p in (x for x in plan_parts if x["work"]):
         idx = [i for i, x in enumerate(t) if p["start_s"] <= x < p["end_s"]]
-        covered = len(idx) / max(1, p["end_s"] - p["start_s"])
+        # By time span, not sample count: a ride recorded every few seconds covers a part as well as one every second.
+        covered = max(0, min(p["end_s"], t[-1]) - max(p["start_s"], t[0])) / max(1, p["end_s"] - p["start_s"]) \
+            if idx else 0
         target = round((p["from_frac"] + p["to_frac"]) / 2 * ftp) if ftp else None
         avg_w = _mean(s.power[i] for i in idx) if s is not None and s.power and covered >= MIN_COVERAGE else None
         rows.append({
@@ -76,14 +77,25 @@ def zwift_parts(plan_parts: list[dict], s, ftp: float | None) -> tuple[list[dict
     return rows, all(r["status"] == "on_target" for r in rows)
 
 
+MOVING = 0.5  # m/s; slower than this is standing still
+
+
 def splits(s, band: tuple[int | None, int | None]) -> list[dict] | None:
+    """Per-km pace on moving time. A km boundary that falls between two samples (a GPS gap) gets its time
+    by interpolation, so a gap spreads over the kms it crossed instead of making one absurd split."""
     if s is None or not s.distance or not any(s.distance):
         return None
     t, d = list(s.t_offset), list(s.distance)
-    out, k, last_i = [], 1, 0
+    speed = list(s.speed) if getattr(s, "speed", None) else None
+    moving = [0.0]  # moving seconds up to each sample
+    for i in range(1, len(t)):
+        still = speed is not None and (speed[i] or 0) <= MOVING and (d[i] or 0) - (d[i - 1] or 0) < 1
+        moving.append(moving[-1] + (0 if still else t[i] - t[i - 1]))
+    out: list[dict] = []
+    last_m, last_i, k = 0.0, 0, 1
 
-    def split(km: float, i: int, metres: float) -> dict:
-        pace = (t[i] - t[last_i]) / (metres / 1000)
+    def split(km: float, at: float, i: int, metres: float) -> dict:
+        pace = (at - last_m) / (metres / 1000)
         lo, hi = band
         state = None
         if lo and hi:
@@ -91,13 +103,20 @@ def splits(s, band: tuple[int | None, int | None]) -> list[dict] | None:
         hr = _mean(s.hr[last_i:i + 1]) if s.hr else None
         return {"km": km, "pace": round(pace), "avg_hr": round(hr) if hr else None, "status": state}
 
+    prev_i = 0
     for i, dist in enumerate(d):
-        if dist is not None and dist >= k * 1000:
-            out.append(split(k, i, 1000))
-            last_i, k = i, k + 1
+        if dist is None:
+            continue
+        while dist >= k * 1000:
+            d0 = d[prev_i] or 0
+            frac = (k * 1000 - d0) / (dist - d0) if dist > d0 else 1
+            at = moving[prev_i] + frac * (moving[i] - moving[prev_i])
+            out.append(split(k, at, i, 1000))
+            last_m, last_i, k = at, i, k + 1
+        prev_i = i
     rest = (d[-1] or 0) - (k - 1) * 1000
     if rest >= 200:
-        out.append(split(round(k - 1 + rest / 1000, 1), len(d) - 1, rest))
+        out.append(split(round(k - 1 + rest / 1000, 1), moving[-1], len(d) - 1, rest))
     return out or None
 
 

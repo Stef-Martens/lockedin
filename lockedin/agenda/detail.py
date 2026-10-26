@@ -51,26 +51,31 @@ def _min_reps(reps: str) -> int:
 
 
 def _gym_rows(conn: Connection, plan_items: list, activity_id: int) -> list[dict]:
-    logged: dict[str, list[dict]] = {}
+    # Each exercise's blocks in the order done, so a lift planned twice matches its first and second block.
+    blocks: dict[tuple[str, int], list[dict]] = {}
     for r in conn.execute(text(
-        "select e.name, s.weight_kg, s.reps from gym_sets s join exercises e on e.id = s.exercise_id "
+        "select e.name, s.exercise_order, s.weight_kg, s.reps from gym_sets s join exercises e on e.id = s.exercise_id "
         "where s.workout_id = :a and s.set_type <> 'warmup' order by s.exercise_order, s.set_index"
     ), {"a": activity_id}):
-        logged.setdefault(r.name, []).append({"kg": r.weight_kg, "reps": r.reps})
+        blocks.setdefault((r.name, r.exercise_order), []).append({"kg": r.weight_kg, "reps": r.reps})
+    logged: dict[str, list[list[dict]]] = {}
+    for (name, _), sets in blocks.items():
+        logged.setdefault(name, []).append(sets)
     rows = []
     for p in plan_items:
-        done = logged.pop(p["exercise"], [])
+        done = logged[p["exercise"]].pop(0) if logged.get(p["exercise"]) else []
         planned = {"sets": p["sets"], "reps": p["reps"], "weight_kg": p["weight_kg"], "dumbbell": p.get("dumbbell")}
         if not done:
             state = "skipped_by_you" if p.get("skipped") else "skipped"
         else:
             need_reps, need_kg = _min_reps(p["reps"]), p["weight_kg"]
             good = [s for s in done if (s["reps"] or 0) >= need_reps and (need_kg is None or (s["kg"] or 0) >= need_kg)]
-            state = "done" if len(good) >= p["sets"] else "close"
+            need_sets = p["sets"] - (1 if p.get("goal_extra") else 0)
+            state = "done" if len(good) >= need_sets else "close"
         rows.append({"exercise": p["exercise"], "planned": planned, "done": done, "status": state,
                      "extra": p.get("kind") == "add", "goal": p.get("goal")})
     rows += [{"exercise": name, "planned": None, "done": sets, "status": "added", "extra": False, "goal": None}
-             for name, sets in logged.items()]
+             for name, left in logged.items() for sets in left]
     return rows
 
 

@@ -18,6 +18,7 @@ MAX_SWAPS = 1
 MAX_ADDS = 2
 MAX_MISSED = 5
 TOP_REPS = 12  # the top of 8–12: every set there means it's time to go up
+GOAL_READY_ON = 3  # a goal lift moves up once its best 3 top-weight sets reach TOP_REPS
 STEP_KG = 2.5
 DUMBBELL_STEP_KG = 2.0  # per dumbbell
 
@@ -56,20 +57,22 @@ def _item(**fields) -> dict:
     base = {"id": uuid.uuid4().hex[:10], "exercise": "", "equipment": "other", "kind": "routine", "muscle": None,
             "sets": 3, "reps": "8–12", "weight_kg": None, "dumbbell": None, "change": None, "estimate": False,
             "last": [], "replaces": None, "reason": None, "goal": None, "skipped": False, "suggested": False,
-            "tried": [], "lighter_sets": 0}
+            "tried": [], "lighter_sets": 0, "goal_extra": False}
     return {**base, **fields}
 
 
 def progression(last_sets: list[tuple[float | None, int | None]], equipment: str, dumbbell_logging: str,
-                welcome_back: bool) -> dict:
-    """Target for the sets at last session's top weight: up a step once every one of them hit 12 reps.
+                welcome_back: bool, ready_on: int | None = None) -> dict:
+    """Target for the sets at last session's top weight: up a step once every one of them hit 12 reps
+    (only the best `ready_on` of them, for a goal lift whose extra set shouldn't hold it back).
     Lighter sets before them (ramping up) are counted separately, so the plan never asks for more heavy sets.
     Sets logged with no reps (left empty in Hevy) don't count."""
     last_sets = [(kg, reps) for kg, reps in last_sets if reps]
     weights = [kg for kg, _ in last_sets if kg]
     top = max(weights) if weights else None
     at_top = [reps or 0 for kg, reps in last_sets if (kg or None) == top]
-    ready = bool(at_top) and all(r >= TOP_REPS for r in at_top)
+    judged = sorted(at_top, reverse=True)[:ready_on] if ready_on else at_top
+    ready = bool(judged) and all(r >= TOP_REPS for r in judged)
     dumbbell = dumbbell_logging if equipment == "dumbbell" else None
     sets = max(len(at_top), 1)
     lighter = len(last_sets) - len(at_top) if top is not None else 0
@@ -99,9 +102,10 @@ def _routine_item(conn: Connection, now: datetime, name: str, routine_sets: list
     # A bodyweight move done with added weight (dip belt, dumbbell) progresses like any weighted lift.
     load = "other" if tag == "bodyweight" and any(kg for kg, _ in last_sets) else tag
     fields = {"id": item_id} if item_id else {}
+    goal = goal_label(goal_for(name, goals, known))
     return _item(exercise=name, equipment=tag, muscle=(primary.get(name) or [None])[0],
-                 last=[{"kg": kg, "reps": reps} for kg, reps in last_sets],
-                 goal=goal_label(goal_for(name, goals, known)), **progression(last_sets, load, logging, back), **fields)
+                 last=[{"kg": kg, "reps": reps} for kg, reps in last_sets], goal=goal,
+                 **progression(last_sets, load, logging, back, ready_on=GOAL_READY_ON if goal else None), **fields)
 
 
 def _suggested(p: dict, kind: str, muscle: str, reason: str, replaces: str | None = None) -> dict:
@@ -143,9 +147,11 @@ def build_plan(conn: Connection, now: datetime, title: str | None) -> dict:
              for ex in found.exercises]
     for it in items:
         # A goal lift gets one more heavy set, up to 4, so it doesn't creep up as the extra set becomes "last time".
-        if it["goal"] and it["change"] in ("up", "same") and it["sets"] <= 3:
-            it["sets"] += 1
-            it["reason"] = f"+1 set for your goal: {it['goal']}"
+        if it["goal"] and it["change"] in ("up", "same"):
+            it["goal_extra"] = True  # one of its sets is the goal's; the session still counts as done without it
+            if it["sets"] <= 3:
+                it["sets"] += 1
+                it["reason"] = f"+1 set for your goal: {it['goal']}"
 
     if not back:
         in_plan = set(names)

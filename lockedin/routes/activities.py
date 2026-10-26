@@ -51,12 +51,12 @@ def list_activities(
     return {"items": items, "next_before": items[-1]["start_at"] if len(items) == limit else None}
 
 
-def downsample(streams: dict, max_points: int = MAX_POINTS) -> dict:
+def downsample(streams: dict, max_points: int = MAX_POINTS, fields: tuple[str, ...] = STREAM_FIELDS) -> dict:
     """Bucket means so a long ride stays light for the phone; t_offset keeps each bucket's first value."""
     n = len(streams["t_offset"])
     size = max(1, math.ceil(n / max_points))
     out: dict = {"t_offset": streams["t_offset"][::size]}
-    for f in STREAM_FIELDS:
+    for f in fields:
         values = streams.get(f)
         if values is None:
             out[f] = None
