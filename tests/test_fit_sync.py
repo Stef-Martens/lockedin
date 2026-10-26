@@ -188,7 +188,7 @@ def test_server_error_on_one_file_does_not_block_the_rest(tmp_path):
     def http(url, token, body, headers):
         if url.endswith("/known"):
             return 200, b'{"known": []}'
-        if b"aaa" in body:
+        if b'filename="a.fit"' in body:  # not the content: the random multipart boundary can contain "aaa"
             return 500, b"Internal Server Error"
         return 200, b'{"status": "imported"}'
 
