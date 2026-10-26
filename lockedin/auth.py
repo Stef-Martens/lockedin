@@ -47,6 +47,15 @@ def require_owner(authorization: str | None = Header(None)) -> str:
     return _owner_email(_bearer(authorization))
 
 
+def require_sync(authorization: str | None = Header(None)) -> Literal["sync"]:
+    """Only the Mac sync's token, never an owner session."""
+    token = _bearer(authorization)
+    sync_token = get_settings().sync_token
+    if len(sync_token) >= MIN_SYNC_TOKEN_LEN and hmac.compare_digest(token.encode(), sync_token.encode()):
+        return "sync"
+    raise HTTPException(401, NOT_SIGNED_IN)
+
+
 def require_owner_or_sync(authorization: str | None = Header(None)) -> Literal["owner", "sync"]:
     token = _bearer(authorization)
     sync_token = get_settings().sync_token

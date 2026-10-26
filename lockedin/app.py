@@ -3,7 +3,7 @@ from fastapi.responses import JSONResponse
 
 from lockedin.auth import require_owner
 from lockedin.config import get_settings
-from lockedin.routes import activities, body, checkins, coach, fit, hevy, overview, plan, preferences, status, trends
+from lockedin.routes import activities, agenda, body, checkins, coach, fit, hevy, overview, plan, preferences, status, trends
 
 app = FastAPI(title="LockedIn", docs_url="/api/docs", openapi_url="/api/openapi.json")
 app.include_router(fit.router)
@@ -17,6 +17,8 @@ app.include_router(checkins.router)
 app.include_router(coach.router)
 app.include_router(preferences.router)
 app.include_router(plan.router)
+app.include_router(agenda.sync_router)
+app.include_router(agenda.router)
 
 
 @app.middleware("http")
