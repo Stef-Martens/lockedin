@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { MapMuscle, MuscleMap } from "../lib/types";
@@ -23,6 +23,13 @@ vi.mock("../lib/api", () => ({
 
 afterEach(cleanup);
 
+// jsdom has no PointerEvent with pointerType; a minimal stand-in so mouse and touch can be told apart.
+class TestPointerEvent extends MouseEvent {
+  pointerType: string;
+  constructor(type: string, init: PointerEventInit = {}) { super(type, init); this.pointerType = init.pointerType ?? "mouse"; }
+}
+(window as unknown as { PointerEvent: typeof TestPointerEvent }).PointerEvent = TestPointerEvent;
+
 const renderPage = async () => {
   render(<MemoryRouter initialEntries={["/muscles?week=2026-10-19"]}><Muscles /></MemoryRouter>);
   await screen.findByText("Week of 19 Oct");
@@ -45,7 +52,7 @@ describe("Muscles page", () => {
   it("still shows the hover panel for another muscle while one is pinned", async () => {
     await renderPage();
     fireEvent.click(shape("quads"));
-    fireEvent.mouseMove(document.querySelector(".mm-figures")!, { clientX: 300, clientY: 300 });
+    fireEvent.pointerMove(document.querySelector(".mm-figures")!, { pointerType: "mouse", clientX: 300, clientY: 300 });
     fireEvent.mouseEnter(shape("triceps"));
     expect(screen.getByRole("tooltip").textContent).toContain("Triceps");
   });
@@ -68,5 +75,25 @@ describe("placeTip", () => {
   });
   it("never goes above the top when the panel is taller than the screen", () => {
     expect(placeTip({ x: 100, y: 600 }, { w: 290, h: 1000 }, viewport).y).toBe(12);
+  });
+});
+
+describe("Muscles week arrows", () => {
+  it("count every click, even before the previous week has loaded", async () => {
+    await renderPage();
+    const prev = screen.getByRole("button", { name: "Previous week" });
+    fireEvent.click(prev);
+    fireEvent.click(prev);
+    const { apiFetch } = await import("../lib/api");
+    await waitFor(() => expect(apiFetch).toHaveBeenCalledWith("/api/muscle-map?week=2026-10-05"));
+  });
+});
+
+describe("Muscles on a touch screen", () => {
+  it("doesn't leave a floating panel after a tap", async () => {
+    await renderPage();
+    fireEvent.pointerMove(document.querySelector(".mm-figures")!, { pointerType: "touch", clientX: 300, clientY: 300 });
+    fireEvent.mouseEnter(shape("triceps"));
+    expect(screen.queryByRole("tooltip")).toBeNull();
   });
 });

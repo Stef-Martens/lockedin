@@ -133,3 +133,40 @@ def test_route(client):
     assert r.status_code == 200 and r.json()["week_start"] == "2026-10-19"
     assert client.get("/api/muscle-map?week=nope", headers=owner_headers()).status_code == 422
     assert client.get("/api/muscle-map").status_code == 401
+
+
+def test_spring_dst_week(conn):
+    # 28 Mar 2027: clocks go forward, Brussels is UTC+2 by the evening.
+    add_gym(conn, datetime(2027, 3, 28, 21, 30, tzinfo=UTC), [(BENCH, 60, 8, "normal")], title="Sunday late")
+    add_gym(conn, datetime(2027, 3, 28, 22, 30, tzinfo=UTC), [(BENCH, 60, 8, "normal")] * 2, title="Monday early")
+    later = datetime(2027, 4, 2, 12, tzinfo=UTC)
+    assert by_key(muscle_map(conn, later, date(2027, 3, 22)))["mid_lower_chest"]["sets"] == 1
+    assert by_key(muscle_map(conn, later, date(2027, 3, 29)))["mid_lower_chest"]["sets"] == 2
+
+
+def test_last_history_bar_is_the_weeks_sets(conn):
+    add_gym(conn, at(20), [(BENCH, 60, 8, "normal")] * 3 + [(LEGS, 100, 10, "normal")] * 2)
+    for m in muscle_map(conn, NOW, WEEK)["muscles"]:
+        assert m["history"][-1]["sets"] == m["sets"], m["key"]
+
+
+def test_one_query_for_all_main_lifts(conn):
+    from sqlalchemy import event
+    lifts = [BENCH, LEGS, "Overhead Press (Dumbbell)", "Lat Pulldown (Cable)", "Lateral Raise (Dumbbell)",
+             "Hammer Curl (Cable)", "Triceps Pushdown", "Seated Leg Curl (Machine)"]
+    add_gym(conn, at(13), [(x, 40, 8, "normal") for x in lifts])
+    add_gym(conn, at(20), [(x, 42.5, 8, "normal") for x in lifts])
+    statements = []
+    listener = lambda *a: statements.append(a[2])  # noqa: E731
+    event.listen(conn.engine, "before_cursor_execute", listener)
+    try:
+        result = muscle_map(conn, NOW, WEEK)
+    finally:
+        event.remove(conn.engine, "before_cursor_execute", listener)
+    assert by_key(result)["mid_lower_chest"]["lift"]["exercise"] == BENCH
+    assert len(statements) <= 12, len(statements)  # main lifts for every muscle come from one query
+
+
+def test_ancient_week_is_the_first_week(client):
+    r = client.get("/api/muscle-map?week=0001-01-03", headers=owner_headers())
+    assert r.status_code == 200

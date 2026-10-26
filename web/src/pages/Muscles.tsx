@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import BodyFigure from "../components/BodyFigure";
 import { Card, PageHeader } from "../components/ui";
@@ -96,13 +96,16 @@ export default function Muscles() {
   const tipRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    let current = true;  // a slower, older week must not overwrite the one asked for last
     setError(null);
     apiFetch<MuscleMap>(`/api/muscle-map${week ? `?week=${encodeURIComponent(week)}` : ""}`)
-      .then(setMap)
+      .then((m) => { if (current) setMap(m); })
       .catch((e) => {
+        if (!current) return;
         if (e instanceof ApiError && e.status === 422) setParams({}, { replace: true });  // bad ?week= → this week
         else setError(e.message);
       });
+    return () => { current = false; };
   }, [week, setParams]);
 
   useEffect(() => {
@@ -129,14 +132,16 @@ export default function Muscles() {
   const anyLeftOut = map.muscles.some((m) => m.left_out);
   const canBack = !!map.first_week && map.week_start > map.first_week;
   const go = (by: number) => {
-    const next = shiftWeek(map.week_start, by);
+    const from = week ?? map.week_start;  // from the URL, so quick clicks add up before the data arrives
+    const next = shiftWeek(from, by);
     setPinned(null);
-    setParams(by > 0 && map.is_current ? {} : { week: next });
+    setParams(by > 0 && !week && map.is_current ? {} : { week: next });
   };
   const sportsThisWeek = map.cardio.map((c) => c.sport);
   const togglePin = (key: string) => setPinned((p) => (p === key ? null : key));
 
-  const onMove = (e: MouseEvent) => setCursor({ x: e.clientX, y: e.clientY });
+  // Mouse only: a tap on a touch screen pins the muscle instead of leaving a floating panel behind.
+  const onMove = (e: PointerEvent) => { if (e.pointerType === "mouse") setCursor({ x: e.clientX, y: e.clientY }); };
 
   return (
     <>
@@ -164,7 +169,7 @@ export default function Muscles() {
         {!map.first_week && <div className="note" style={{ marginBottom: 12 }}>Log a gym session in Hevy and import it to see your week fill in.</div>}
 
         <div className="mm-grid">
-          <div className="mm-figures" onMouseMove={onMove} onMouseLeave={() => setCursor(null)}>
+          <div className="mm-figures" onPointerMove={onMove} onPointerLeave={() => setCursor(null)}>
             {(["front", "back"] as const).map((side) => (
               <figure key={side} className="mm-figure">
                 <BodyFigure side={side} muscles={map.muscles} focused={hover ?? chipHover ?? focusKey} pinned={pinned}

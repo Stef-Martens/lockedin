@@ -19,6 +19,7 @@ CARDIO_MUSCLES = {
     "swim": ["lats", "front_delt", "side_delt", "rear_delt", "triceps"],
 }
 HISTORY_WEEKS = 6
+EARLIEST = date(2000, 1, 1)
 LIFT_WINDOW = timedelta(weeks=8)
 NOT_LATELY = timedelta(days=28)
 LOCAL_DAY = "(a.start_at at time zone 'Europe/Brussels')::date"
@@ -32,28 +33,37 @@ def _local_midnight(d: date) -> datetime:
     return datetime.combine(d, time(), TZ)
 
 
-def _main_lift(conn: Connection, muscle: str, candidates: list[tuple], window_end: datetime) -> dict | None:
-    """The exercise with the most primary working sets in the window, and its best e1RM first vs. latest."""
-    if not candidates:
-        return None
-    name = sorted(candidates, key=lambda c: (-c[1], -(c[2] or 0), c[0]))[0][0]
-    sessions = conn.execute(text(
-        "select a.start_at, max(s.e1rm) from gym_sets s join activities a on a.id = s.workout_id "
+def _main_lifts(conn: Connection, candidates: dict[str, list[tuple]], window_end: datetime) -> dict[str, dict]:
+    """Per muscle: the exercise with the most primary working sets in the window, and its best e1RM first vs.
+    latest session. One query for all muscles."""
+    chosen = {m: sorted(c, key=lambda x: (-x[1], -(x[2] or 0), x[0]))[0][0] for m, c in candidates.items() if c}
+    if not chosen:
+        return {}
+    sessions: dict[str, list] = {}
+    for name, start_at, best in conn.execute(text(
+        "select e.name, a.start_at, max(s.e1rm) from gym_sets s join activities a on a.id = s.workout_id "
         "join exercises e on e.id = s.exercise_id "
-        f"where e.name = :n and {counted('a')} and s.set_type <> 'warmup' and s.e1rm is not null "
-        "and a.start_at > :since and a.start_at <= :until group by a.id, a.start_at order by a.start_at"
-    ), {"n": name, "since": window_end - LIFT_WINDOW, "until": window_end}).all()
-    if not sessions:
-        return None
-    first, latest = sessions[0], sessions[-1]
-    status = ("not_lately" if window_end - latest[0] > NOT_LATELY
-              else "new" if len(sessions) == 1 else "trend")
-    return {"exercise": name, "first_e1rm": round(float(first[1]), 1), "latest_e1rm": round(float(latest[1]), 1),
-            "status": status}
+        f"where e.name = any(:names) and {counted('a')} and s.set_type <> 'warmup' and s.e1rm is not null "
+        "and a.start_at > :since and a.start_at <= :until group by e.name, a.id, a.start_at order by a.start_at"
+    ), {"names": sorted(set(chosen.values())), "since": window_end - LIFT_WINDOW, "until": window_end}):
+        sessions.setdefault(name, []).append((start_at, best))
+    out = {}
+    for muscle, name in chosen.items():
+        rows = sessions.get(name)
+        if not rows:
+            continue
+        first, latest = rows[0], rows[-1]
+        status = ("not_lately" if window_end - latest[0] > NOT_LATELY
+                  else "new" if len(rows) == 1 else "trend")
+        out[muscle] = {"exercise": name, "first_e1rm": round(float(first[1]), 1),
+                       "latest_e1rm": round(float(latest[1]), 1), "status": status}
+    return out
 
 
 def muscle_map(conn: Connection, now: datetime, week: date | None) -> dict:
     current = week_start(now)
+    if week is not None and week < EARLIEST:
+        week = None  # nonsense dates (year 1) show this week instead of failing
     start_day = current if week is None else min(_monday(week), current)
     is_current = start_day == current
     start, end = _local_midnight(start_day), _local_midnight(start_day + timedelta(days=7))
@@ -104,6 +114,7 @@ def muscle_map(conn: Connection, now: datetime, week: date | None) -> dict:
         f"select min(start_at) from activities where {COUNTED_SQL} and sport in ('gym', 'bike', 'run', 'swim')"
     )).scalar()
 
+    lifts = _main_lifts(conn, candidates, until)
     muscles = []
     for m in conn.execute(text("select key, name, region, target_low, target_high from muscles order by sort")):
         trained = days.get(m.key, [])
@@ -116,7 +127,7 @@ def muscle_map(conn: Connection, now: datetime, week: date | None) -> dict:
                          "sets": history.get((m.key, history_start + timedelta(weeks=i)), 0)}
                         for i in range(HISTORY_WEEKS)],
             "last_trained": last_trained[m.key].isoformat() if m.key in last_trained else None,
-            "lift": _main_lift(conn, m.key, candidates.get(m.key, []), until),
+            "lift": lifts.get(m.key),
             "cardio": [{"sport": c["sport"], "minutes": c["minutes"]} for c in cardio
                        if m.key in CARDIO_MUSCLES[c["sport"]]],
             "suggestion": suggestions.get(m.key),
