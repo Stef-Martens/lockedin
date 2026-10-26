@@ -132,6 +132,19 @@ The **Overview** page answers two questions: am I improving, and what should I f
 - **Streak** counts consecutive weeks with at least 2 sessions. After 7 days without training, the page opens with a "Welcome back" card instead of comparisons.
 - **Trends** has a page per sport: power, efficiency and best 20 min for the bike; pace and aerobic efficiency for runs; pace per 100 m for swims; and for the gym, muscle coverage, volume and progress per exercise. Exercises the library doesn't know appear under **Tag your exercises**.
 
+**Muscles:**
+- The **Muscles** page shows your week on a body, front and back. Every muscle starts grey on Monday and fills in as you log gym sets: darker green for a little, green when it's in its weekly target range, bright lime for lots.
+- **Rides, runs and swims** draw stripes instead (blue, orange, teal). Bike and run stripe the legs; swims stripe the lats, shoulders and triceps. They never count as gym sets, so a week of Zwift still shows your legs as "no gym work yet" and the focus tips keep suggesting leg work.
+- **Hover a muscle** to see:
+  - this week's sets against its target, with the days and exercises
+  - your cardio minutes, for muscles a sport uses
+  - the last 6 weeks
+  - how its main lift has moved (estimated 1RM, first vs. latest session in the last 8 weeks)
+- **Untrained muscles:** they show when you last trained them; in the current week they also show the focus engine's suggestion.
+- **Click** a muscle to keep its details in the side column; Esc lets go.
+- **Earlier weeks:** the ‹ › arrows step back through them, and the URL remembers the week.
+- **Show as list** gives the same numbers as a table.
+
 **Body check-ins and reminders:**
 - **Body** is one check-in form: one date, every measurement on one screen (weight, chest, shoulders, arms, waist, hips, thighs). Fill in what you measured; blank fields are skipped. Saving the same date again replaces those values. Each field says where to put the tape, and History shows the change since your previous check-in.
 - **Reminder:** pick every 1, 2 or 4 weeks, and choose whether to include the Hevy upload. **Add to calendar** downloads a repeating event; open it to add it to iPhone or Mac Calendar. It starts on your next due date at 09:00 and links to the Body page.
