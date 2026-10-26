@@ -68,4 +68,22 @@ describe("Plan page", () => {
     fireEvent.click(screen.getByRole("button", { name: "Swap Face Pull" }));
     expect(apiFetch).toHaveBeenCalledWith("/api/plan/7/items/a1/swap", { method: "POST" });
   });
+
+  it("keeps the menu usable on phones, where tapping an item blurs without focusing it", async () => {
+    await open("/plan?day=Chest%20-%20Schouders%20-%20Triceps");
+    await screen.findByText("Face Pull");
+    fireEvent.click(screen.getByRole("button", { name: "More for Face Pull" }));
+    const never = screen.getByRole("menuitem", { name: "Don't suggest this again" });
+    fireEvent.blur(screen.getByRole("menuitem", { name: "Skip for today" }), { relatedTarget: null });
+    fireEvent.click(never);
+    expect(apiFetch).toHaveBeenCalledWith("/api/plan/7/items/a1/never", { method: "POST" });
+  });
+
+  it("closes the menu when tapping elsewhere", async () => {
+    await open("/plan?day=Chest%20-%20Schouders%20-%20Triceps");
+    await screen.findByText("Face Pull");
+    fireEvent.click(screen.getByRole("button", { name: "More for Face Pull" }));
+    fireEvent.pointerDown(document.body);
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
 });

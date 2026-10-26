@@ -93,7 +93,7 @@ def _save_items(conn: Connection, plan_id: int, items: list, refresh_hash: bool 
 
 def _swapped(conn: Connection, now: datetime, row, item_id: str) -> list:
     try:
-        return swap_item(conn, now, {"items": row.items}, item_id)["items"]
+        return swap_item(conn, now, {"day": row.day, "items": row.items}, item_id)["items"]
     except LookupError as e:
         raise HTTPException(409, str(e)) from None
 
@@ -121,8 +121,12 @@ def never(plan_id: int, item_id: str, conn: Connection = Depends(get_conn), now:
         "update profile set never_exercises = array_append(never_exercises, :e), updated_at = now() "
         "where id = 1 and not (:e = any(never_exercises))"
     ), {"e": item["exercise"]})
+    try:
+        items = swap_item(conn, now, {"day": row.day, "items": row.items}, item_id)["items"]
+    except LookupError:
+        items = [it for it in row.items if it["id"] != item_id]  # nothing else for that muscle: drop the extra
     # The plan now reflects the new preference, so keep it current instead of rebuilding it on the next open.
-    return _out(_save_items(conn, plan_id, _swapped(conn, now, row, item_id), refresh_hash=True), conn, now)
+    return _out(_save_items(conn, plan_id, items, refresh_hash=True), conn, now)
 
 
 @router.get("/goals/active")

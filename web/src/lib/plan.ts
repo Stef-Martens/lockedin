@@ -19,6 +19,8 @@ export interface PlanItem {
   goal: string | null;
   skipped: boolean;
   suggested: boolean;
+  /** Lighter sets before the top weight last time (ramping up); the target covers only the top-weight sets. */
+  lighter_sets?: number;
 }
 
 export interface Plan { id: number; day: string | null; built_on: string; comeback: boolean; items: PlanItem[] }

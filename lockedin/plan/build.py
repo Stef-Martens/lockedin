@@ -10,7 +10,7 @@ from lockedin.focus.preferences import Preferences, load_preferences, prefs_hash
 from lockedin.focus.suggest import gym_suggestions, low_muscles, low_reason, weighted_pick
 from lockedin.focus.wins import stalled_exercises
 from lockedin.plan.goals import active_goals, goal_for, goal_label
-from lockedin.plan.routines import RoutineExercise, routine
+from lockedin.plan.routines import Routine, latest_sets, routine
 from lockedin.timeutil import TZ
 
 MAX_SWAPS = 1
@@ -55,26 +55,51 @@ def _item(**fields) -> dict:
     base = {"id": uuid.uuid4().hex[:10], "exercise": "", "equipment": "other", "kind": "routine", "muscle": None,
             "sets": 3, "reps": "8–12", "weight_kg": None, "dumbbell": None, "change": None, "estimate": False,
             "last": [], "replaces": None, "reason": None, "goal": None, "skipped": False, "suggested": False,
-            "tried": []}
+            "tried": [], "lighter_sets": 0}
     return {**base, **fields}
 
 
-def progression(ex: RoutineExercise, equipment: str, dumbbell_logging: str, welcome_back: bool) -> dict:
-    """Target for a routine exercise from its last session: up a step once every top-weight set hit 12 reps."""
-    weights = [kg for kg, _ in ex.last_sets if kg]
+def progression(last_sets: list[tuple[float | None, int | None]], equipment: str, dumbbell_logging: str,
+                welcome_back: bool) -> dict:
+    """Target for the sets at last session's top weight: up a step once every one of them hit 12 reps.
+    Lighter sets before them (ramping up) are counted separately, so the plan never asks for more heavy sets.
+    Sets logged with no reps (left empty in Hevy) don't count."""
+    last_sets = [(kg, reps) for kg, reps in last_sets if reps]
+    weights = [kg for kg, _ in last_sets if kg]
     top = max(weights) if weights else None
-    at_top = [reps or 0 for kg, reps in ex.last_sets if (kg or None) == top]
+    at_top = [reps or 0 for kg, reps in last_sets if (kg or None) == top]
     ready = bool(at_top) and all(r >= TOP_REPS for r in at_top)
     dumbbell = dumbbell_logging if equipment == "dumbbell" else None
+    sets = max(len(at_top), 1)
+    lighter = len(last_sets) - len(at_top) if top is not None else 0
     if top is None:  # bodyweight with nothing added: progress by a rep
-        best = max((reps or 0 for _, reps in ex.last_sets), default=0)
+        best = max(at_top, default=0)
         if welcome_back:
-            return {"weight_kg": None, "reps": str(best) if best else "8–12", "change": "welcome_back", "dumbbell": None}
-        return {"weight_kg": None, "reps": str(best + 1), "change": "up" if ready else "same", "dumbbell": None}
+            reps = str(best) if best else "8–12"
+            return {"weight_kg": None, "reps": reps, "change": "welcome_back", "dumbbell": None, "sets": sets, "lighter_sets": 0}
+        return {"weight_kg": None, "reps": str(best + 1), "change": "up" if ready else "same", "dumbbell": None,
+                "sets": sets, "lighter_sets": 0}
     if welcome_back or not ready:
-        return {"weight_kg": top, "reps": "8–12", "change": "welcome_back" if welcome_back else "same", "dumbbell": dumbbell}
+        low = min(at_top)
+        # Below the 8–12 range last time: aim for one more rep than the weakest set (same as last time after a break).
+        reps = "8–12" if low >= 8 else str(low if welcome_back else low + 1)
+        return {"weight_kg": top, "reps": reps, "change": "welcome_back" if welcome_back else "same",
+                "dumbbell": dumbbell, "sets": sets, "lighter_sets": lighter}
     step = (2 * DUMBBELL_STEP_KG if dumbbell_logging == "pair" else DUMBBELL_STEP_KG) if equipment == "dumbbell" else STEP_KG
-    return {"weight_kg": round(top + step, 2), "reps": "8–12", "change": "up", "dumbbell": dumbbell}
+    return {"weight_kg": round(top + step, 2), "reps": "8–12", "change": "up", "dumbbell": dumbbell,
+            "sets": sets, "lighter_sets": lighter}
+
+
+def _routine_item(conn: Connection, now: datetime, name: str, routine_sets: list, equipment: dict, primary: dict,
+                  logging: str, back: bool, goals: list[dict], item_id: str | None = None) -> dict:
+    last_sets = latest_sets(conn, now, name) or routine_sets
+    tag = equipment.get(name, "other")
+    # A bodyweight move done with added weight (dip belt, dumbbell) progresses like any weighted lift.
+    load = "other" if tag == "bodyweight" and any(kg for kg, _ in last_sets) else tag
+    fields = {"id": item_id} if item_id else {}
+    return _item(exercise=name, equipment=tag, muscle=(primary.get(name) or [None])[0],
+                 last=[{"kg": kg, "reps": reps} for kg, reps in last_sets],
+                 goal=goal_label(goal_for(name, goals)), **progression(last_sets, load, logging, back), **fields)
 
 
 def _suggested(p: dict, kind: str, muscle: str, reason: str, replaces: str | None = None) -> dict:
@@ -111,16 +136,8 @@ def build_plan(conn: Connection, now: datetime, title: str | None) -> dict:
     names = [e.name for e in found.exercises]
     equipment, primary, secondary = _library(conn, names)
 
-    items = []
-    for ex in found.exercises:
-        tag = equipment.get(ex.name, "other")
-        logged_weight = any(kg for kg, _ in ex.last_sets)
-        # A bodyweight move done with added weight (dip belt, dumbbell) progresses like any weighted lift.
-        kind_of_load = "other" if tag == "bodyweight" and logged_weight else tag
-        target = progression(ex, kind_of_load, logging, back)
-        items.append(_item(exercise=ex.name, equipment=tag, muscle=(primary.get(ex.name) or [None])[0],
-                           sets=ex.sets, last=[{"kg": kg, "reps": reps} for kg, reps in ex.last_sets],
-                           goal=goal_label(goal_for(ex.name, goals)), **target))
+    items = [_routine_item(conn, now, ex.name, ex.last_sets, equipment, primary, logging, back, goals)
+             for ex in found.exercises]
 
     if not back:
         in_plan = set(names)
@@ -160,8 +177,20 @@ def build_plan(conn: Connection, now: datetime, title: str | None) -> dict:
             **_freshness(conn, now, prefs)}
 
 
+def _restore(conn: Connection, now: datetime, plan: dict, it: dict) -> dict:
+    """The owner's own routine exercise back in place of a swap-in, with its normal target."""
+    found: Routine | None = routine(conn, now, plan["day"]) if plan.get("day") else None
+    ex = next((e for e in found.exercises if e.name == it["replaces"]), None) if found else None
+    if ex is None:
+        raise LookupError("There's no other exercise to swap this for.")
+    equipment, primary, _ = _library(conn, [ex.name])
+    return _routine_item(conn, now, ex.name, ex.last_sets, equipment, primary, _dumbbell_logging(conn),
+                         comeback(conn, now) is not None, active_goals(conn), item_id=it["id"])
+
+
 def swap_item(conn: Connection, now: datetime, plan: dict, item_id: str) -> dict:
-    """The plan with one item replaced by the next exercise for the same muscle (never one already tried)."""
+    """The plan with one item replaced by the next exercise for the same muscle (never one already tried).
+    Once a swap-in runs out of alternatives, the routine exercise it replaced comes back."""
     items = plan["items"]
     idx = next((i for i, it in enumerate(items) if it["id"] == item_id), None)
     if idx is None:
@@ -172,9 +201,11 @@ def swap_item(conn: Connection, now: datetime, plan: dict, item_id: str) -> dict
     prefs = load_preferences(conn)
     never = frozenset(prefs.never_exercises) | _avoided_exercises(conn, prefs.avoid_muscles)
     tried = set(it.get("tried", [])) | {it["exercise"]}
-    skip = frozenset({x["exercise"] for x in items} | tried)
+    skip = frozenset({x["exercise"] for x in items} | tried | ({it["replaces"]} if it["replaces"] else set()))
     p = weighted_pick(conn, it["muscle"], now, _dumbbell_logging(conn), never, skip)
     if not p:
+        if it["replaces"] and it["kind"] == "swap":
+            return {**plan, "items": items[:idx] + [_restore(conn, now, plan, it)] + items[idx + 1:]}
         raise LookupError("There's no other exercise to swap this for.")
     replaces = it["replaces"] or (it["exercise"] if it["kind"] == "routine" else None)
     reason = it["reason"] if it["kind"] in ("add", "missed") else f"Swapped in for {replaces} today."

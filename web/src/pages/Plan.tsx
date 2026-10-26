@@ -11,18 +11,25 @@ function ItemMenu({ item, onAction }: { item: PlanItem; onAction: (action: "skip
   const [open, setOpen] = useState(false);
   const button = useRef<HTMLButtonElement>(null);
   const menu = useRef<HTMLDivElement>(null);
-  useEffect(() => { if (open) menu.current?.querySelector("button")?.focus(); }, [open]);
+  const wrap = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    menu.current?.querySelector("button")?.focus();
+    // Close on a tap elsewhere. (Not on blur: phone Safari doesn't focus a tapped button, so blur would close
+    // the menu before the tap on an item lands.)
+    const outside = (e: PointerEvent) => { if (!wrap.current?.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener("pointerdown", outside);
+    return () => document.removeEventListener("pointerdown", outside);
+  }, [open]);
   const close = () => { setOpen(false); button.current?.focus(); };
   const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { e.stopPropagation(); close(); } };
   const choose = (action: "skip" | "never") => { setOpen(false); onAction(action); };
   return (
-    <span className="plan-menu">
+    <span className="plan-menu" ref={wrap}>
       <button ref={button} className="btn small ghost" aria-label={`More for ${item.exercise}`} aria-haspopup="menu"
         aria-expanded={open} onClick={() => setOpen((o) => !o)}>⋯</button>
       {open && (
-        <div ref={menu} className="plan-menu-pop pop" role="menu" onKeyDown={onKey} onBlur={(e) => {
-          if (!e.currentTarget.contains(e.relatedTarget as Node)) setOpen(false);
-        }}>
+        <div ref={menu} className="plan-menu-pop pop" role="menu" onKeyDown={onKey}>
           <button role="menuitem" onClick={() => choose("skip")}>{item.skipped ? "Undo skip" : "Skip for today"}</button>
           {item.suggested && <button role="menuitem" onClick={() => choose("never")}>Don't suggest this again</button>}
         </div>
@@ -50,6 +57,7 @@ function ItemCard({ item, n, onAction }: { item: PlanItem; n: string; onAction: 
       </div>
       <div className="plan-body">
         <div className="plan-dose num">{doseLine(item)}</div>
+        {!!item.lighter_sets && <div className="secondary" style={{ fontSize: 13 }}>plus {item.lighter_sets} lighter {item.lighter_sets === 1 ? "set" : "sets"} to build up, like last time</div>}
         {change && <div className={`plan-change ${item.change}`}>{change}</div>}
         {last && <div className="muted num" style={{ fontSize: 12.5 }}>{last}</div>}
         {item.replaces && <div className="secondary" style={{ fontSize: 13 }}>Instead of {item.replaces}</div>}

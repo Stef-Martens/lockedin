@@ -49,5 +49,20 @@ def routines(conn: Connection, now: datetime) -> list[Routine]:
     return [Routine(r.title, r.id, r.start_at, _exercises(conn, r.id)) for r in rows]
 
 
+def latest_sets(conn: Connection, now: datetime, exercise: str) -> list[tuple[float | None, int | None]]:
+    """Working (kg, reps) from the latest counted session with this exercise, whatever the workout was called."""
+    aid = conn.execute(text(
+        "select a.id from gym_sets s join exercises e on e.id = s.exercise_id join activities a on a.id = s.workout_id "
+        f"where e.name = :n and s.set_type <> 'warmup' and {counted('a')} and a.start_at <= :now "
+        "order by a.start_at desc limit 1"
+    ), {"n": exercise, "now": now}).scalar()
+    if aid is None:
+        return []
+    return [(r.weight_kg, r.reps) for r in conn.execute(text(
+        "select s.weight_kg, s.reps from gym_sets s join exercises e on e.id = s.exercise_id "
+        "where s.workout_id = :a and e.name = :n and s.set_type <> 'warmup' order by s.set_index"
+    ), {"a": aid, "n": exercise})]
+
+
 def routine(conn: Connection, now: datetime, title: str) -> Routine | None:
     return next((r for r in routines(conn, now) if r.title == title), None)

@@ -38,14 +38,14 @@ def test_routines_from_titles(conn):
 
 def test_progression_up_and_same(conn):
     add_gym(conn, day(24), [(BENCH, 80, 12, "normal")] * 3 + [(INCLINE, 60, 12, "normal")] * 3, title="A")
-    add_gym(conn, day(23), [(BENCH, 80, 12, "normal"), (BENCH, 80, 10, "normal")], title="B")
+    add_gym(conn, day(23), [("Lat Pulldown (Cable)", 60, 12, "normal"), ("Lat Pulldown (Cable)", 60, 10, "normal")], title="B")
     add_gym(conn, day(22), [("Pull Up", None, 12, "normal")] * 3 + [("Triceps Dip", 10, 12, "normal")] * 3, title="C")
     a = items_by(build_plan(conn, NOW, "A"))
     assert (a[BENCH]["change"], a[BENCH]["weight_kg"]) == ("up", 82.5)
     assert (a[INCLINE]["weight_kg"], a[INCLINE]["dumbbell"]) == (64, "pair")
     assert a[BENCH]["last"] == [{"kg": 80, "reps": 12}] * 3
     b = items_by(build_plan(conn, NOW, "B"))
-    assert (b[BENCH]["change"], b[BENCH]["weight_kg"]) == ("same", 80)
+    assert (b["Lat Pulldown (Cable)"]["change"], b["Lat Pulldown (Cable)"]["weight_kg"]) == ("same", 60)
     c = items_by(build_plan(conn, NOW, "C"))
     assert (c["Pull Up"]["weight_kg"], c["Pull Up"]["reps"], c["Pull Up"]["change"]) == (None, "13", "up")
     assert (c["Triceps Dip"]["weight_kg"], c["Triceps Dip"]["change"]) == (12.5, "up")
@@ -164,3 +164,45 @@ def test_goal_matching():
 
 def test_no_gym_history(conn):
     assert routines(conn, NOW) == []
+
+
+def test_swapping_the_variety_pick_never_mislabels_the_stuck_lift(conn):
+    _stalled_ohp(conn)
+    plan = build_plan(conn, NOW, CHEST)
+    variety = next(i for i in plan["items"] if i["kind"] == "swap")
+    seen = []
+    for _ in range(4):
+        try:
+            plan = swap_item(conn, NOW, plan, variety["id"])
+        except LookupError:
+            break
+        item = next(i for i in plan["items"] if i["id"] == variety["id"])
+        seen.append(item["exercise"])
+        if item["exercise"] == OHP:  # back to the owner's own lift: shown as their routine, with last time's sets
+            assert item["kind"] == "routine" and item["replaces"] is None and item["last"] and item["change"] == "same"
+            break
+        assert item["kind"] == "swap" and item["replaces"] == OHP
+    assert seen and len(seen) == len(set(seen))
+
+
+def test_dose_targets_the_sets_at_the_top_weight(conn):
+    add_gym(conn, day(24), [(BENCH, 50, 13, "normal"), (BENCH, 70, 10, "normal"), (BENCH, 80, 6, "normal"),
+                            (BENCH, 80, 5, "normal")], title="A")
+    bench = items_by(build_plan(conn, NOW, "A"))[BENCH]
+    assert (bench["sets"], bench["reps"], bench["weight_kg"], bench["change"]) == (2, "6", 80, "same")
+    assert bench["lighter_sets"] == 2
+
+
+def test_progression_uses_the_latest_session_of_that_exercise(conn):
+    add_gym(conn, day(20), [(BENCH, 60, 8, "normal")] * 3 + [(OHP, 40, 10, "normal")] * 3, title=CHEST)
+    add_gym(conn, day(24), [(BENCH, 60, 12, "normal")] * 3, title="General")
+    bench = items_by(build_plan(conn, NOW, CHEST))[BENCH]
+    assert (bench["change"], bench["weight_kg"]) == ("up", 62.5)
+    assert bench["last"] == [{"kg": 60, "reps": 12}] * 3
+
+
+def test_empty_sets_are_ignored(conn):
+    ext = "Triceps Extension (Cable)"
+    add_gym(conn, day(24), [(ext, 12.5, 10, "normal"), (ext, 12.5, 6, "normal"), (ext, 12.5, 0, "normal")], title="A")
+    item = items_by(build_plan(conn, NOW, "A"))[ext]
+    assert (item["sets"], item["reps"], item["weight_kg"]) == (2, "7", 12.5)

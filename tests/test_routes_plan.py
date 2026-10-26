@@ -118,3 +118,19 @@ def test_errors(client, clean_db, clock):
 ])
 def test_requires_owner(client, method, path):
     assert getattr(client, method)(path).status_code == 401
+
+
+def test_never_without_an_alternative_still_saves_and_drops_the_extra(client, clean_db, clock):
+    chest_day(clean_db, datetime(2026, 10, 24, 17, tzinfo=UTC))
+    plan = get_plan(client)
+    add = next(i for i in plan["items"] if i["kind"] == "add" and i["muscle"] == "rear_delt")
+    names = []
+    for _ in range(3):  # three rear-delt exercises in the library; the third "never" has nothing left to offer
+        current = next((i for i in get_plan(client)["items"] if i["id"] == add["id"]), None)
+        if current is None:
+            break
+        names.append(current["exercise"])
+        r = client.post(f"/api/plan/{plan['id']}/items/{add['id']}/never", headers=H)
+        assert r.status_code == 200, r.text
+    assert set(names) <= set(client.get("/api/preferences", headers=H).json()["never_exercises"])
+    assert all(i["id"] != add["id"] for i in get_plan(client)["items"])
