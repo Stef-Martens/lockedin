@@ -7,3 +7,4 @@ pyjwt[crypto]>=2.9
 python-multipart>=0.0.12
 python-dotenv>=1.0
 tzdata>=2024.1
+anthropic>=2.3

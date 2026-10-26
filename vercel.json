@@ -8,7 +8,7 @@
       "entrypoint": "lockedin.app:app",
       "functions": {
         "lockedin/app.py": {
-          "maxDuration": 60,
+          "maxDuration": 300,
           "excludeFiles": "{web/**,tests/**,samples/**,supabase/**,sync/**,docs/**,scripts/**,.venv/**,**/node_modules/**}"
         }
       }
