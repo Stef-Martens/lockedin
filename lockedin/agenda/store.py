@@ -171,13 +171,28 @@ def delete(conn: Connection, item_id: int) -> None:
 
 
 def zwift_feed(conn: Connection, now: datetime) -> list[dict]:
-    """The .zwo files that belong in Zwift now: bike workouts from today on. Marks them as fetched."""
+    """The .zwo files that belong in Zwift now: bike workouts from today on, with names unique even on a
+    case-insensitive disk. Nothing is marked as in Zwift until the Mac confirms it wrote the file."""
     rows = conn.execute(text(
         f"select {FIELDS} from agenda_items where sport = 'bike' and zwift is not null and day >= :today "
         "order by day, sort, id"
     ), {"today": local_today(now)}).all()
-    if rows:
-        conn.execute(text("update agenda_items set zwift_synced_at = :now where id = any(:ids)"),
-                     {"now": now, "ids": [r.id for r in rows]})
-    return [{"item_id": r.id, "filename": filename(r.title, r.day),
-             "content": render(r.title, r.day, r.note, ZwiftWorkout(**r.zwift))} for r in rows]
+    taken: set[str] = set()
+    out = []
+    for r in rows:
+        name = filename(r.title, r.day)
+        n = 2
+        while name.lower() in taken:
+            name = filename(r.title, r.day).removesuffix(".zwo") + f" ({n}).zwo"
+            n += 1
+        taken.add(name.lower())
+        out.append({"item_id": r.id, "filename": name, "content": render(r.title, r.day, r.note, ZwiftWorkout(**r.zwift))})
+    return out
+
+
+def confirm_in_zwift(conn: Connection, now: datetime, item_ids: list[int]) -> int:
+    """The Mac wrote (or already had) these files in Zwift's folder."""
+    if not item_ids:
+        return 0
+    return conn.execute(text("update agenda_items set zwift_synced_at = :now where id = any(:ids) and zwift is not null"),
+                        {"now": now, "ids": item_ids}).rowcount

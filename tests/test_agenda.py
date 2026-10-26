@@ -96,7 +96,7 @@ def test_zwift_item_lifecycle(client, clock):
     assert r.status_code == 201
     item = r.json()
     assert item["zwift_status"] == "pending" and item["zwift"]["duration_s"] == 3900
-    client.post("/api/agenda/zwift/sync", headers=SYNC_HEADERS)
+    client.post("/api/agenda/zwift/confirm", headers=SYNC_HEADERS, json={"item_ids": [item["id"]]})
     assert week(client)["items"][0]["zwift_status"] == "synced"
     moved = client.patch(f"/api/agenda/{item['id']}", headers=H, json={"day": "2026-10-30"}).json()
     assert moved["day"] == "2026-10-30" and moved["zwift_status"] == "pending"
@@ -148,6 +148,24 @@ def test_zwift_feed(client, clock):
     assert ET.fromstring(feed[1]["content"]).findtext("name") == "2026-10-29 Sweet Spot 3x10"
     assert client.post("/api/agenda/zwift/sync", headers=H).status_code == 401
     assert client.post("/api/agenda/zwift/sync").status_code == 401
+
+
+def test_in_zwift_only_after_the_mac_confirms(client, clock):
+    item = post(client, day="2026-10-29", sport="bike", title="Sweet Spot 3x10", zwift=SWEET_SPOT).json()
+    client.post("/api/agenda/zwift/sync", headers=SYNC_HEADERS)
+    assert week(client)["items"][0]["zwift_status"] == "pending"  # served isn't the same as written
+    r = client.post("/api/agenda/zwift/confirm", headers=SYNC_HEADERS, json={"item_ids": [item["id"], 99999]})
+    assert r.status_code == 200
+    assert week(client)["items"][0]["zwift_status"] == "synced"
+    assert client.post("/api/agenda/zwift/confirm", headers=H, json={"item_ids": []}).status_code == 401
+
+
+def test_feed_file_names_are_unique_ignoring_case(client, clock):
+    for title in ("Z2 ride", "Z2 ride", "z2 RIDE"):
+        post(client, day="2026-10-29", sport="bike", title=title, zwift=SWEET_SPOT)
+    names = [f["filename"] for f in client.post("/api/agenda/zwift/sync", headers=SYNC_HEADERS).json()]
+    assert len({n.lower() for n in names}) == 3
+    assert names[0] == "2026-10-29 Z2 ride.zwo"
 
 
 @pytest.mark.parametrize("method, path", [

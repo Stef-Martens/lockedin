@@ -223,22 +223,51 @@ def _digest(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+def _load_manifest(path: Path) -> dict | None:
+    """{file name: sha256} of the files this script wrote; None if the file is damaged."""
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text())
+    except (OSError, ValueError):
+        return None
+    if not isinstance(data, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in data.items()):
+        return None
+    return data
+
+
+def _save_manifest(folder: Path, state: dict) -> None:
+    tmp = folder / (MANIFEST + ".tmp")
+    tmp.write_text(json.dumps(state, indent=1, sort_keys=True))
+    tmp.replace(folder / MANIFEST)
+
+
 def sync_workouts(cfg: dict, http: Http = urllib_http) -> tuple[int, int, list[str]]:
-    """Write the agenda's Zwift workouts into Zwift's folder; remove the ones no longer planned.
-    Only files listed in the manifest (written by this script, unchanged since) are ever replaced or deleted."""
+    """Write the agenda's Zwift workouts into Zwift's folder and remove the ones no longer planned.
+
+    A file is only ever replaced or deleted if the manifest says this script wrote it and it is still exactly
+    what was written; anything else (the owner's own files, or ours edited in Zwift) is left alone. The
+    manifest is saved after every change, so an interrupted run never loses track of a file. Afterwards the
+    server is told which workouts are actually in place, which is what the agenda shows as "In Zwift".
+    """
     folder, problem = workouts_dir(cfg)
     if folder is None:
         return 0, 0, [problem]
+    manifest = _load_manifest(folder / MANIFEST)
+    if manifest is None:
+        return 0, 0, [f"Zwift workouts: {folder / MANIFEST} is damaged, so no workout files were touched. "
+                      "Delete it and the next run starts fresh (files it listed are then left alone)."]
     api, token = cfg.get("LOCKEDIN_API", "").rstrip("/"), cfg.get("SYNC_TOKEN", "")
     status, resp = http(f"{api}/api/agenda/zwift/sync", token, b"{}", {"Content-Type": "application/json"})
     if status != 200:
         return 0, 0, [f"Zwift workouts: server said {status}"]
-    manifest_path = folder / MANIFEST
-    manifest = json.loads(manifest_path.read_text()) if manifest_path.exists() else {}
     planned = json.loads(resp)
     if not isinstance(planned, list) or not all(isinstance(w, dict) for w in planned):
         return 0, 0, ["Zwift workouts: the server's reply wasn't a list of workouts; nothing changed."]
+
+    state = dict(manifest)  # saved as we go
     keep: dict[str, str] = {}
+    in_place: list[int] = []
     written = removed = 0
     warnings: list[str] = []
     for w in planned:
@@ -247,25 +276,50 @@ def sync_workouts(cfg: dict, http: Http = urllib_http) -> tuple[int, int, list[s
             warnings.append(f"Zwift workouts: skipped an unsafe file name: {name!r}")
             continue
         data = str(w.get("content", "")).encode()
+        digest = _digest(data)
         path = folder / name
-        current = _digest(path.read_bytes()) if path.exists() else None
-        if current is not None and name not in manifest:
-            warnings.append(f"Zwift workouts: {name} already exists and isn't from LockedIn; left it alone.")
+        try:
+            current = _digest(path.read_bytes()) if path.exists() else None
+            if current is not None and current != digest:
+                if name not in manifest:
+                    warnings.append(f"Zwift workouts: {name} already exists and isn't from LockedIn; left it alone.")
+                    continue
+                if current != manifest[name]:
+                    warnings.append(f"Zwift workouts: {name} was changed in Zwift, so it's yours now; left it alone.")
+                    state.pop(name, None)
+                    _save_manifest(folder, state)
+                    continue
+            if current != digest:
+                path.write_bytes(data)
+                written += 1
+            if state.get(name) != digest:  # also adopts an identical file from an interrupted run
+                state[name] = digest
+                _save_manifest(folder, state)
+        except OSError as e:
+            warnings.append(f"Zwift workouts: couldn't write {name}: {e}")
             continue
-        if current != _digest(data):
-            path.write_bytes(data)
-            written += 1
-        keep[name] = _digest(data)
+        keep[name] = digest
+        if isinstance(w.get("item_id"), int):
+            in_place.append(w["item_id"])
+
     for name, digest in manifest.items():
-        path = folder / name
-        if name in keep or not path.exists():
+        if name in keep:
             continue
-        if _digest(path.read_bytes()) == digest:  # still exactly what this script wrote
-            path.unlink()
-            removed += 1
-    tmp = folder / (MANIFEST + ".tmp")
-    tmp.write_text(json.dumps(keep, indent=1, sort_keys=True))
-    tmp.replace(manifest_path)
+        path = folder / name
+        try:
+            if path.exists() and _digest(path.read_bytes()) == digest:  # still exactly what this script wrote
+                path.unlink()
+                removed += 1
+        except OSError as e:
+            warnings.append(f"Zwift workouts: couldn't remove {name}, will retry: {e}")
+            continue
+        state.pop(name, None)
+        _save_manifest(folder, state)
+
+    status, _ = http(f"{api}/api/agenda/zwift/confirm", token, json.dumps({"item_ids": in_place}).encode(),
+                     {"Content-Type": "application/json"})
+    if status != 200:
+        warnings.append(f"Zwift workouts: server said {status} when confirming; the agenda may still say pending.")
     return written, removed, warnings
 
 
@@ -280,8 +334,8 @@ def run(cfg: dict, now: Callable[[], float] = time.time, sleep: Callable[[float]
     try:
         last.workouts_written, last.workouts_removed, notes = sync_workouts(cfg, http)
         last.warnings += notes
-    except (OSError, ValueError) as e:  # never let workouts get in the way of uploads
-        last.warnings.append(f"Zwift workouts: will retry next run: {e}")
+    except Exception as e:  # never let workouts get in the way of uploads or the log line
+        last.warnings.append(f"Zwift workouts: will retry next run: {e!r}")
     return reports
 
 

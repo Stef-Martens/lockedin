@@ -288,11 +288,15 @@ class Feed:
     def __init__(self, served):
         self.served = served
         self.calls = 0
+        self.confirmed = None
 
     def __call__(self, url, token, body, headers):
         if url.endswith("/api/agenda/zwift/sync"):
             self.calls += 1
             return 200, json.dumps(self.served).encode()
+        if url.endswith("/api/agenda/zwift/confirm"):
+            self.confirmed = json.loads(body)["item_ids"]
+            return 200, b"{}"
         if url.endswith("/known"):
             return 200, b'{"known": []}'
         return 200, b'{"status": "imported"}'
@@ -373,3 +377,53 @@ def test_run_reports_workouts(tmp_path):
 def test_plist_runs_every_15_minutes():
     plist = (ROOT / "sync" / "com.lockedin.fitsync.plist.template").read_text()
     assert "<integer>900</integer>" in plist
+
+
+def test_never_overwrites_an_edited_lockedin_file(tmp_path):
+    cfg, folder = zwift_cfg(tmp_path)
+    fit_sync.sync_workouts(cfg, Feed(served("a.zwo")))
+    (folder / "a.zwo").write_text("<workout_file>tweaked in Zwift's editor</workout_file>")
+    changed = [{"item_id": 1, "filename": "a.zwo", "content": "<workout_file>new plan</workout_file>"}]
+    feed = Feed(changed)
+    written, _, warnings = fit_sync.sync_workouts(cfg, feed)
+    assert written == 0 and "tweaked" in (folder / "a.zwo").read_text() and warnings
+    assert feed.confirmed == []  # not in Zwift as planned, so not confirmed
+
+
+def test_confirms_only_what_is_in_place(tmp_path):
+    cfg, folder = zwift_cfg(tmp_path)
+    (folder / "taken.zwo").write_text("<workout_file>my own</workout_file>")
+    feed = Feed([{"item_id": 7, "filename": "ok.zwo", "content": "x"}, {"item_id": 8, "filename": "taken.zwo", "content": "y"},
+                 {"item_id": 9, "filename": "../bad.zwo", "content": "z"}])
+    fit_sync.sync_workouts(cfg, feed)
+    assert feed.confirmed == [7]
+    fit_sync.sync_workouts(cfg, feed)  # unchanged on the second run, still in place
+    assert feed.confirmed == [7]
+
+
+def test_adopts_identical_files_after_an_interrupted_run(tmp_path):
+    cfg, folder = zwift_cfg(tmp_path)
+    (folder / "a.zwo").write_text(ZWO.format("a.zwo"))  # written last time, but the manifest never got saved
+    written, _, warnings = fit_sync.sync_workouts(cfg, Feed(served("a.zwo")))
+    assert written == 0 and not warnings
+    assert "a.zwo" in json.loads((folder / ".lockedin-workouts.json").read_text())
+    fit_sync.sync_workouts(cfg, Feed([]))
+    assert not (folder / "a.zwo").exists()  # now ours: removed once it's no longer planned
+
+
+def test_one_bad_file_doesnt_stop_the_others_and_the_manifest_keeps_up(tmp_path):
+    cfg, folder = zwift_cfg(tmp_path)
+    (folder / "b.zwo").mkdir()  # can't be written
+    feed = Feed(served("a.zwo", "b.zwo", "c.zwo"))
+    written, _, warnings = fit_sync.sync_workouts(cfg, feed)
+    assert written == 2 and warnings
+    assert set(json.loads((folder / ".lockedin-workouts.json").read_text())) == {"a.zwo", "c.zwo"}
+    assert feed.confirmed == [1, 3]
+
+
+def test_a_damaged_manifest_means_hands_off(tmp_path):
+    cfg, folder = zwift_cfg(tmp_path)
+    (folder / ".lockedin-workouts.json").write_text("[]")
+    feed = Feed(served("a.zwo"))
+    written, removed, warnings = fit_sync.sync_workouts(cfg, feed)
+    assert (written, removed) == (0, 0) and warnings and feed.calls == 0

@@ -1,7 +1,7 @@
 from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Response
-from pydantic import ValidationError
+from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import Connection
 
 from lockedin.agenda import store
@@ -55,3 +55,12 @@ def remove(item_id: int, conn: Connection = Depends(get_conn)) -> Response:
 @sync_router.post("/zwift/sync")
 def zwift_sync(conn: Connection = Depends(get_conn), now: datetime = Depends(get_now)) -> list[dict]:
     return store.zwift_feed(conn, now)
+
+
+class Confirmed(BaseModel):
+    item_ids: list[int] = Field(default_factory=list, max_length=500)
+
+
+@sync_router.post("/zwift/confirm")
+def zwift_confirm(body: Confirmed, conn: Connection = Depends(get_conn), now: datetime = Depends(get_now)) -> dict:
+    return {"confirmed": store.confirm_in_zwift(conn, now, body.item_ids)}
