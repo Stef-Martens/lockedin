@@ -3,7 +3,7 @@ from sqlalchemy import text
 TABLES = {
     "profile", "activities", "activity_streams", "fit_files", "exercises",
     "gym_workouts", "gym_sets", "measurement_types", "measurements", "import_log",
-    "muscles", "library_exercises", "library_muscles", "goals", "coach_conversations", "coach_messages",
+    "muscles", "library_exercises", "library_muscles", "goals", "coach_conversations", "coach_messages", "workout_plans",
 }
 
 

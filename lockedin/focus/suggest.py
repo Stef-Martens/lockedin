@@ -8,6 +8,7 @@ from typing import Literal
 from sqlalchemy import Connection, text
 
 from lockedin.focus.coverage import muscle_coverage
+from lockedin.focus.preferences import load_preferences
 from lockedin.focus.sessions import counted
 
 TARGET_REPS = 12          # 12 reps at full effort ≈ 10 reps at RPE 8, so "3 × 8–12" stays honest
@@ -29,7 +30,7 @@ class GymSuggestion:
     reason: str
 
 
-def _round_down(kg: float) -> float:
+def round_down(kg: float) -> float:
     step = 2.5 if kg >= 20 else 1.0
     return math.floor(kg / step + 1e-9) * step
 
@@ -39,10 +40,10 @@ def _load(e1rm: float, reps: int = TARGET_REPS) -> float:
 
 
 def suggested_load(e1rm: float, reps: int = TARGET_REPS) -> float:
-    return _round_down(_load(e1rm, reps))
+    return round_down(_load(e1rm, reps))
 
 
-def _dumbbell_weight(raw: float, logged_as: str) -> float:
+def dumbbell_weight(raw: float, logged_as: str) -> float:
     """Whole kilos per hand, rounded down, so the suggestion names a dumbbell that exists."""
     per_hand = math.floor((raw / 2 if logged_as == "pair" else raw) + 1e-9)
     return float(per_hand * 2 if logged_as == "pair" else per_hand)
@@ -70,14 +71,18 @@ def _best_reps(conn: Connection, name: str, now: datetime) -> int | None:
     ), {"n": name, "since": now - timedelta(days=RECENT_DAYS), "now": now}).scalar()
 
 
-def _pick(conn: Connection, muscle: str, now: datetime) -> tuple[str, str, float | None, bool, int | None] | None:
-    """(exercise, equipment, weight, estimate, best_reps) for one muscle, preferring what the owner already does."""
+def pick(conn: Connection, muscle: str, now: datetime, never: frozenset[str] = frozenset(),
+         skip: frozenset[str] = frozenset()) -> tuple[str, str, float | None, bool, int | None] | None:
+    """(exercise, equipment, weight, estimate, best_reps) for one muscle, preferring what the owner already does.
+    `never` (never-suggest) and `skip` (e.g. already in the plan) exercises are passed over."""
+    excluded = never | skip
     own = conn.execute(text(
         "select e.name, le.equipment, max(a.start_at) as last from gym_sets s join activities a on a.id = s.workout_id "
         "join exercises e on e.id = s.exercise_id join library_exercises le on le.name = e.name "
         "join library_muscles lm on lm.exercise_name = e.name and lm.role = 'primary' and lm.muscle_key = :m "
-        f"where {counted('a')} and a.start_at > :since and a.start_at <= :now group by e.name, le.equipment order by last desc limit 1"
-    ), {"m": muscle, "since": now - timedelta(days=RECENT_DAYS), "now": now}).first()
+        f"where {counted('a')} and a.start_at > :since and a.start_at <= :now and e.name <> all(cast(:excluded as text[])) "
+        "group by e.name, le.equipment order by last desc limit 1"
+    ), {"m": muscle, "since": now - timedelta(days=RECENT_DAYS), "now": now, "excluded": list(excluded)}).first()
     if own:
         best = _best_e1rm(conn, own.name, now)
         weight = _load(best) if best and own.equipment != "bodyweight" else None
@@ -86,8 +91,8 @@ def _pick(conn: Connection, muscle: str, now: datetime) -> tuple[str, str, float
     library = conn.execute(text(
         "select le.name, le.equipment, le.related_to, le.ratio from library_exercises le "
         "join library_muscles lm on lm.exercise_name = le.name and lm.role = 'primary' and lm.muscle_key = :m "
-        "order by le.ratio desc nulls last, le.name"
-    ), {"m": muscle}).all()
+        "where le.name <> all(cast(:excluded as text[])) order by le.ratio desc nulls last, le.name"
+    ), {"m": muscle, "excluded": list(excluded)}).all()
     for ex in library:
         if ex.related_to and ex.ratio:
             related = _best_e1rm(conn, ex.related_to, now)
@@ -101,21 +106,23 @@ def _pick(conn: Connection, muscle: str, now: datetime) -> tuple[str, str, float
 
 def gym_suggestions(conn: Connection, now: datetime, limit: int = 3) -> list[GymSuggestion]:
     coverage = muscle_coverage(conn, now)
+    prefs = load_preferences(conn)
+    never = frozenset(prefs.never_exercises)
     dumbbell_logging = conn.execute(text("select dumbbell_weights from profile where id = 1")).scalar() or "pair"
-    low = [c for c in coverage if c.status == "low"]
+    low = [c for c in coverage if c.status == "low" and c.key not in prefs.avoid_muscles]
     low.sort(key=lambda c: (-(c.target_low - c.sets_per_week) / c.target_low, coverage.index(c)))
     out = []
     for c in low[:limit]:
-        picked = _pick(conn, c.key, now)
+        picked = pick(conn, c.key, now, never)
         if not picked:
             continue
         name, equipment, raw, estimate, best_reps = picked
         if raw is None or equipment == "bodyweight":
             weight = None
         elif equipment == "dumbbell":
-            weight = _dumbbell_weight(raw, dumbbell_logging)
+            weight = dumbbell_weight(raw, dumbbell_logging)
         else:
-            weight = _round_down(raw)
+            weight = round_down(raw)
         reps = f"{round(best_reps * 0.8)}–{best_reps}" if equipment == "bodyweight" and best_reps else "8–12"
         out.append(GymSuggestion(
             muscle_key=c.key, muscle_name=c.name, exercise=name, sets=3, reps=reps,

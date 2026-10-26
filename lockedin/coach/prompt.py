@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 
 from sqlalchemy import Connection, text
 
+from lockedin.focus.preferences import load_preferences
 from lockedin.timeutil import TZ
 
 GOAL_REVIEW_EVERY = timedelta(days=28)
@@ -29,8 +30,13 @@ dwelling on the missed weeks. Treat a plateau as a problem to solve, not a failu
 - Health: you are not a doctor. For pain, injury, illness or anything medical, keep advice to common sense and \
 suggest seeing a professional.
 
+Training preferences: the context lists muscles the owner has left out (often because of an injury), exercises \
+they never want suggested, and their own notes. Respect them: never program left-out muscles or never-suggest \
+exercises, and take the notes into account.
+
 Goals:
-- Read their goals with get_goals when they're relevant. Propose new goals or changes when it helps, but only \
+- Read their goals with get_goals when they're relevant. When a goal is about one lift, pass that exercise's exact \
+name as `exercise` to save_goal so the rest of the app can link it. Propose new goals or changes when it helps, but only \
 call save_goal after the owner has clearly agreed to that exact change in this conversation. Never save a goal \
 on your own initiative.
 - Each turn the app tells you whether a goal check-in is due. When it is, find a natural moment (usually at \
@@ -56,5 +62,15 @@ def turn_context(conn: Connection, now: datetime) -> str:
                    "bring goals up if their data shows a clear shift: a goal reached, or a sport they've stopped.")
     count = f"{len(goals)} active goal{'' if len(goals) == 1 else 's'}"
     listed = "".join(f"\n- {g.text}" + (f" ({g.target})" if g.target else "") for g in goals)
+    prefs = load_preferences(conn)
+    names = dict(conn.execute(text("select key, name from muscles")).all())
+    lines = []
+    if prefs.avoid_muscles:
+        lines.append("Left out (don't program): " + ", ".join(names.get(k, k) for k in prefs.avoid_muscles) + ".")
+    if prefs.never_exercises:
+        lines.append("Never suggest: " + ", ".join(prefs.never_exercises) + ".")
+    if prefs.coach_notes:
+        lines.append(f"Owner's notes: {prefs.coach_notes}")
     return (f"Today is {local:%A} {local.day} {local:%B %Y}, {local:%H:%M} in Brussels. "
-            f"The owner has {count}{':' + listed if goals else '.'}\n{checkin}")
+            f"The owner has {count}{':' + listed if goals else '.'}\n{checkin}"
+            + "".join("\n" + line for line in lines))

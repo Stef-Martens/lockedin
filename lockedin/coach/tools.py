@@ -32,10 +32,11 @@ library_muscles: exercise_name, muscle_key, role ('primary'|'secondary'). Join e
 muscles: key, name, region, target_low, target_high (weekly effective sets: primary = 1, secondary = 0.5).
 measurement_types: id, name (Weight, Chest, Left arm, ...), unit ('kg' | 'cm'), kind ('weight'|'tape'|'other').
 measurements: type_id, measured_on (date), value, note. One body check-in = all rows on one measured_on.
-profile (single row): date_of_birth, height_cm, sex, max_hr_override, ftp_override, resting_hr_override,
+profile (single row): avoid_muscles (left-out muscle keys), never_exercises, coach_notes, date_of_birth, height_cm, sex, max_hr_override, ftp_override, resting_hr_override,
   dumbbell_weights ('pair' = logged weight is both dumbbells together, 'each' = per hand), reminder_weeks,
   last_goal_review_at.
-goals: id, text, area, target, status ('active'|'achieved'|'dropped'), source, created_at, updated_at.
+goals: id, text, area, target, exercise (exact lift name, if about one), status ('active'|'achieved'|'dropped'),
+  source, created_at, updated_at.
 
 Tips: prefer get_focus_facts for coverage, suggestions, zones, plateaus and wins; use SQL for anything else.
 Results are capped at 200 rows, so aggregate in SQL (group by week, exercise, ...) instead of pulling raw rows.
@@ -69,7 +70,9 @@ TOOLS = [
            "goal_id": {"type": "integer"},
            "text": {"type": "string", "description": "The goal in the owner's words, e.g. 'Bench press 100 kg'."},
            "area": {"type": "string", "description": "bike, run, swim, gym, body or general."},
-           "target": {"type": "string", "description": "When or how it's measured, e.g. 'by March 2027'."}},
+           "target": {"type": "string", "description": "When or how it's measured, e.g. 'by March 2027'."},
+           "exercise": {"type": "string", "description": "Exact exercise name when the goal is about one lift, "
+                        "e.g. 'Bench Press (Barbell)'."}},
           ["action"]),
     _tool("mark_goals_reviewed", "Record that the periodic goal check-in happened (the owner confirmed or changed "
           "their goals), so the next one is due in about 4 weeks."),
@@ -98,7 +101,7 @@ def validate(schema: dict, args: object) -> str | None:
     return None
 
 
-GOAL_FIELDS = "id, text, area, target, status, source, created_at, updated_at"
+GOAL_FIELDS = "id, text, area, target, exercise, status, source, created_at, updated_at"
 
 
 def _goal(conn: Connection, goal_id: int) -> dict:
@@ -111,13 +114,16 @@ def _mark_reviewed(conn: Connection, now: datetime) -> None:
 
 def _save_goal(conn: Connection, args: dict, now: datetime) -> dict:
     action = args["action"]
-    fields = {k: args[k].strip() or None for k in ("text", "area", "target") if k in args}
+    if len(args.get("exercise", "")) > 120:
+        raise ValueError("'exercise' must be an exercise name (at most 120 characters).")
+    fields = {k: args[k].strip() or None for k in ("text", "area", "target", "exercise") if k in args}
     if action == "create":
         if not fields.get("text"):
             raise ValueError("'create' needs a non-empty text.")
         goal_id = conn.execute(text(
-            "insert into goals (text, area, target, created_at, updated_at) values (:text, :area, :target, :now, :now) "
-            "returning id"), {"area": None, "target": None, **fields, "now": now}).scalar_one()
+            "insert into goals (text, area, target, exercise, created_at, updated_at) "
+            "values (:text, :area, :target, :exercise, :now, :now) returning id"),
+            {"area": None, "target": None, "exercise": None, **fields, "now": now}).scalar_one()
     else:
         if "goal_id" not in args:
             raise ValueError(f"'{action}' needs goal_id.")
