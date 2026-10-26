@@ -78,12 +78,13 @@ export default function BodyFigure({ side, muscles, focused, pinned, onHover, on
   const shape = (key: string, d: string, primary: boolean) => {
     const m = byKey.get(key);
     const level = m ? shadeLevel(m.sets, m.target_low, m.target_high) : 0;
-    const cls = `muscle${focused === key ? " hl" : ""}${pinned === key ? " pinned" : ""}`;
+    const out = !!m?.left_out;
+    const cls = `muscle${out ? " out" : ""}${focused === key ? " hl" : ""}${pinned === key ? " pinned" : ""}`;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onPin(key); }
     };
     return (
-      <path key={key} data-m={key} style={{ fill: `var(--muscle-${level})` }} className={cls} d={d}
+      <path key={key} data-m={key} style={{ fill: out ? "var(--muscle-out)" : `var(--muscle-${level})` }} className={cls} d={d}
         {...(primary
           ? { tabIndex: 0, role: "button", "aria-label": m ? muscleLabel(m) : key, "aria-pressed": pinned === key }
           : { "aria-hidden": true })}

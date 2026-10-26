@@ -44,11 +44,45 @@ function TotalTile({ minutes, sessions, label }: { minutes: number; sessions: nu
   );
 }
 
+type Goal = { id: number; text: string; target: string | null };
+
+function GymCards({ goals }: { goals: Goal[] | null }) {
+  return (
+    <div className="grid-auto" style={{ ["--min" as string]: "300px" }}>
+      <Link to="/plan" className="card accent lift rise" style={{ ...stagger(1), display: "block", color: "var(--ink)", textDecoration: "none" }}>
+        <div className="eyebrow">Going to the gym?</div>
+        <div className="row spread" style={{ marginTop: 8 }}>
+          <span style={{ fontSize: 15, color: "var(--ink-2)" }}>Your routine with today's targets and what you've missed.</span>
+          <span className="btn primary" style={{ whiteSpace: "nowrap" }}>Plan a workout</span>
+        </div>
+      </Link>
+      <div className="card rise" style={stagger(2)}>
+        <div className="row spread">
+          <span className="eyebrow">Your goals</span>
+          <Link to="/coach" style={{ fontSize: 13, fontWeight: 600, textDecoration: "none" }}>Coach</Link>
+        </div>
+        {goals && goals.length > 0 ? (
+          <ul className="goal-list" style={{ marginTop: 8 }}>
+            {goals.map((g) => <li key={g.id}><span>{g.text}</span>{g.target && <span className="muted"> · {g.target}</span>}</li>)}
+          </ul>
+        ) : goals ? (
+          <p className="muted" style={{ margin: "8px 0 0", fontSize: 14 }}>No goals yet. Set some with the coach.</p>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 export default function Overview() {
   const [data, setData] = useState<OverviewData | null>(null);
   const [weeks, setWeeks] = useState<12 | 26>(12);
   const [period, setPeriod] = useState<"week" | "month">("week");
   const [error, setError] = useState<string | null>(null);
+  const [goals, setGoals] = useState<Goal[] | null>(null);
+
+  useEffect(() => {
+    apiFetch<Goal[]>("/api/goals/active").then(setGoals).catch(() => setGoals([]));
+  }, []);
 
   useEffect(() => {
     apiFetch<OverviewData>(`/api/overview?weeks=${weeks}`).then(setData).catch((e) => setError(e.message));
@@ -82,6 +116,8 @@ export default function Overview() {
           )}
         </Card>
       )}
+
+      <GymCards goals={goals} />
 
       <div className="grid-auto" style={{ ["--min" as string]: "200px" }}>
         <TotalTile key={period} minutes={Math.round(total)} sessions={sessions} label={period === "week" ? "This week" : monthName} />

@@ -38,6 +38,7 @@
   --muscle-1: #55682a;
   --muscle-2: #94bd48;
   --muscle-3: #c8f169;
+  --muscle-out: #26282a;
 
   --radius: 18px;
   --gutter: 16px;
@@ -379,6 +380,7 @@ a.tile { display: block; color: var(--ink); text-decoration: none; }
 .muscle { stroke: var(--page); stroke-width: 1.1; cursor: pointer; transition: fill 0.45s ease, filter 0.2s ease; outline: none; }
 .muscle:hover, .muscle.hl { filter: brightness(1.3) drop-shadow(0 0 5px rgba(200, 241, 105, 0.35)); }
 .muscle.pinned, .muscle:focus-visible { stroke: var(--ink); stroke-width: 1.8; }
+.muscle.out { stroke: var(--ink-muted); stroke-dasharray: 2 2; stroke-width: 0.9; }
 .muscle-stripes { pointer-events: none; transition: opacity 0.45s ease; }
 .mm-side { min-width: 0; }
 .mm-pinned { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--hairline); }
@@ -402,3 +404,45 @@ a.tile { display: block; color: var(--ink); text-decoration: none; }
 @media (max-width: 899px) {
   .mm-grid { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* ---------- Plan ---------- */
+.plan-days { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); }
+.plan-day {
+  display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; align-items: center; text-align: left; cursor: pointer;
+  background: var(--surface); border: 1px solid transparent; border-radius: 16px; padding: 16px 18px; color: var(--ink); font: inherit;
+}
+.plan-day:hover { border-color: var(--accent-line); }
+.plan-day-title { font-family: var(--display); font-weight: 700; font-size: 22px; letter-spacing: 0.03em; text-transform: uppercase; grid-column: 1; }
+.plan-day .secondary { grid-column: 1; font-size: 13.5px; }
+.plan-day-last { grid-row: 1 / span 2; grid-column: 2; font-size: 12px; color: var(--ink-muted); text-align: right; }
+.plan-list, .plan-extra { display: flex; flex-direction: column; gap: 10px; }
+.plan-extra { border: 1px dashed var(--axis); border-radius: 18px; padding: 12px; }
+.plan-extra-title { font-size: 16px; margin: 2px 4px 0; color: var(--ink-muted); }
+.plan-item { background: var(--surface); border-radius: 16px; padding: 14px 16px; transition: opacity 0.2s ease; }
+.plan-extra .plan-item { background: var(--surface-raised); }
+.plan-item.skipped { opacity: 0.4; }
+.plan-item-top { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; gap: 10px; align-items: start; }
+.plan-n { font-family: var(--display); font-weight: 700; font-size: 24px; color: var(--accent); line-height: 1.05; }
+.plan-name { font-weight: 600; font-size: 15.5px; overflow-wrap: anywhere; }
+.plan-body { margin: 4px 0 0 38px; display: flex; flex-direction: column; gap: 3px; }
+.plan-dose { font-family: var(--display); font-weight: 700; font-size: 21px; letter-spacing: 0.02em; }
+.plan-change { font-size: 13px; font-weight: 600; color: var(--ink-2); }
+.plan-change.up { color: var(--accent); }
+.plan-change.new { color: var(--sport-gym); }
+.plan-goal { font-size: 13px; color: var(--accent); }
+.plan-tag { display: inline-block; font-size: 10.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; border-radius: 6px; padding: 2px 6px; margin-right: 6px; vertical-align: 1px; }
+.plan-tag.new { background: var(--accent); color: var(--accent-ink); }
+.plan-tag.variety { background: #20304a; color: #9cc5f5; }
+.btn.small { padding: 5px 10px; font-size: 13px; border-radius: 9px; }
+.plan-menu { position: relative; }
+.plan-menu-pop {
+  position: absolute; right: 0; top: 34px; z-index: 6; width: 220px; padding: 6px; background: var(--surface-raised);
+  border: 1px solid var(--axis); border-radius: 12px; box-shadow: 0 12px 28px rgba(0, 0, 0, 0.5);
+}
+.plan-menu-pop button { display: block; width: 100%; text-align: left; background: none; border: 0; color: var(--ink-2); padding: 9px 10px; border-radius: 8px; cursor: pointer; font-size: 14px; }
+.plan-menu-pop button:hover, .plan-menu-pop button:focus-visible { background: var(--surface); }
+.plan-never { padding: 8px 0; border-top: 1px solid var(--hairline); font-size: 14px; }
+.plan-never:first-of-type { border-top: 0; }
+.chip.left-out { background: #2a1f1d; color: #ffb4a8; border-color: #4a2e29; text-decoration: line-through; }
+@media (max-width: 639px) { .plan-body { margin-left: 0; } }
+@media (prefers-reduced-motion: reduce) { .plan-item { transition: none; } }

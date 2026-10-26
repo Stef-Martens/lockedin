@@ -24,6 +24,7 @@ export const CARDIO_PHRASE: Record<CardioSport, string> = {
 const num = (x: number) => (Number.isInteger(x) ? `${x}` : x.toFixed(1));
 
 export function muscleLabel(m: MapMuscle): string {
+  if (m.left_out) return `${m.name}: left out in your preferences`;
   const cardio = m.cardio.map((c) => `, ${c.minutes} minutes ${CARDIO_PHRASE[c.sport]}`).join("");
   return `${m.name}: ${num(m.sets)} sets this week${cardio}`;
 }

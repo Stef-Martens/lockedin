@@ -140,6 +140,8 @@ export interface MapMuscle {
   lift: { exercise: string; first_e1rm: number; latest_e1rm: number; status: "trend" | "new" | "not_lately" } | null;
   cardio: { sport: CardioSport; minutes: number }[];
   suggestion: GymSuggestion | null;
+  /** Left out in the owner's preferences (e.g. an injured lower back). */
+  left_out?: boolean;
 }
 
 export interface MuscleMap {
@@ -147,6 +149,8 @@ export interface MuscleMap {
   is_current: boolean;
   first_week: string | null;
   trained_count: number;
+  /** Muscles that count: 20 minus the ones left out. */
+  total?: number;
   cardio: { sport: CardioSport; minutes: number; days: string[] }[];
   muscles: MapMuscle[];
 }

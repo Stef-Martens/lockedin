@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import BodyFigure from "../components/BodyFigure";
 import { Card, PageHeader } from "../components/ui";
 import { ApiError, apiFetch } from "../lib/api";
@@ -43,18 +43,19 @@ function Details({ m, map }: { m: MapMuscle; map: MuscleMap }) {
           <span className="muted"> · {d.exercises.map((e) => `${e.name} ${num(e.sets)}`).join(" · ")}</span>
         </div>
       ))}
+      {m.left_out && <div className="mm-line secondary">Left out in your preferences.</div>}
       {cardio.map((c) => (
         <div key={c.sport} className="mm-line">
           <span className="dot" style={{ background: CARDIO_COLOR[c.sport], borderRadius: "50%", marginRight: 6 }} />
           {c.minutes}′ {CARDIO_PHRASE[c.sport]} <span className="muted">· {c.days.map((d) => day(d, { weekday: "short" })).join(", ")}</span>
         </div>
       ))}
-      {m.sets === 0 && (
+      {m.sets === 0 && !m.left_out && (
         <div className="mm-line secondary">
           {m.last_trained ? `No gym sets this week · last on ${day(m.last_trained)}` : "Not in your logs yet"}
         </div>
       )}
-      {m.sets === 0 && m.suggestion && (() => {
+      {m.sets === 0 && !m.left_out && m.suggestion && (() => {
         const line = focusLine({ type: "gym", ...m.suggestion });
         return <div className="mm-line">Try <strong>{line.title}</strong> <span className="muted">· {line.detail}</span></div>;
       })()}
@@ -123,7 +124,8 @@ export default function Muscles() {
   const byKey = new Map(map.muscles.map((m) => [m.key, m]));
   // The side column shows the keyboard-focused muscle, else the pinned one; the floating panel follows the mouse.
   const sideKey = focusKey ?? pinned;
-  const untrained = map.muscles.filter((m) => m.sets === 0);
+  const untrained = map.muscles.filter((m) => m.sets === 0 && !m.left_out);
+  const anyLeftOut = map.muscles.some((m) => m.left_out);
   const canBack = !!map.first_week && map.week_start > map.first_week;
   const go = (by: number) => {
     const next = shiftWeek(map.week_start, by);
@@ -138,7 +140,8 @@ export default function Muscles() {
   return (
     <>
       <PageHeader eyebrow="What you trained" title="Muscles"
-        sub="Every muscle starts grey on Monday and fills in as you log gym sets. Stripes are time on the bike, running or swimming." />
+        sub="Every muscle starts grey on Monday and fills in as you log gym sets. Stripes are time on the bike, running or swimming."
+        right={<Link to="/plan" className="btn primary" style={{ textDecoration: "none" }}>Plan a workout</Link>} />
 
       <Card i={1}>
         <div className="row spread" style={{ marginBottom: 12 }}>
@@ -149,6 +152,7 @@ export default function Muscles() {
           </div>
           <div className="legend">
             {SHADES.map((label, i) => <span key={label}><i className="swatch" style={{ background: `var(--muscle-${i})` }} />{label}</span>)}
+            {anyLeftOut && <span><i className="swatch" style={{ background: "var(--muscle-out)", outline: "1px dashed var(--ink-muted)" }} />Left out</span>}
             {sportsThisWeek.map((s) => (
               <span key={s}><i className="swatch" style={{ background: `repeating-linear-gradient(45deg, ${CARDIO_COLOR[s]} 0 3px, transparent 3px 6px)` }} />
                 {s === "bike" ? "Bike" : s === "run" ? "Run" : "Swim"}</span>
@@ -170,7 +174,7 @@ export default function Muscles() {
           </div>
 
           <aside className="mm-side">
-            <div className="mm-big num">{map.trained_count} / {map.muscles.length}</div>
+            <div className="mm-big num">{map.trained_count} / {map.total ?? map.muscles.length}</div>
             <div className="secondary" style={{ marginBottom: 16 }}>muscles trained in the gym</div>
             {untrained.length > 0 ? (
               <>

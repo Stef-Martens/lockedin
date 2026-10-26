@@ -11,6 +11,7 @@ import Import from "./pages/Import";
 import Login from "./pages/Login";
 import Muscles from "./pages/Muscles";
 import Overview from "./pages/Overview";
+import Plan from "./pages/Plan";
 import Trends from "./pages/Trends";
 
 export default function App() {
@@ -40,6 +41,7 @@ export default function App() {
         <Route path="trends" element={<Navigate to="/trends/bike" replace />} />
         <Route path="trends/:sport" element={<Trends />} />
         <Route path="muscles" element={<Muscles />} />
+        <Route path="plan" element={<Plan />} />
         <Route path="body" element={<Body />} />
         <Route path="coach" element={<Coach />} />
         <Route path="coach/:id" element={<Coach />} />
