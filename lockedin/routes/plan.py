@@ -7,7 +7,7 @@ from sqlalchemy import Connection, text
 
 from lockedin.auth import require_owner
 from lockedin.db import get_conn
-from lockedin.focus.consistency import comeback
+from lockedin.focus.consistency import in_comeback
 from lockedin.focus.preferences import load_preferences, prefs_hash
 from lockedin.plan.build import NoRoutine, build_plan, swap_item
 from lockedin.goals.progress import progress
@@ -17,11 +17,17 @@ from lockedin.routes.overview import get_now
 from lockedin.timeutil import TZ
 
 router = APIRouter(prefix="/api", dependencies=[Depends(require_owner)])
+MAX_NEVER = 200
+
+
+def _built_in_comeback(row) -> bool:
+    return any(i.get("change") == "welcome_back" for i in row.items)
 
 
 def _out(row, conn: Connection, now: datetime) -> dict:
-    return {"id": row.id, "day": row.day, "built_on": row.built_on.isoformat(),
-            "comeback": comeback(conn, now) is not None, "items": row.items}
+    # What the plan was built for, so the banner always matches the targets shown.
+    back = _built_in_comeback(row) if row.day else in_comeback(conn, now)
+    return {"id": row.id, "day": row.day, "built_on": row.built_on.isoformat(), "comeback": back, "items": row.items}
 
 
 def _store(conn: Connection, plan: dict):
@@ -48,12 +54,15 @@ def _is_fresh(conn: Connection, now: datetime, row) -> bool:
     if row.day is None:
         return True
     current = routine(conn, now, row.day)
-    return current is not None and current.activity_id == row.source_activity_id
+    if current is None or current.activity_id != row.source_activity_id:
+        return False
+    # A break starting (or ending) during the day changes the targets.
+    return _built_in_comeback(row) == in_comeback(conn, now) or not any(i["kind"] == "routine" for i in row.items)
 
 
 @router.get("/plan/days")
 def plan_days(conn: Connection = Depends(get_conn), now: datetime = Depends(get_now)) -> dict:
-    back = comeback(conn, now) is not None
+    back = in_comeback(conn, now)
     return jsonable_encoder({
         "days": [{"title": r.title, "last_done": r.last_done.astimezone(TZ).date(), "exercise_count": len(r.exercises)}
                  for r in routines(conn, now)],
@@ -118,10 +127,12 @@ def never(plan_id: int, item_id: str, conn: Connection = Depends(get_conn), now:
     item = next(it for it in row.items if it["id"] == item_id)
     if not item["suggested"]:
         raise HTTPException(400, "This one is from your own routine; use Swap or Skip instead.")
-    conn.execute(text(
-        "update profile set never_exercises = array_append(never_exercises, :e), updated_at = now() "
-        "where id = 1 and not (:e = any(never_exercises))"
-    ), {"e": item["exercise"]})
+    was_current = row.prefs_hash == prefs_hash(load_preferences(conn))
+    never = [n for n in load_preferences(conn).never_exercises if n != item["exercise"]] + [item["exercise"]]
+    conn.execute(text("update profile set never_exercises = :n, updated_at = now() where id = 1"),
+                 {"n": never[-MAX_NEVER:]})  # keep the latest 200
+    if not was_current:  # the plan was already out of date: build a fresh one with every preference applied
+        return _out(_build(conn, now, row.day), conn, now)
     try:
         items = swap_item(conn, now, {"day": row.day, "items": row.items}, item_id)["items"]
     except LookupError:

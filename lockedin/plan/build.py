@@ -5,12 +5,12 @@ from datetime import datetime
 
 from sqlalchemy import Connection, text
 
-from lockedin.focus.consistency import comeback
+from lockedin.focus.consistency import comeback, in_comeback
 from lockedin.focus.preferences import Preferences, load_preferences, prefs_hash
 from lockedin.focus.suggest import goal_first, gym_suggestions, low_muscles, low_reason, weighted_pick
 from lockedin.goals.steer import goal_muscles
 from lockedin.focus.wins import stalled_exercises
-from lockedin.plan.goals import active_goals, goal_for, goal_label
+from lockedin.plan.goals import active_goals, goal_for, goal_label, known_exercises
 from lockedin.plan.routines import Routine, latest_sets, routine
 from lockedin.timeutil import TZ
 
@@ -92,7 +92,8 @@ def progression(last_sets: list[tuple[float | None, int | None]], equipment: str
 
 
 def _routine_item(conn: Connection, now: datetime, name: str, routine_sets: list, equipment: dict, primary: dict,
-                  logging: str, back: bool, goals: list[dict], item_id: str | None = None) -> dict:
+                  logging: str, back: bool, goals: list[dict], item_id: str | None = None,
+                  known: list[str] | None = None) -> dict:
     last_sets = latest_sets(conn, now, name) or routine_sets
     tag = equipment.get(name, "other")
     # A bodyweight move done with added weight (dip belt, dumbbell) progresses like any weighted lift.
@@ -100,7 +101,7 @@ def _routine_item(conn: Connection, now: datetime, name: str, routine_sets: list
     fields = {"id": item_id} if item_id else {}
     return _item(exercise=name, equipment=tag, muscle=(primary.get(name) or [None])[0],
                  last=[{"kg": kg, "reps": reps} for kg, reps in last_sets],
-                 goal=goal_label(goal_for(name, goals)), **progression(last_sets, load, logging, back), **fields)
+                 goal=goal_label(goal_for(name, goals, known)), **progression(last_sets, load, logging, back), **fields)
 
 
 def _suggested(p: dict, kind: str, muscle: str, reason: str, replaces: str | None = None) -> dict:
@@ -115,7 +116,8 @@ def _freshness(conn: Connection, now: datetime, prefs: Preferences) -> dict:
 
 def build_plan(conn: Connection, now: datetime, title: str | None) -> dict:
     prefs = load_preferences(conn)
-    back = comeback(conn, now) is not None
+    back = in_comeback(conn, now)
+    known = known_exercises(conn)
     goals = active_goals(conn)
     logging = _dumbbell_logging(conn)
     never = frozenset(prefs.never_exercises) | _avoided_exercises(conn, prefs.avoid_muscles)
@@ -126,7 +128,7 @@ def build_plan(conn: Connection, now: datetime, title: str | None) -> dict:
         items = [_item(exercise=s.exercise, kind="missed", muscle=s.muscle_key, sets=s.sets, reps=s.reps,
                        weight_kg=s.weight_kg, dumbbell=s.dumbbell, estimate=s.estimate,
                        change="new" if s.estimate else None, reason=s.reason, suggested=True,
-                       goal=goal_label(goal_for(s.exercise, goals)))
+                       goal=goal_label(goal_for(s.exercise, goals, known)))
                  for s in gym_suggestions(conn, now, limit=MAX_MISSED)]
         return {"day": None, "source_activity_id": None, "comeback": False, "items": items,
                 **_freshness(conn, now, prefs)}
@@ -137,7 +139,7 @@ def build_plan(conn: Connection, now: datetime, title: str | None) -> dict:
     names = [e.name for e in found.exercises]
     equipment, primary, secondary = _library(conn, names)
 
-    items = [_routine_item(conn, now, ex.name, ex.last_sets, equipment, primary, logging, back, goals)
+    items = [_routine_item(conn, now, ex.name, ex.last_sets, equipment, primary, logging, back, goals, known=known)
              for ex in found.exercises]
     for it in items:
         # A goal lift gets one more heavy set, up to 4, so it doesn't creep up as the extra set becomes "last time".
@@ -178,7 +180,7 @@ def build_plan(conn: Connection, now: datetime, title: str | None) -> dict:
 
     for it in items:
         if it["suggested"]:
-            it["goal"] = goal_label(goal_for(it["exercise"], goals))
+            it["goal"] = goal_label(goal_for(it["exercise"], goals, known))
     return {"day": title, "source_activity_id": found.activity_id, "comeback": back, "items": items,
             **_freshness(conn, now, prefs)}
 
@@ -191,7 +193,7 @@ def _restore(conn: Connection, now: datetime, plan: dict, it: dict) -> dict:
         raise LookupError("There's no other exercise to swap this for.")
     equipment, primary, _ = _library(conn, [ex.name])
     return _routine_item(conn, now, ex.name, ex.last_sets, equipment, primary, _dumbbell_logging(conn),
-                         comeback(conn, now) is not None, active_goals(conn), item_id=it["id"])
+                         in_comeback(conn, now), active_goals(conn), item_id=it["id"], known=known_exercises(conn))
 
 
 def swap_item(conn: Connection, now: datetime, plan: dict, item_id: str) -> dict:
@@ -216,5 +218,5 @@ def swap_item(conn: Connection, now: datetime, plan: dict, item_id: str) -> dict
     replaces = it["replaces"] or (it["exercise"] if it["kind"] == "routine" else None)
     reason = it["reason"] if it["kind"] in ("add", "missed") else f"Swapped in for {replaces} today."
     new = _suggested(p, it["kind"] if it["kind"] != "routine" else "swap", it["muscle"], reason, replaces)
-    new.update(id=it["id"], tried=sorted(tried), goal=goal_label(goal_for(p["exercise"], active_goals(conn))))
+    new.update(id=it["id"], tried=sorted(tried), goal=goal_label(goal_for(p["exercise"], active_goals(conn), known_exercises(conn))))
     return {**plan, "items": items[:idx] + [new] + items[idx + 1:]}

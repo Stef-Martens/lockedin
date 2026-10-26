@@ -1,5 +1,6 @@
 """What the coach can do: read the schema, run read-only SQL, read focus facts, and read or save goals."""
 
+import difflib
 import json
 from datetime import date, datetime, timedelta
 
@@ -9,6 +10,7 @@ from sqlalchemy import Connection, Engine, text
 
 from lockedin.agenda import store as agenda
 from lockedin.goals.progress import progress
+from lockedin.plan.goals import known_exercises
 
 from lockedin.coach.sql import QueryRejected, run_readonly
 from lockedin.focus.facts import focus_facts
@@ -158,8 +160,12 @@ def _mark_reviewed(conn: Connection, now: datetime) -> None:
 
 def _save_goal(conn: Connection, args: dict, now: datetime) -> dict:
     action = args["action"]
-    if len(args.get("exercise", "")) > 120:
-        raise ValueError("'exercise' must be an exercise name (at most 120 characters).")
+    if args.get("exercise"):
+        known = known_exercises(conn)
+        if args["exercise"] not in known:
+            close = difflib.get_close_matches(args["exercise"], known, n=3, cutoff=0.6)
+            hint = f" Did you mean: {', '.join(repr(c) for c in close)}?" if close else ""
+            raise ValueError(f"Unknown exercise {args['exercise']!r}; use the exact name from their history.{hint}")
     fields = {k: args[k].strip() or None for k in ("text", "area", "target", "exercise") if k in args}
     if action == "create":
         if not fields.get("text"):

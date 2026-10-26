@@ -4,15 +4,19 @@ from datetime import datetime
 
 from sqlalchemy import Connection, text
 
-from lockedin.goals.progress import goal_lift
-from lockedin.plan.goals import active_goals, goal_label
+from lockedin.goals.progress import goal_lift, logged_lifts
+from lockedin.plan.goals import active_goals, goal_label, known_exercises
 
 
 def goal_muscles(conn: Connection, now: datetime) -> dict[str, list[str]]:
     """muscle key → labels of active goals whose lift trains it (primary or secondary)."""
     out: dict[str, list[str]] = {}
-    for g in active_goals(conn):
-        lift = goal_lift(conn, now, g)
+    goals = [g for g in active_goals(conn) if g.get("area") in ("gym", "general")]  # body goals aren't lifts
+    if not goals:
+        return out
+    names, known = logged_lifts(conn, now), known_exercises(conn)
+    for g in goals:
+        lift = goal_lift(conn, now, g, names, known)
         if not lift:
             continue
         for key in conn.execute(text("select muscle_key from library_muscles where exercise_name = :n"), {"n": lift}).scalars():

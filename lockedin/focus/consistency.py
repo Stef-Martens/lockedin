@@ -70,6 +70,12 @@ def week_streak(conn: Connection, now: datetime) -> int:
     return streak + (1 if per_week[this_week] >= STREAK_MIN_SESSIONS else 0)
 
 
+def in_comeback(conn: Connection, now: datetime) -> bool:
+    """Back after a break (7+ days off). Someone with no history at all isn't coming back from anything."""
+    c = comeback(conn, now)
+    return c is not None and c.days_since is not None
+
+
 def comeback(conn: Connection, now: datetime) -> Comeback | None:
     recent = counted_sessions(conn, now - timedelta(days=90), now)
     last = recent[-1] if recent else (counted_sessions(conn, EPOCH, now) or [None])[-1]

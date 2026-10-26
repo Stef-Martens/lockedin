@@ -7,7 +7,7 @@ from sqlalchemy import Connection, text
 
 from lockedin.fitness import ftp_at
 from lockedin.focus.sessions import counted
-from lockedin.plan.goals import goal_for
+from lockedin.plan.goals import goal_for, known_exercises
 
 WINDOW = timedelta(weeks=8)
 LIFT_SEARCH = timedelta(days=90)
@@ -48,15 +48,21 @@ def _result(current: float | None, target: float, unit: str, suffix: str = "", s
             "label": f"{_fmt(current)} / {_fmt(target)} {unit}{suffix}", "fraction": max(0.0, min(1.0, fraction))}
 
 
-def goal_lift(conn: Connection, now: datetime, goal: dict) -> str | None:
-    """The one lift a goal is about: the linked exercise, else the single logged lift its words point to."""
-    if goal.get("exercise"):
-        return goal["exercise"]
-    names = conn.execute(text(
+def logged_lifts(conn: Connection, now: datetime) -> list[str]:
+    return conn.execute(text(
         "select distinct e.name from gym_sets s join exercises e on e.id = s.exercise_id "
         f"join activities a on a.id = s.workout_id where {counted('a')} and a.start_at > :since and a.start_at <= :now"
     ), {"since": now - LIFT_SEARCH, "now": now}).scalars().all()
-    matches = [n for n in names if goal_for(n, [{**goal, "status": "active"}])]
+
+
+def goal_lift(conn: Connection, now: datetime, goal: dict, names: list[str] | None = None,
+              known: list[str] | None = None) -> str | None:
+    """The one lift a goal is about: the linked exercise, else the single logged lift its words point to."""
+    if goal.get("exercise"):
+        return goal["exercise"]
+    names = logged_lifts(conn, now) if names is None else names
+    known = known_exercises(conn) if known is None else known
+    matches = [n for n in names if goal_for(n, [{**goal, "status": "active"}], known)]
     return matches[0] if len(matches) == 1 else None
 
 
