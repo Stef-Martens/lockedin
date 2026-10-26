@@ -9,6 +9,7 @@ const LINKS = [
   { to: "/coach", label: "Coach", short: "Coach" },
   { to: "/activities", label: "Activities", short: "Activities" },
   { to: "/trends/bike", label: "Trends", short: "Trends", match: "/trends" },
+  { to: "/muscles", label: "Muscles", short: "Muscles" },
   { to: "/body", label: "Body", short: "Body" },
   { to: "/import", label: "Import", short: "Import" },
 ];
