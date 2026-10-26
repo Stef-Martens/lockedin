@@ -77,7 +77,13 @@ AGENDA_CHANGE = {"type": "object", "required": ["op"], "properties": {
     "optional": {"type": "boolean"},
     "routine": {"type": "string", "description": "Gym only: one of the owner's Hevy routine names, exactly."},
     "zwift": {"type": "object", "properties": {"blocks": {"type": "array", "maxItems": 30, "items": _BLOCK}},
-              "required": ["blocks"]}}}
+              "required": ["blocks"]},
+    "targets": {"type": "object", "description": "Runs and swims: what to aim for.", "properties": {
+        "distance_m": {"type": "integer"}, "duration_s": {"type": "integer"},
+        "pace_low": {"type": "integer", "description": "Faster end: s/km for runs, s/100 m for swims"},
+        "pace_high": {"type": "integer", "description": "Slower end, same unit"},
+        "hr_zone": {"type": "integer", "description": "Runs only, 1-5"}}},
+    "goal_id": {"type": "integer", "description": "The active goal this session serves (from get_goals)."}}}
 
 
 TOOLS = [

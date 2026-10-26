@@ -7,7 +7,8 @@ from sqlalchemy import Connection, text
 
 from lockedin.focus.consistency import comeback
 from lockedin.focus.preferences import Preferences, load_preferences, prefs_hash
-from lockedin.focus.suggest import gym_suggestions, low_muscles, low_reason, weighted_pick
+from lockedin.focus.suggest import goal_first, gym_suggestions, low_muscles, low_reason, weighted_pick
+from lockedin.goals.steer import goal_muscles
 from lockedin.focus.wins import stalled_exercises
 from lockedin.plan.goals import active_goals, goal_for, goal_label
 from lockedin.plan.routines import Routine, latest_sets, routine
@@ -138,6 +139,11 @@ def build_plan(conn: Connection, now: datetime, title: str | None) -> dict:
 
     items = [_routine_item(conn, now, ex.name, ex.last_sets, equipment, primary, logging, back, goals)
              for ex in found.exercises]
+    for it in items:
+        # A goal lift gets one more heavy set, up to 4, so it doesn't creep up as the extra set becomes "last time".
+        if it["goal"] and it["change"] in ("up", "same") and it["sets"] <= 3:
+            it["sets"] += 1
+            it["reason"] = f"+1 set for your goal: {it['goal']}"
 
     if not back:
         in_plan = set(names)
@@ -159,7 +165,7 @@ def build_plan(conn: Connection, now: datetime, title: str | None) -> dict:
         day_regions = {regions[m] for m in hit if m in regions}
         day_muscles = {m for m, r in regions.items() if r in day_regions} | {m for n in names for m in secondary.get(n, [])}
         adds = []
-        for c in low_muscles(conn, now, prefs.avoid_muscles):
+        for c in goal_first(low_muscles(conn, now, prefs.avoid_muscles), goal_muscles(conn, now)):
             if len(adds) >= MAX_ADDS:
                 break
             if c.key not in day_muscles or c.key in hit:

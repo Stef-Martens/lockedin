@@ -9,6 +9,7 @@ from sqlalchemy import Connection, text
 
 from lockedin.focus.coverage import muscle_coverage
 from lockedin.focus.preferences import load_preferences
+from lockedin.goals.steer import goal_muscles
 from lockedin.focus.sessions import counted
 
 TARGET_REPS = 12          # 12 reps at full effort ≈ 10 reps at RPE 8, so "3 × 8–12" stays honest
@@ -28,6 +29,7 @@ class GymSuggestion:
     dumbbell: Literal["pair", "each"] | None  # same convention as the owner's Hevy logs; None = not a dumbbell exercise
     estimate: bool
     reason: str
+    goal: str | None = None  # the active goal this helps, if any
 
 
 def round_down(kg: float) -> float:
@@ -138,12 +140,21 @@ def gym_suggestions(conn: Connection, now: datetime, limit: int = 3) -> list[Gym
     prefs = load_preferences(conn)
     never = frozenset(prefs.never_exercises)
     dumbbell_logging = conn.execute(text("select dumbbell_weights from profile where id = 1")).scalar() or "pair"
+    helps = goal_muscles(conn, now)
+    low = goal_first(low_muscles(conn, now, prefs.avoid_muscles), helps)
     out = []
-    for c in low_muscles(conn, now, prefs.avoid_muscles)[:limit]:
+    for c in low[:limit]:
         p = weighted_pick(conn, c.key, now, dumbbell_logging, never)
         if not p:
             continue
+        goal = helps[c.key][0] if c.key in helps else None
         out.append(GymSuggestion(
             muscle_key=c.key, muscle_name=c.name, exercise=p["exercise"], sets=p["sets"], reps=p["reps"],
-            weight_kg=p["weight_kg"], dumbbell=p["dumbbell"], estimate=p["estimate"], reason=low_reason(c)))
+            weight_kg=p["weight_kg"], dumbbell=p["dumbbell"], estimate=p["estimate"],
+            reason=low_reason(c) + (f" · helps: {goal}" if goal else ""), goal=goal))
     return out
+
+
+def goal_first(low: list, helps: dict[str, list[str]]) -> list:
+    """Same order, but muscles that an active goal lift trains come first."""
+    return [c for c in low if c.key in helps] + [c for c in low if c.key not in helps]

@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import Connection
 
 from lockedin.fitness import ftp_at
+from lockedin.goals.steer import sport_goals
 from lockedin.focus.effort import Effort, effort_for_window
 from lockedin.focus.sessions import counted_sessions
 from lockedin.focus.zones import hr_zone_bounds, max_hr_at, power_zone_bounds
@@ -29,6 +30,7 @@ class SessionSuggestion:
     title: str
     detail: str
     reason: str
+    goal: str | None = None  # the active goal this serves, if any
 
 
 def effort_mix(conn: Connection, now: datetime, sport: str, days: int = 28) -> EffortMix:
@@ -81,4 +83,22 @@ def session_suggestions(conn: Connection, now: datetime) -> list[SessionSuggesti
         if month and sum(e == "hard" for e in month) / len(month) > 0.5:
             out.append(SessionSuggestion(sport, "easy", f"Easy {noun}", f"45 min in zone 2{_zone2(sport, max_hr, ftp)}",
                                          f"Most of your {noun}s this month were hard"))
-    return out[:MAX_SUGGESTIONS]
+    # Goals of a sport always bring a session of that sport, first in line.
+    goals = sport_goals(conn)
+    for sport, label in goals.items():
+        mine = next((s for s in out if s.sport == sport), None)
+        if mine is None:
+            if sport == "run":
+                mine = SessionSuggestion("run", "steady", "Steady run 40′", f"40 min in zone 2{_zone2('run', max_hr, ftp)}",
+                                         "A regular steady run builds toward it")
+            elif sport == "bike":
+                mine = SessionSuggestion("bike", "hard", "Intervals", _intervals("bike", max_hr, ftp),
+                                         "Threshold work moves FTP the most")
+            else:
+                mine = SessionSuggestion("swim", "steady", "Swim 30′ steady", "Continuous, at a pace you can hold",
+                                         "Regular swims build toward it")
+            out.append(mine)
+        mine.goal = label
+        mine.reason = f"{mine.reason} · toward: {label}"
+    out.sort(key=lambda s: s.goal is None)
+    return out[:max(MAX_SUGGESTIONS, len(goals))]

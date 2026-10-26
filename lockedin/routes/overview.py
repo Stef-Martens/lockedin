@@ -35,7 +35,8 @@ def overview(weeks: int = 12, conn: Connection = Depends(get_conn), now: datetim
     else:
         gym = [{"type": "gym", **jsonable_encoder(g)} for g in gym_suggestions(conn, now)]
         sessions = [{"type": "session", **jsonable_encoder(s)} for s in session_suggestions(conn, now)]
-        focus = [x for pair in zip_longest(gym, sessions) for x in pair if x][:FOCUS_ITEMS]
+        mixed = [x for pair in zip_longest(gym, sessions) for x in pair if x]
+        focus = sorted(mixed, key=lambda x: x.get("goal") is None)[:FOCUS_ITEMS]  # goal items first
     last_tape = conn.execute(text(
         "select max(m.measured_on) from measurements m join measurement_types t on t.id = m.type_id where t.kind = 'tape'"
     )).scalar()

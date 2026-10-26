@@ -7,6 +7,7 @@ from sqlalchemy import Connection, text
 
 from lockedin.focus.coverage import CREDIT, CREDIT_FROM
 from lockedin.focus.preferences import load_preferences
+from lockedin.goals.steer import goal_muscles
 from lockedin.focus.sessions import COUNTED_SQL, counted
 from lockedin.focus.suggest import gym_suggestions
 from lockedin.timeutil import TZ, week_start
@@ -97,6 +98,7 @@ def muscle_map(conn: Connection, now: datetime, week: date | None) -> dict:
         candidates.setdefault(key, []).append((name, n, best))
 
     avoid = set(load_preferences(conn).avoid_muscles)
+    helps = goal_muscles(conn, now)
     suggestions = {s.muscle_key: asdict(s) for s in gym_suggestions(conn, now, limit=20)} if is_current else {}
     first = conn.execute(text(
         f"select min(start_at) from activities where {COUNTED_SQL} and sport in ('gym', 'bike', 'run', 'swim')"
@@ -119,6 +121,7 @@ def muscle_map(conn: Connection, now: datetime, week: date | None) -> dict:
                        if m.key in CARDIO_MUSCLES[c["sport"]]],
             "suggestion": suggestions.get(m.key),
             "left_out": m.key in avoid,
+            "goals": helps.get(m.key, []),
         })
     return {
         "week_start": start_day.isoformat(),

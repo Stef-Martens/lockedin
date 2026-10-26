@@ -15,7 +15,24 @@ from lockedin.plan.routines import routines
 from lockedin.timeutil import TZ
 
 Sport = Literal["gym", "bike", "run", "swim", "rest", "other"]
-FIELDS = "id, day, sport, title, note, optional, routine, zwift, zwift_synced_at, sort, source"
+FIELDS = "id, day, sport, title, note, optional, routine, zwift, zwift_synced_at, sort, source, targets, goal_id"
+PACE = {"run": (150, 720), "swim": (50, 300)}  # s/km for runs, s/100 m for swims
+
+
+class Targets(BaseModel):
+    """What a run or swim aims for. Paces: seconds per km (run) or per 100 m (swim)."""
+    model_config = ConfigDict(extra="forbid")
+    distance_m: int | None = Field(None, ge=100, le=100_000)
+    duration_s: int | None = Field(None, ge=60, le=21_600)
+    pace_low: int | None = Field(None, ge=50, le=720)
+    pace_high: int | None = Field(None, ge=50, le=720)
+    hr_zone: int | None = Field(None, ge=1, le=5)
+
+    @model_validator(mode="after")
+    def _paces(self):
+        if self.pace_low and self.pace_high and self.pace_low > self.pace_high:
+            raise ValueError("pace_low must be the faster (smaller) pace, at most pace_high.")
+        return self
 # Edits to these change the Zwift file, so it has to be fetched again.
 FILE_FIELDS = {"title", "note", "day", "zwift"}
 
@@ -29,6 +46,8 @@ class ItemIn(BaseModel):
     optional: bool = False
     routine: str | None = Field(None, max_length=120)
     zwift: ZwiftWorkout | None = None
+    targets: Targets | None = None
+    goal_id: int | None = None
     sort: int = Field(0, ge=0, le=100)
 
     @field_validator("title")
@@ -44,6 +63,16 @@ class ItemIn(BaseModel):
             raise ValueError("Only bike items can have a Zwift workout.")
         if self.routine and self.sport != "gym":
             raise ValueError("Only gym items can have a routine.")
+        if self.targets:
+            if self.sport not in PACE:
+                raise ValueError("Only runs and swims have targets.")
+            lo, hi = PACE[self.sport]
+            for p in (self.targets.pace_low, self.targets.pace_high):
+                if p is not None and not lo <= p <= hi:
+                    unit = "s/km" if self.sport == "run" else "s/100 m"
+                    raise ValueError(f"A {self.sport} pace must be between {lo} and {hi} {unit}.")
+            if self.targets.hr_zone and self.sport != "run":
+                raise ValueError("Heart-rate zones are for runs only.")
         return self
 
 
@@ -56,6 +85,8 @@ class ItemPatch(BaseModel):
     optional: bool | None = None
     routine: str | None = Field(None, max_length=120)
     zwift: ZwiftWorkout | None = None
+    targets: Targets | None = None
+    goal_id: int | None = None
     sort: int | None = Field(None, ge=0, le=100)
 
 
@@ -80,7 +111,25 @@ def _zwift_json(item: ItemIn) -> str | None:
     return json.dumps(item.zwift.model_dump()) if item.zwift else None
 
 
-def _out(row, ftp: float | None, today: date, done: dict[int, int]) -> dict:
+def _targets_json(item: ItemIn) -> str | None:
+    return json.dumps(item.targets.model_dump(exclude_none=True)) if item.targets else None
+
+
+def _check_goal(conn: Connection, goal_id: int | None) -> None:
+    if goal_id is not None and conn.execute(text(
+            "select 1 from goals where id = :g and status = 'active'"), {"g": goal_id}).first() is None:
+        raise ValueError(f"There's no active goal {goal_id}; use get_goals for the ids.")
+
+
+def _goal_labels(conn: Connection, ids: set) -> dict[int, str]:
+    ids = {i for i in ids if i}
+    if not ids:
+        return {}
+    return {r.id: (f"{r.text} ({r.target})" if r.target else r.text) for r in conn.execute(text(
+        "select id, text, target from goals where id = any(:i)"), {"i": list(ids)})}
+
+
+def _out(row, ftp: float | None, today: date, done: dict[int, int], goals: dict[int, str] | None = None) -> dict:
     zwift = None
     if row.zwift:
         w = ZwiftWorkout(**row.zwift)
@@ -89,7 +138,8 @@ def _out(row, ftp: float | None, today: date, done: dict[int, int]) -> dict:
     status = None if not zwift or row.day < today else ("synced" if row.zwift_synced_at else "pending")
     return {"id": row.id, "day": row.day.isoformat(), "sport": row.sport, "title": row.title, "note": row.note,
             "optional": row.optional, "routine": row.routine, "zwift": zwift, "zwift_status": status,
-            "sort": row.sort, "source": row.source, "done": row.id in done, "activity_id": done.get(row.id)}
+            "sort": row.sort, "source": row.source, "done": row.id in done, "activity_id": done.get(row.id),
+            "targets": row.targets, "goal_id": row.goal_id, "goal": (goals or {}).get(row.goal_id)}
 
 
 def _ticks(conn: Connection, rows: list, start: date, end: date) -> dict[int, int]:
@@ -123,7 +173,8 @@ def items_between(conn: Connection, now: datetime, start: date, end: date) -> li
     ), {"s": start, "e": end}).all()
     done = _ticks(conn, rows, start, end)
     ftp = ftp_at(conn, now)
-    return [_out(r, ftp, local_today(now), done) for r in rows]
+    goals = _goal_labels(conn, {r.goal_id for r in rows})
+    return [_out(r, ftp, local_today(now), done, goals) for r in rows]
 
 
 def week(conn: Connection, now: datetime, any_day: date | None) -> dict:
@@ -141,10 +192,13 @@ def get_item(conn: Connection, now: datetime, item_id: int) -> dict:
 
 def create(conn: Connection, now: datetime, item: ItemIn, source: str) -> dict:
     _check_routine(conn, now, item.routine)
+    _check_goal(conn, item.goal_id)
     item_id = conn.execute(text(
-        "insert into agenda_items (day, sport, title, note, optional, routine, zwift, sort, source) "
-        "values (:day, :sport, :title, :note, :optional, :routine, cast(:zwift as jsonb), :sort, :source) returning id"
-    ), {**item.model_dump(exclude={"zwift"}), "zwift": _zwift_json(item), "source": source}).scalar_one()
+        "insert into agenda_items (day, sport, title, note, optional, routine, zwift, targets, goal_id, sort, source) "
+        "values (:day, :sport, :title, :note, :optional, :routine, cast(:zwift as jsonb), cast(:targets as jsonb), "
+        ":goal_id, :sort, :source) returning id"
+    ), {**item.model_dump(exclude={"zwift", "targets"}), "zwift": _zwift_json(item), "targets": _targets_json(item),
+        "source": source}).scalar_one()
     return get_item(conn, now, item_id)
 
 
@@ -157,11 +211,15 @@ def update(conn: Connection, now: datetime, item_id: int, patch: ItemPatch) -> d
     merged = ItemIn(**{**current, **changes})  # re-checks the combination (e.g. a routine on a run)
     if "routine" in changes:
         _check_routine(conn, now, merged.routine)
+    if "goal_id" in changes:
+        _check_goal(conn, merged.goal_id)
     reset = ", zwift_synced_at = null" if FILE_FIELDS & changes.keys() else ""
     conn.execute(text(
         "update agenda_items set day = :day, sport = :sport, title = :title, note = :note, optional = :optional, "
-        f"routine = :routine, zwift = cast(:zwift as jsonb), sort = :sort, updated_at = now(){reset} where id = :id"
-    ), {**merged.model_dump(exclude={"zwift"}), "zwift": _zwift_json(merged), "id": item_id})
+        f"routine = :routine, zwift = cast(:zwift as jsonb), targets = cast(:targets as jsonb), goal_id = :goal_id, "
+        f"sort = :sort, updated_at = now(){reset} where id = :id"
+    ), {**merged.model_dump(exclude={"zwift", "targets"}), "zwift": _zwift_json(merged), "targets": _targets_json(merged),
+        "id": item_id})
     return get_item(conn, now, item_id)
 
 
