@@ -182,7 +182,39 @@ Before the gym, tap **Plan a workout**, on the Overview or the Muscles page.
 
 To deploy: `supabase db push`, then `git push`.
 
-## 8. Agenda
+## 8. Today, session pages and goals
+
+- **Today** sits at the top of the Overview: today's agenda as a to-do list.
+  - Each done session gets a tick and what you did ("Done · 65′ · 156 W · intervals on target"), with **See how it went**.
+  - Open gym days have **Plan it**.
+  - Underneath is the next planned day.
+- **Session pages:** click any session in the agenda to open its own page.
+  - **Before:** the full plan.
+    - **Zwift:** every part with times and watts, sweet-spot minutes, estimated TSS, and the FTP used.
+    - **Runs and swims:** distance or time, pace range, heart-rate zone.
+    - **Gym:** the planner's targets.
+  - **After:** the plan next to what you did.
+    - **Zwift:** your power over the planned target, and each interval's watts marked on target (within 3%), above or below.
+    - **Runs:** totals, a pace chart with the target band, splits per km, and time in heart-rate zones.
+    - **Swims:** distance, time, pace per 100 m, lengths and strokes.
+    - **Gym:** each planned exercise against the sets you logged: done, close, skipped, skipped by you, or added.
+  - Edit, move or delete the session from the same page.
+- **Goals steer the whole app.** Each goal has a kind (gym, bike, run, swim, body or general), and a lift goal knows its lift.
+  - **Progress:** goals show on the Overview with a bar where it can be measured:
+    - lift goals by your best estimated 1RM
+    - FTP goals by your FTP
+    - run and swim distance goals by your longest run or swim in the last 8 weeks
+    - body goals from your measurement when you set the goal
+
+    Relative goals like "lose 5 kg" show as text only.
+  - **Focus tips:**
+    - Muscles your goal lift uses come first ("helps: Bench 100 kg").
+    - A run, ride or swim goal always brings a session of that sport ("toward: Run a 10K").
+  - **Planner:** your goal lift gets one extra heavy set, up to 4, and never during a comeback. Extras for its muscles come first.
+  - **Muscles page:** muscles your goal lift trains say so.
+  - **The coach** links agenda sessions to the goal they serve, and gives runs and swims targets.
+
+## 9. Agenda
 
 The **Agenda** tab shows your week, Monday to Sunday, with what to do each day.
 
@@ -208,7 +240,7 @@ The **Agenda** tab shows your week, Monday to Sunday, with what to do each day.
 
 To deploy: `supabase db push`, then `git push`, then re-run `sync/install.sh` on your Mac.
 
-## 9. AI coach
+## 10. AI coach
 
 The **Coach** page is a chat with Claude about your training. Ask things like "what should I focus on this week?", "plan my next gym session" or "am I getting fitter on the bike?". It looks at your data before answering, so the advice uses your own lifts, zones and sessions.
 
