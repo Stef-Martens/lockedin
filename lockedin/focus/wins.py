@@ -99,7 +99,8 @@ def recent_wins(conn: Connection, now: datetime, days: int = 14) -> list[Win]:
     return sorted(wins, key=lambda w: w.date, reverse=True)[:MAX_WINS]
 
 
-def _gym_plateaus(conn: Connection, now: datetime) -> list[Plateau]:
+def _stalled(conn: Connection, now: datetime) -> list[tuple[str, float]]:
+    """(exercise, best earlier e1RM) for lifts done 4+ times in 6 weeks without beating the 6 weeks before."""
     window = timedelta(days=42)
     rows = conn.execute(text(
         "select e.name, a.id as aid, a.start_at, max(s.e1rm) as best from gym_sets s join activities a on a.id = s.workout_id "
@@ -114,9 +115,18 @@ def _gym_plateaus(conn: Connection, now: datetime) -> list[Plateau]:
         recent = [r.best for r in sessions if r.start_at > now - window]
         earlier = [r.best for r in sessions if r.start_at <= now - window]
         if len(recent) >= 4 and len(earlier) >= 2 and max(recent) <= max(earlier):
-            out.append(Plateau("gym", f"{name} has stalled", f"Best est. 1RM {max(earlier):.1f} kg, not beaten in 6 weeks",
-                               "Change the stimulus for 3–4 weeks: try 4 × 6–8 a bit heavier, or swap to a variation."))
+            out.append((name, max(earlier)))
     return out
+
+
+def stalled_exercises(conn: Connection, now: datetime) -> list[str]:
+    return [name for name, _ in _stalled(conn, now)]
+
+
+def _gym_plateaus(conn: Connection, now: datetime) -> list[Plateau]:
+    return [Plateau("gym", f"{name} has stalled", f"Best est. 1RM {best:.1f} kg, not beaten in 6 weeks",
+                    "Change the stimulus for 3–4 weeks: try 4 × 6–8 a bit heavier, or swap to a variation.")
+            for name, best in _stalled(conn, now)]
 
 
 def _bike_plateau(conn: Connection, now: datetime) -> list[Plateau]:

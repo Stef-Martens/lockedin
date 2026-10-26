@@ -104,29 +104,46 @@ def pick(conn: Connection, muscle: str, now: datetime, never: frozenset[str] = f
     return None
 
 
-def gym_suggestions(conn: Connection, now: datetime, limit: int = 3) -> list[GymSuggestion]:
+def weighted_pick(conn: Connection, muscle: str, now: datetime, dumbbell_logging: str,
+                  never: frozenset[str] = frozenset(), skip: frozenset[str] = frozenset()) -> dict | None:
+    """An exercise for `muscle` with its prescription: {exercise, equipment, sets, reps, weight_kg, dumbbell, estimate}."""
+    picked = pick(conn, muscle, now, never, skip)
+    if not picked:
+        return None
+    name, equipment, raw, estimate, best_reps = picked
+    if raw is None or equipment == "bodyweight":
+        weight = None
+    elif equipment == "dumbbell":
+        weight = dumbbell_weight(raw, dumbbell_logging)
+    else:
+        weight = round_down(raw)
+    reps = f"{round(best_reps * 0.8)}–{best_reps}" if equipment == "bodyweight" and best_reps else "8–12"
+    return {"exercise": name, "equipment": equipment, "sets": 3, "reps": reps, "weight_kg": weight,
+            "dumbbell": dumbbell_logging if equipment == "dumbbell" else None, "estimate": estimate}
+
+
+def low_muscles(conn: Connection, now: datetime, avoid: list[str]) -> list:
+    """Muscles below their weekly target (28-day average), biggest shortfall first; left-out muscles excluded."""
     coverage = muscle_coverage(conn, now)
+    low = [c for c in coverage if c.status == "low" and c.key not in avoid]
+    low.sort(key=lambda c: (-(c.target_low - c.sets_per_week) / c.target_low, coverage.index(c)))
+    return low
+
+
+def low_reason(c) -> str:
+    return f"{c.name}: {_fmt(c.sets_per_week)} sets/week, aim for {_fmt(c.target_low)}–{_fmt(c.target_high)}"
+
+
+def gym_suggestions(conn: Connection, now: datetime, limit: int = 3) -> list[GymSuggestion]:
     prefs = load_preferences(conn)
     never = frozenset(prefs.never_exercises)
     dumbbell_logging = conn.execute(text("select dumbbell_weights from profile where id = 1")).scalar() or "pair"
-    low = [c for c in coverage if c.status == "low" and c.key not in prefs.avoid_muscles]
-    low.sort(key=lambda c: (-(c.target_low - c.sets_per_week) / c.target_low, coverage.index(c)))
     out = []
-    for c in low[:limit]:
-        picked = pick(conn, c.key, now, never)
-        if not picked:
+    for c in low_muscles(conn, now, prefs.avoid_muscles)[:limit]:
+        p = weighted_pick(conn, c.key, now, dumbbell_logging, never)
+        if not p:
             continue
-        name, equipment, raw, estimate, best_reps = picked
-        if raw is None or equipment == "bodyweight":
-            weight = None
-        elif equipment == "dumbbell":
-            weight = dumbbell_weight(raw, dumbbell_logging)
-        else:
-            weight = round_down(raw)
-        reps = f"{round(best_reps * 0.8)}–{best_reps}" if equipment == "bodyweight" and best_reps else "8–12"
         out.append(GymSuggestion(
-            muscle_key=c.key, muscle_name=c.name, exercise=name, sets=3, reps=reps,
-            weight_kg=weight,
-            dumbbell=dumbbell_logging if equipment == "dumbbell" else None,
-            estimate=estimate, reason=f"{c.name}: {_fmt(c.sets_per_week)} sets/week, aim for {_fmt(c.target_low)}–{_fmt(c.target_high)}"))
+            muscle_key=c.key, muscle_name=c.name, exercise=p["exercise"], sets=p["sets"], reps=p["reps"],
+            weight_kg=p["weight_kg"], dumbbell=p["dumbbell"], estimate=p["estimate"], reason=low_reason(c)))
     return out
