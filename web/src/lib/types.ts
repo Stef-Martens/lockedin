@@ -142,6 +142,8 @@ export interface MapMuscle {
   suggestion: GymSuggestion | null;
   /** Left out in the owner's preferences (e.g. an injured lower back). */
   left_out?: boolean;
+  /** Active goals whose lift trains this muscle. */
+  goals?: string[];
 }
 
 export interface MuscleMap {

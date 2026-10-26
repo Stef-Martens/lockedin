@@ -5,14 +5,18 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AgendaItem, AgendaWeek } from "../lib/agenda";
 import Agenda from "./Agenda";
 
+const navigate = vi.fn();
+vi.mock("react-router-dom", async (orig) => ({ ...(await orig<typeof import("react-router-dom")>()), useNavigate: () => navigate }));
+
 const item = (over: Partial<AgendaItem>): AgendaItem => ({
   id: 1, day: "2026-10-27", sport: "gym", title: "Rug - Bicep", note: null, optional: false, routine: "Rug - Bicep",
-  zwift: null, zwift_status: null, sort: 0, source: "coach", done: false, activity_id: null, ...over,
+  zwift: null, zwift_status: null, sort: 0, source: "coach", done: false, activity_id: null, targets: null, goal_id: null,
+  goal: null, result: null, ...over,
 });
 const WEEK: AgendaWeek = {
   week_start: "2026-10-26", today: "2026-10-26",
   items: [
-    item({}),
+    item({ day: "2026-10-26", done: true, activity_id: 9, result: "Done · 52′" }),
     item({ id: 2, day: "2026-10-29", sport: "bike", title: "Sweet Spot 3x10", routine: null, zwift_status: "pending",
       zwift: { blocks: [{ type: "steady", duration_s: 600, power: 0.9 }], duration_s: 600, summary: "10′ · 10′ at 151 W",
         filename: "2026-10-29 Sweet Spot 3x10.zwo" } }),
@@ -56,22 +60,10 @@ describe("Agenda page", () => {
     expect(body).toEqual({ day: "2026-10-28", sport: "run", title: "Easy run 30′", note: null, optional: false, routine: null });
   });
 
-  it("moves an item to another day", async () => {
+  it("shows done sessions with what you did, and opens a session page", async () => {
     await open();
+    expect(screen.getByText("Done · 52′")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /Sweet Spot 3x10/ }));
-    const dialog = await screen.findByRole("dialog");
-    fireEvent.change(within(dialog).getByLabelText("Day"), { target: { value: "2026-10-30" } });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
-    await waitFor(() => expect(apiFetch).toHaveBeenCalledWith("/api/agenda/2", { method: "PATCH", body: JSON.stringify({ day: "2026-10-30" }) }));
-  });
-
-  it("asks before deleting", async () => {
-    await open();
-    fireEvent.click(screen.getByRole("button", { name: /Sweet Spot 3x10/ }));
-    const dialog = await screen.findByRole("dialog");
-    fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
-    expect(apiFetch).not.toHaveBeenCalledWith("/api/agenda/2", { method: "DELETE" });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Yes, delete it" }));
-    await waitFor(() => expect(apiFetch).toHaveBeenCalledWith("/api/agenda/2", { method: "DELETE" }));
+    expect(navigate).toHaveBeenCalledWith("/agenda/2");
   });
 });

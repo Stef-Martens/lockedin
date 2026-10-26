@@ -19,7 +19,13 @@ export interface AgendaItem {
   source: "coach" | "manual";
   done: boolean;
   activity_id: number | null;
+  targets: Targets | null;
+  goal_id: number | null;
+  goal: string | null;
+  /** "Done · 66′ · 128 W" once ticked off. */
+  result: string | null;
 }
+export interface Targets { distance_m?: number; duration_s?: number; pace_low?: number; pace_high?: number; hr_zone?: number }
 export interface AgendaWeek { week_start: string; today: string; items: AgendaItem[] }
 
 export const SPORT_COLOR: Record<AgendaSport, string> = {

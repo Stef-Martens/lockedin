@@ -44,6 +44,7 @@ function Details({ m, map }: { m: MapMuscle; map: MuscleMap }) {
         </div>
       ))}
       {m.left_out && <div className="mm-line secondary">Left out in your preferences.</div>}
+      {(m.goals ?? []).map((g) => <div key={g} className="mm-line" style={{ color: "var(--accent)" }}>Works toward your goal: {g}</div>)}
       {cardio.map((c) => (
         <div key={c.sport} className="mm-line">
           <span className="dot" style={{ background: CARDIO_COLOR[c.sport], borderRadius: "50%", marginRight: 6 }} />

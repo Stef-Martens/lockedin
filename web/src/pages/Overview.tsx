@@ -45,26 +45,33 @@ function TotalTile({ minutes, sessions, label }: { minutes: number; sessions: nu
   );
 }
 
-type Goal = { id: number; text: string; target: string | null };
+type Goal = { id: number; text: string; target: string | null; progress?: GoalProgress };
 
-function TodayCard({ items }: { items: AgendaItem[] }) {
-  if (!items.length) return null;
+type GoalProgress = { label: string; fraction: number } | null;
+
+function TodayBlock({ items, upcoming }: { items: AgendaItem[]; upcoming: AgendaItem[] }) {
+  const done = items.filter((i) => i.done).length;
+  const next = upcoming.length
+    ? `${new Date(`${upcoming[0].day}T12:00`).toLocaleDateString("en-GB", { weekday: "long" })}: ${upcoming.map((u) => u.title + (u.optional ? " (optional)" : "")).join(", ")}`
+    : null;
   return (
-    <Link to="/agenda" className="card accent lift rise" style={{ ...stagger(0), display: "block", color: "var(--ink)", textDecoration: "none" }}>
-      <div className="eyebrow">Today</div>
+    <Card variant="accent" i={0}>
+      <SectionHead title="Today" right={items.length ? <span className="secondary" style={{ fontSize: 13 }}>{done} of {items.length} done</span> : undefined} />
+      {items.length === 0 && <p className="secondary" style={{ margin: 0 }}>Nothing planned today. <Link to="/agenda">Open the agenda</Link></p>}
       {items.map((it) => (
-        <div key={it.id} className="row spread" style={{ marginTop: 8, flexWrap: "nowrap" }}>
-          <span>
-            <strong>{it.title}</strong>
-            {(it.zwift?.summary ?? it.note) && <span className="secondary"> · {it.zwift?.summary ?? it.note}</span>}
-            {it.optional && <span className="muted"> · optional</span>}
-          </span>
-          <span className="secondary" style={{ fontSize: 13, whiteSpace: "nowrap" }}>
-            {it.done ? "Done ✓" : it.zwift_status === "synced" ? "In Zwift ✓" : it.sport === "gym" ? "Plan it →" : ""}
-          </span>
+        <div key={it.id} className={`today-row${it.done ? " done" : ""}`}>
+          <span className={`today-check${it.done ? " done pop" : ""}`} aria-hidden="true">{it.done ? "✓" : ""}</span>
+          <div style={{ minWidth: 0 }}>
+            <div className="today-title">{it.title}{it.goal && <span className="goal-tag">for: {it.goal}</span>}{it.optional && <span className="muted"> · optional</span>}</div>
+            <div className="secondary" style={{ fontSize: 13 }}>{it.done ? it.result : it.zwift?.summary ?? it.note ?? (it.routine ? "Your routine" : "")}</div>
+          </div>
+          {it.done ? <Link className="btn small" style={{ textDecoration: "none" }} to={`/agenda/${it.id}`}>See how it went</Link>
+            : it.sport === "gym" && it.routine ? <Link className="btn primary small" style={{ textDecoration: "none" }} to={`/plan?day=${encodeURIComponent(it.routine)}`}>Plan it</Link>
+            : <Link className="btn small" style={{ textDecoration: "none" }} to={`/agenda/${it.id}`}>Open</Link>}
         </div>
       ))}
-    </Link>
+      {next && <div className="secondary" style={{ fontSize: 13, marginTop: 10 }}>Next · {next}</div>}
+    </Card>
   );
 }
 
@@ -84,9 +91,18 @@ function GymCards({ goals }: { goals: Goal[] | null }) {
           <Link to="/coach" style={{ fontSize: 13, fontWeight: 600, textDecoration: "none" }}>Coach</Link>
         </div>
         {goals && goals.length > 0 ? (
-          <ul className="goal-list" style={{ marginTop: 8 }}>
-            {goals.map((g) => <li key={g.id}><span>{g.text}</span>{g.target && <span className="muted"> · {g.target}</span>}</li>)}
-          </ul>
+          <div style={{ marginTop: 6 }}>
+            {goals.map((g) => (
+              <div key={g.id} className="goal-progress">
+                <div className="row spread" style={{ flexWrap: "nowrap" }}>
+                  <span>{g.text}</span>
+                  {g.progress && <span className="secondary num" style={{ fontSize: 13, whiteSpace: "nowrap" }}>{g.progress.label}</span>}
+                </div>
+                {g.progress && <div className="goal-bar"><span className="grow-x" style={{ width: `${Math.round(g.progress.fraction * 100)}%` }} /></div>}
+                {g.target && <div className="muted" style={{ fontSize: 12 }}>{g.target}</div>}
+              </div>
+            ))}
+          </div>
         ) : goals ? (
           <p className="muted" style={{ margin: "8px 0 0", fontSize: 14 }}>No goals yet. Set some with the coach.</p>
         ) : null}
@@ -101,11 +117,16 @@ export default function Overview() {
   const [period, setPeriod] = useState<"week" | "month">("week");
   const [error, setError] = useState<string | null>(null);
   const [goals, setGoals] = useState<Goal[] | null>(null);
-  const [today, setToday] = useState<AgendaItem[]>([]);
+  const [today, setToday] = useState<AgendaItem[] | null>(null);
+  const [upcoming, setUpcoming] = useState<AgendaItem[]>([]);
 
   useEffect(() => {
     apiFetch<Goal[]>("/api/goals/active").then(setGoals).catch(() => setGoals([]));
-    apiFetch<AgendaWeek>("/api/agenda").then((w) => setToday(w.items.filter((i) => i.day === w.today))).catch(() => undefined);
+    apiFetch<AgendaWeek>("/api/agenda").then((w) => {
+      setToday(w.items.filter((i) => i.day === w.today));
+      const later = w.items.filter((i) => i.day > w.today);
+      setUpcoming(later.filter((i) => i.day === later[0]?.day));
+    }).catch(() => setToday([]));
   }, []);
 
   useEffect(() => {
@@ -141,7 +162,7 @@ export default function Overview() {
         </Card>
       )}
 
-      <TodayCard items={today} />
+      {today && <TodayBlock items={today} upcoming={upcoming} />}
       <GymCards goals={goals} />
 
       <div className="grid-auto" style={{ ["--min" as string]: "200px" }}>

@@ -16,9 +16,9 @@ export default function FocusCard({ items, i }: { items: FocusItem[]; i?: number
               <li key={n}>
                 <span className="focus-num">{String(n + 1).padStart(2, "0")}</span>
                 <div>
-                  <div className="list-title">{line.title}</div>
+                  <div className="list-title">{line.title}{item.goal && <span className="goal-tag">{item.type === "gym" ? "helps" : "toward"}: {item.goal}</span>}</div>
                   <div className="num" style={{ color: "var(--ink-2)", marginTop: 3 }}>{line.detail}</div>
-                  <div className="muted" style={{ fontSize: 13, marginTop: 3 }}>{item.reason}</div>
+                  <div className="muted" style={{ fontSize: 13, marginTop: 3 }}>{item.reason.replace(/ · (helps|toward): .*$/, "")}</div>
                 </div>
               </li>
             );

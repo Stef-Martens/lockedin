@@ -5,9 +5,9 @@ export type Effort = "easy" | "steady" | "hard" | "long";
 export type FocusItem =
   | {
       type: "gym"; muscle_key: string; muscle_name: string; exercise: string; sets: number; reps: string;
-      weight_kg: number | null; dumbbell: "pair" | "each" | null; estimate: boolean; reason: string;
+      weight_kg: number | null; dumbbell: "pair" | "each" | null; estimate: boolean; reason: string; goal?: string | null;
     }
-  | { type: "session"; sport: Sport; kind: Effort; title: string; detail: string; reason: string };
+  | { type: "session"; sport: Sport; kind: Effort | "steady"; title: string; detail: string; reason: string; goal?: string | null };
 
 export interface SportTotals { time_s: number; distance_m: number; sessions: number }
 export type TotalsBySport = Record<Sport, SportTotals>;
