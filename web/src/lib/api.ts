@@ -6,7 +6,7 @@ export class ApiError extends Error {
   }
 }
 
-async function authHeader(): Promise<Record<string, string>> {
+export async function authHeader(): Promise<Record<string, string>> {
   const { data } = await supabase.auth.getSession();
   const token = data.session?.access_token;
   return token ? { Authorization: `Bearer ${token}` } : {};
@@ -21,18 +21,21 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
     window.location.assign("/login");
     throw new ApiError(401, "Not signed in.");
   }
-  if (!res.ok) {
-    let detail = `Something went wrong (${res.status}).`;
-    try {
-      const body = await res.json();
-      if (typeof body.detail === "string") detail = body.detail;
-      else if (Array.isArray(body.detail)) detail = body.detail.map((d: { msg: string }) => d.msg).join("; ");
-    } catch {
-      /* not JSON */
-    }
-    throw new ApiError(res.status, detail);
-  }
+  if (!res.ok) throw await errorFrom(res);
   return (res.status === 204 ? null : await res.json()) as T;
+}
+
+/** An ApiError with the server's `detail` message when it sent one. */
+export async function errorFrom(res: Response): Promise<ApiError> {
+  let detail = `Something went wrong (${res.status}).`;
+  try {
+    const body = await res.json();
+    if (typeof body.detail === "string") detail = body.detail;
+    else if (Array.isArray(body.detail)) detail = body.detail.map((d: { msg: string }) => d.msg).join("; ");
+  } catch {
+    /* not JSON */
+  }
+  return new ApiError(res.status, detail);
 }
 
 export function uploadFile<T>(path: string, file: File, fields: Record<string, string> = {}): Promise<T> {

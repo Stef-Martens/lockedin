@@ -124,10 +124,10 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-
   .main { padding: 18px calc(var(--gutter) + env(safe-area-inset-right)) calc(96px + env(safe-area-inset-bottom)) calc(var(--gutter) + env(safe-area-inset-left)); }
   .topbar .link-btn { padding: 10px 4px; margin: -10px -4px; }
   .tabbar {
-    display: grid; grid-template-columns: repeat(5, 1fr); position: fixed; bottom: 0; left: 0; right: 0; z-index: 10;
+    display: grid; grid-template-columns: repeat(6, 1fr); position: fixed; bottom: 0; left: 0; right: 0; z-index: 10;
     padding: 8px 6px calc(10px + env(safe-area-inset-bottom)); background: #0b0c0d; border-top: 1px solid var(--hairline);
   }
-  .tabbar a { text-align: center; font-size: 12px; padding: 8px 2px; color: var(--ink-3); text-decoration: none; }
+  .tabbar a { text-align: center; font-size: 11.5px; padding: 8px 0; color: var(--ink-3); text-decoration: none; }
   .tabbar a.active { color: var(--accent); font-weight: 600; }
   h1 { font-size: 36px; }
 }
@@ -297,3 +297,65 @@ a.tile { display: block; color: var(--ink); text-decoration: none; }
   color: var(--ink); background: transparent; border: 0; padding: 0; outline: none;
 }
 .field-card-input::placeholder { color: #4a4e52; }
+
+/* ---------- Coach ---------- */
+@keyframes blink { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
+.coach { display: grid; grid-template-columns: 260px minmax(0, 1fr); gap: 16px; align-items: start; }
+.coach-side { display: flex; flex-direction: column; gap: 14px; position: sticky; top: 24px; }
+.coach-convos .list { max-height: 46vh; overflow-y: auto; margin: 0 -8px; }
+.convo-link {
+  display: block; padding: 9px 10px; border-radius: 10px; color: var(--ink-3); text-decoration: none; font-size: 14px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.convo-link:hover { background: var(--surface-raised); color: var(--ink); }
+.convo-link.active { background: var(--surface-raised); color: var(--ink); font-weight: 600; }
+.goal-list { list-style: none; margin: 0; padding: 0; font-size: 14px; }
+.goal-list li { padding: 8px 0 8px 14px; border-top: 1px solid var(--hairline); position: relative; }
+.goal-list li:first-child { border-top: 0; }
+.goal-list li::before { content: ""; position: absolute; left: 0; top: 15px; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+.coach-phone-bar { display: none; }
+.coach-chat { display: flex; flex-direction: column; gap: 14px; min-height: 60vh; }
+.coach-empty { display: flex; flex-direction: column; gap: 14px; padding: 8px 0 4px; }
+.coach-empty .chip { white-space: normal; text-align: left; }
+.msgs { display: flex; flex-direction: column; gap: 14px; }
+.msg { max-width: 72ch; font-size: 15px; line-height: 1.55; }
+.msg.user {
+  align-self: flex-end; background: var(--surface-raised); border-radius: 16px 16px 4px 16px; padding: 10px 14px;
+  white-space: pre-wrap; overflow-wrap: anywhere; max-width: min(72ch, 85%);
+}
+.msg.assistant { align-self: flex-start; color: var(--ink-2); }
+.msg-used { font-size: 12px; color: var(--ink-muted); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 6px; }
+.msg-activity { font-size: 14px; color: var(--ink-3); }
+.md { overflow-wrap: anywhere; }
+.md > :first-child { margin-top: 0; }
+.md > :last-child { margin-bottom: 0; }
+.md p, .md ul, .md ol { margin: 0 0 10px; }
+.md ul, .md ol { padding-left: 22px; }
+.md li + li { margin-top: 4px; }
+.md strong { color: var(--ink); }
+.md h3 { font-family: var(--display); text-transform: uppercase; letter-spacing: 0.06em; font-size: 17px; color: var(--ink); margin: 14px 0 6px; }
+.md code { background: var(--sunken); border-radius: 6px; padding: 1px 6px; font-size: 13px; }
+.md .table-wrap { margin: 0 0 10px; }
+.caret { display: inline-block; width: 8px; height: 1.05em; margin-left: 2px; vertical-align: -2px; background: var(--accent); animation: blink 1s steps(1) infinite; }
+.composer {
+  position: sticky; bottom: 0; margin: auto 0 -20px; display: flex; gap: 10px; align-items: flex-end;
+  background: var(--surface); padding: 8px 0 20px;
+}
+.composer textarea {
+  flex: 1; min-width: 0; resize: none; max-height: 180px; border: 1px solid var(--axis); background: var(--sunken);
+  color: var(--ink); color-scheme: dark; border-radius: 12px; padding: 11px 14px; font-size: 16px; line-height: 1.4;
+}
+.composer textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 0; }
+@media (prefers-reduced-motion: reduce) { .caret { animation: none; } }
+@media (max-width: 899px) {
+  .coach { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .coach-side { display: none; }
+  .coach-phone-bar { display: flex; gap: 10px; align-items: center; position: relative; }
+  .coach-goals summary { list-style: none; }
+  .coach-goals summary::-webkit-details-marker { display: none; }
+  .coach-goals[open] summary { background: var(--ink); color: var(--page); }
+  .coach-goals-pop { position: absolute; right: 0; top: calc(100% + 8px); z-index: 5; width: min(320px, 100%); box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5); }
+  .coach-chat { padding: 16px; min-height: 50vh; }
+  /* Sits right on top of the tab bar (8 + 33 + 10 px + safe area), its background hiding the scrolled text. */
+  .composer { bottom: calc(51px + env(safe-area-inset-bottom)); margin-bottom: -16px; padding-bottom: 14px; }
+}

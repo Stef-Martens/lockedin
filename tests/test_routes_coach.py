@@ -89,8 +89,9 @@ def test_failed_turn_stores_nothing(client, fake, clean_db):
 
 
 def test_conversation_list_newest_first(client, fake):
-    fake.turns = [answer("a")]
+    fake.turns = [answer("b"), answer("a")]
     a, b = new_conversation(client), new_conversation(client)
+    send(client, b, "newer conversation")
     send(client, a, "older conversation, but just used")
     listed = client.get("/api/coach/conversations", headers=owner_headers()).json()
     assert [c["id"] for c in listed] == [a, b] and listed[0]["title"].startswith("older conversation")
@@ -118,10 +119,18 @@ def test_unknown_conversation(client, fake):
 def test_missing_api_key_is_a_setup_message(client, clean_db):
     app.dependency_overrides[get_settings] = lambda: replace(get_settings(), anthropic_api_key=None)
     app.dependency_overrides[coach.get_coach_engine] = lambda: clean_db
-    cid = new_conversation(client)
-    r = send(client, cid)
+    r = client.post("/api/coach/conversations", headers=owner_headers())
     assert r.status_code == 503
     assert r.json()["detail"] == "The coach isn't set up yet: add ANTHROPIC_API_KEY in Vercel."
+    with clean_db.begin() as c:
+        cid = c.execute(text("insert into coach_conversations default values returning id")).scalar_one()
+    assert send(client, cid).status_code == 503
+
+
+def test_conversations_without_messages_are_not_listed(client, fake):
+    fake.turns = [([], [], "refusal")]
+    send(client, new_conversation(client))
+    assert client.get("/api/coach/conversations", headers=owner_headers()).json() == []
 
 
 def test_goals_active_first(client, clean_db):

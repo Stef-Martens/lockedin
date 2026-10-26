@@ -6,6 +6,7 @@ import { supabase } from "./lib/supabase";
 import Activities from "./pages/Activities";
 import ActivityDetail from "./pages/ActivityDetail";
 import Body from "./pages/Body";
+import Coach from "./pages/Coach";
 import Import from "./pages/Import";
 import Login from "./pages/Login";
 import Overview from "./pages/Overview";
@@ -38,6 +39,8 @@ export default function App() {
         <Route path="trends" element={<Navigate to="/trends/bike" replace />} />
         <Route path="trends/:sport" element={<Trends />} />
         <Route path="body" element={<Body />} />
+        <Route path="coach" element={<Coach />} />
+        <Route path="coach/:id" element={<Coach />} />
         <Route path="login" element={<Navigate to="/" replace />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>

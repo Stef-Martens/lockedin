@@ -73,13 +73,18 @@ def display(history: list[dict]) -> list[dict]:
 
 @router.get("/conversations")
 def conversations(conn: Connection = Depends(get_conn)) -> list[dict]:
-    rows = conn.execute(text("select id, title, updated_at from coach_conversations "
-                             "order by updated_at desc, id desc limit 50")).mappings()
+    # A chat whose first message failed has nothing to show, so it stays out of the list.
+    rows = conn.execute(text(
+        "select id, title, updated_at from coach_conversations c "
+        "where exists (select 1 from coach_messages m where m.conversation_id = c.id) "
+        "order by updated_at desc, id desc limit 50")).mappings()
     return [dict(r) for r in rows]
 
 
 @router.post("/conversations", status_code=201)
-def create_conversation(conn: Connection = Depends(get_conn), now: datetime = Depends(get_now)) -> dict:
+def create_conversation(conn: Connection = Depends(get_conn), now: datetime = Depends(get_now),
+                        _llm: CoachLLM = Depends(get_llm)) -> dict:
+    """Refused with the setup message while there's no API key, so no empty chats pile up."""
     cid = conn.execute(text("insert into coach_conversations (created_at, updated_at) values (:n, :n) returning id"),
                        {"n": now}).scalar_one()
     return {"id": cid}

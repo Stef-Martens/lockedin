@@ -6,6 +6,7 @@ import type { Status } from "../lib/types";
 
 const LINKS = [
   { to: "/", label: "Overview", short: "Home", end: true },
+  { to: "/coach", label: "Coach", short: "Coach" },
   { to: "/activities", label: "Activities", short: "Activities" },
   { to: "/trends/bike", label: "Trends", short: "Trends", match: "/trends" },
   { to: "/body", label: "Body", short: "Body" },
