@@ -528,7 +528,6 @@ a.tile { display: block; color: var(--ink); text-decoration: none; }
 .big-check.done { border: 0; background: var(--accent); color: var(--accent-ink); font-size: 32px; font-weight: 800; }
 .session-grid { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 16px; align-items: start; }
 .session-chart { width: 100%; height: auto; display: block; margin: 6px 0 10px; overflow: visible; }
-.session-chart text { font-size: 11px; fill: var(--ink-muted); }
 .session-chart polygon.work { fill: var(--sport-bike); }
 .session-chart polygon.easy { fill: #2c4a6e; }
 .session-chart .ftp-line { stroke: var(--ink-muted); stroke-dasharray: 4 4; }
@@ -538,6 +537,20 @@ a.tile { display: block; color: var(--ink); text-decoration: none; }
 .session-chart .hr-line { fill: none; stroke: var(--series-hr); stroke-width: 1.5; opacity: 0.8; }
 .session-chart .pace-line { fill: none; stroke: var(--series-pace); stroke-width: 2; }
 .session-chart .pace-band { fill: #1d2416; }
+
+/* Session charts: HTML axis labels stay legible when the SVG is squeezed onto a phone. */
+.chart-frame { display: grid; grid-template-columns: 46px minmax(0, 1fr); column-gap: 8px; margin: 6px 0 10px; }
+.chart-axis { position: relative; font-size: 11.5px; color: var(--ink-muted); font-variant-numeric: tabular-nums; }
+.chart-axis span { position: absolute; right: 0; transform: translateY(-50%); white-space: nowrap; }
+.chart-plot { position: relative; min-width: 0; }
+.chart-plot .session-chart { margin: 0; height: var(--chart-h, 180px); width: 100%; }
+.chart-times { grid-column: 2; position: relative; height: 18px; font-size: 11.5px; color: var(--ink-muted); }
+.chart-times span { position: absolute; top: 3px; transform: translateX(-50%); white-space: nowrap; }
+.chart-times span:first-child { transform: none; }
+.chart-readout { position: absolute; top: 6px; right: 6px; padding: 3px 8px; border-radius: 8px; font-size: 12.5px;
+  background: var(--surface-raised); color: var(--ink); pointer-events: none; }
+.session-chart polyline, .session-chart line { vector-effect: non-scaling-stroke; }
+.session-chart .cursor { stroke: var(--ink-3); stroke-width: 1; }
 .work-row td:first-child { font-weight: 600; }
 .muted-row td { color: var(--ink-muted); }
 .status-good { color: var(--accent); font-weight: 700; }

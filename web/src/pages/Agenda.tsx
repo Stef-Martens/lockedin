@@ -21,7 +21,7 @@ function ItemCard({ item, past, onOpen, i }: { item: AgendaItem; past: boolean; 
         {summary && <span className="agenda-item-sub">{summary}</span>}
         <span className="agenda-pills">
           {notDone && <span className="pill">Not done</span>}
-          {item.goal && !item.done && <span className="pill goal">{item.goal}</span>}
+          {item.goal && <span className="pill goal">{item.goal}</span>}
           {item.zwift_status && !item.done && <span className={`pill zwift ${item.zwift_status}`}>{ZWIFT_TEXT[item.zwift_status]}</span>}
           {item.optional && <span className="pill optional">Optional</span>}
         </span>

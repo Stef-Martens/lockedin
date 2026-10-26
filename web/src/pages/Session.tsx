@@ -25,23 +25,67 @@ function Tile({ label, value, sub, i }: { label: string; value: string; sub?: st
   );
 }
 
+type Tick = { at: number; text: string };
+
+/** Minute marks every 5, 10, 20, 30 or 60 minutes: whichever keeps it to about seven. */
+function timeTicks(end: number): Tick[] {
+  const step = [300, 600, 1200, 1800, 3600].find((s) => end / s <= 7) ?? 7200;
+  return Array.from({ length: Math.floor(end / step) + 1 }, (_, m) => ({ at: (m * step) / end, text: `${(m * step) / 60}′` }))
+    .filter((t) => t.at <= 0.96);
+}
+
+/** Pointer position over the chart as seconds into the session. */
+function useHoverTime(end: number) {
+  const [t, setT] = useState<number | null>(null);
+  const handlers = {
+    onPointerMove: (e: React.PointerEvent<SVGSVGElement>) => {
+      const box = e.currentTarget.getBoundingClientRect();
+      if (box.width > 0) setT(Math.max(0, Math.min(end, ((e.clientX - box.left) / box.width) * end)));
+    },
+    onPointerLeave: () => setT(null),
+  };
+  return [t, handlers] as const;
+}
+
+const nearest = (pts: [number, number][], t: number) =>
+  pts.reduce<[number, number] | null>((best, p) => (!best || Math.abs(p[0] - t) < Math.abs(best[0] - t) ? p : best), null);
+
+/** A chart whose value and time labels are HTML, so they stay readable however narrow the chart gets.
+ * `ticks` are in the SVG's own units (0 at the top, `height` at the bottom). */
+function ChartFrame({ label, height, ticks, times, readout, children }: {
+  label: string; height: number; ticks: Tick[]; times: Tick[]; readout?: string | null; children: React.ReactNode;
+}) {
+  return (
+    <div className="chart-frame" role="group" aria-label={label}>
+      <div className="chart-axis" aria-hidden="true">
+        {ticks.map((t) => <span key={t.text} style={{ top: `${(t.at / height) * 100}%` }}>{t.text}</span>)}
+      </div>
+      <div className="chart-plot">
+        {children}
+        {readout && <div className="chart-readout num" role="status">{readout}</div>}
+      </div>
+      <div className="chart-times" aria-hidden="true">
+        {times.map((t) => <span key={t.text} style={{ left: `${t.at * 100}%` }}>{t.text}</span>)}
+      </div>
+    </div>
+  );
+}
+
 /** The planned blocks: bars sized by time and power, with the FTP as a dashed line. */
 function PlanChart({ parts }: { parts: Part[] }) {
   const end = parts[parts.length - 1]?.end_s || 1;
   const top = Math.max(1.1, ...parts.map((p) => Math.max(p.from_frac, p.to_frac))) * 1.05;
-  const y = (f: number) => 160 - (f / top) * 150;
+  const y = (f: number) => 165 - (f / top) * 160;
   return (
-    <svg className="session-chart" viewBox="0 0 640 180" role="img" aria-label="Workout shape">
-      {parts.map((p, n) => (
-        <polygon key={n} className={p.work ? "work" : "easy"}
-          points={`${(p.start_s / end) * 640},160 ${(p.start_s / end) * 640},${y(p.from_frac)} ${(p.end_s / end) * 640},${y(p.to_frac)} ${(p.end_s / end) * 640},160`} />
-      ))}
-      <line x1="0" x2="640" y1={y(1)} y2={y(1)} className="ftp-line" />
-      <text x="4" y={y(1) - 4}>FTP</text>
-      {Array.from({ length: Math.floor(end / 600) + 1 }, (_, m) => (
-        <text key={m} x={Math.min(620, (m * 600 / end) * 640)} y="176">{m * 10}′</text>
-      ))}
-    </svg>
+    <ChartFrame label="Workout shape" height={165} ticks={[{ at: y(1), text: "FTP" }, { at: y(0.5), text: "50%" }]} times={timeTicks(end)}>
+      <svg className="session-chart" style={{ ["--chart-h" as string]: "150px" }} viewBox="0 0 640 165" preserveAspectRatio="none" role="img" aria-label="Workout shape">
+        {parts.map((p, n) => (
+          <polygon key={n} className={p.work ? "work" : "easy"}
+            points={`${(p.start_s / end) * 640},165 ${(p.start_s / end) * 640},${y(p.from_frac)} ${(p.end_s / end) * 640},${y(p.to_frac)} ${(p.end_s / end) * 640},165`} />
+        ))}
+        <line x1="0" x2="640" y1={y(1)} y2={y(1)} className="ftp-line" />
+      </svg>
+    </ChartFrame>
   );
 }
 
@@ -51,35 +95,56 @@ function RideChart({ parts, a, ftp }: { parts: Part[]; a: SessionActual; ftp: nu
   const hr = a.hr ?? [];
   const end = Math.max(parts[parts.length - 1]?.end_s ?? 0, power[power.length - 1]?.[0] ?? 0, 1);
   const maxW = Math.max(...power.map((p) => p[1]), ...parts.map((p) => Math.max(p.from_w ?? 0, p.to_w ?? 0)), (ftp ?? 0) * 1.1, 100) * 1.05;
+  const [hover, handlers] = useHoverTime(end);
   const x = (t: number) => (t / end) * 1000;
-  const yw = (w: number) => 200 - (w / maxW) * 190;
-  const yh = (b: number) => 200 - ((b - 60) / 140) * 190;
+  const yw = (w: number) => 200 - (w / maxW) * 195;
+  const yh = (b: number) => 200 - ((b - 60) / 140) * 195;
   const line = (pts: [number, number][], y: (v: number) => number) => pts.map(([t, v]) => `${x(t).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
   const target = parts.flatMap((p) => p.from_w == null ? [] : [[p.start_s, p.from_w], [p.end_s, p.to_w ?? p.from_w]] as [number, number][]);
+  const step = maxW > 500 ? 100 : 50;
+  const ticks = Array.from({ length: Math.floor(maxW / step) }, (_, k) => (k + 1) * step).map((w) => ({ at: yw(w), text: `${w} W` }));
+  let readout: string | null = null;
+  if (hover != null) {
+    const w = nearest(power, hover);
+    const part = parts.find((p) => p.start_s <= hover && hover < p.end_s);
+    const tw = part?.from_w != null ? Math.round(part.from_w + ((part.to_w ?? part.from_w) - part.from_w) * (hover - part.start_s) / (part.end_s - part.start_s)) : null;
+    readout = `${mmss(hover)}${w ? ` · ${Math.round(w[1])} W` : ""}${tw != null ? ` · target ${tw} W` : ""}`;
+  }
   return (
-    <svg className="session-chart" viewBox="0 0 1000 222" role="img" aria-label="Your power against the planned target">
-      {parts.filter((p) => p.work).map((p, n) => <rect key={n} x={x(p.start_s)} y="0" width={x(p.end_s) - x(p.start_s)} height="200" className="work-band" />)}
-      {target.length > 0 && <polyline points={line(target, yw)} className="target-line" />}
-      {power.length > 0 && <polyline points={line(power, yw)} className="power-line" />}
-      {hr.length > 0 && <polyline points={line(hr, yh)} className="hr-line" />}
-      {Array.from({ length: Math.floor(end / 600) + 1 }, (_, m) => <text key={m} x={Math.min(975, x(m * 600))} y="216">{m * 10}′</text>)}
-    </svg>
+    <ChartFrame label="Power over the ride" height={200} ticks={ticks} times={timeTicks(end)} readout={readout}>
+      <svg className="session-chart" style={{ ["--chart-h" as string]: "200px" }} viewBox="0 0 1000 200" preserveAspectRatio="none"
+        role="img" aria-label="Your power against the planned target" {...handlers}>
+        {parts.filter((p) => p.work).map((p, n) => <rect key={n} x={x(p.start_s)} y="0" width={x(p.end_s) - x(p.start_s)} height="200" className="work-band" />)}
+        {target.length > 0 && <polyline points={line(target, yw)} className="target-line" />}
+        {power.length > 0 && <polyline points={line(power, yw)} className="power-line" />}
+        {hr.length > 0 && <polyline points={line(hr, yh)} className="hr-line" />}
+        {hover != null && <line x1={x(hover)} x2={x(hover)} y1="0" y2="200" className="cursor" />}
+      </svg>
+    </ChartFrame>
   );
 }
 
 /** Pace over the run (faster is higher) with the target band. */
 function PaceChart({ a, low, high }: { a: SessionActual; low?: number; high?: number }) {
   const pace = (a.pace ?? []).filter((p) => p[1] < 900);
+  const end = pace[pace.length - 1]?.[0] || 1;
+  const [hover, handlers] = useHoverTime(end);
   if (!pace.length) return null;
-  const end = pace[pace.length - 1][0] || 1;
   const values = pace.map((p) => p[1]).concat(low ?? [], high ?? []);
   const fast = Math.min(...values) - 10, slow = Math.max(...values) + 10;
   const y = (v: number) => ((v - fast) / (slow - fast)) * 180 + 5;
+  const marks = low && high ? [low, high] : [fast + 10, slow - 10];
+  const p = hover != null ? nearest(pace, hover) : null;
   return (
-    <svg className="session-chart" viewBox="0 0 1000 205" role="img" aria-label="Pace over the run">
-      {low && high && <rect x="0" width="1000" y={y(low)} height={Math.max(2, y(high) - y(low))} className="pace-band" />}
-      <polyline points={pace.map(([t, v]) => `${((t / end) * 1000).toFixed(1)},${y(v).toFixed(1)}`).join(" ")} className="pace-line" />
-    </svg>
+    <ChartFrame label="Pace over the run" height={190} ticks={marks.map((v) => ({ at: y(v), text: mmss(v) }))} times={timeTicks(end)}
+      readout={hover != null && p ? `${mmss(hover)} · ${mmss(p[1])}/km` : null}>
+      <svg className="session-chart" style={{ ["--chart-h" as string]: "180px" }} viewBox="0 0 1000 190" preserveAspectRatio="none"
+        role="img" aria-label="Pace over the run" {...handlers}>
+        {low && high && <rect x="0" width="1000" y={y(low)} height={Math.max(2, y(high) - y(low))} className="pace-band" />}
+        <polyline points={pace.map(([t, v]) => `${((t / end) * 1000).toFixed(1)},${y(v).toFixed(1)}`).join(" ")} className="pace-line" />
+        {hover != null && <line x1={(hover / end) * 1000} x2={(hover / end) * 1000} y1="0" y2="190" className="cursor" />}
+      </svg>
+    </ChartFrame>
   );
 }
 
@@ -214,7 +279,7 @@ function PlanSection({ plan, item }: { plan: SessionPlan; item: AgendaItem }) {
     );
   }
   if (plan.kind === "gym") {
-    const upcoming = item.day >= new Date().toISOString().slice(0, 10);
+    const upcoming = !item.done && item.day >= new Date().toISOString().slice(0, 10);
     return (
       <Card i={2}>
         <SectionHead title="The plan" right={plan.routine && upcoming ? <Link to={`/plan?day=${encodeURIComponent(plan.routine)}`} className="btn primary small" style={{ textDecoration: "none" }}>Plan it</Link> : undefined} />
@@ -240,13 +305,14 @@ function ActualSection({ d }: { d: SessionDetail }) {
   if (item.sport === "bike") {
     const work = (a.parts ?? []).filter((p) => p.avg_w != null);
     const avgWork = work.length ? Math.round(work.reduce((s, p) => s + (p.avg_w ?? 0), 0) / work.length) : null;
-    const target = work[0]?.target_w ?? null;
+    const all = a.parts ?? [];
+    const onTarget = all.filter((p) => p.status === "on_target").length;
     return (
       <>
         <div className="tiles">
           <Tile label="Time" value={minutes(a.moving_s ?? a.duration_s)} sub={plan.kind === "zwift" ? `planned ${minutes(plan.duration_s)}` : undefined} i={0} />
           <Tile label="Avg power" value={a.avg_power ? `${a.avg_power} W` : "–"} i={1} />
-          {avgWork != null && <Tile label="Intervals" value={`${avgWork} W`} sub={target ? `target ${target} W` : undefined} i={2} />}
+          {avgWork != null && <Tile label="Intervals" value={`${avgWork} W`} sub={all.some((p) => p.target_w) ? `${onTarget} of ${all.length} on target` : undefined} i={2} />}
           <Tile label="Avg HR" value={a.avg_hr ? `${a.avg_hr}` : "–"} i={3} />
           <Tile label="TSS" value={a.tss ? String(Math.round(a.tss)) : "–"} sub={plan.kind === "zwift" ? `planned ${plan.tss_est}` : undefined} i={4} />
         </div>
@@ -333,8 +399,8 @@ function ActualSection({ d }: { d: SessionDetail }) {
           <table className="table" aria-label="Plan vs what you did">
             <thead><tr><th>Exercise</th><th>Planned</th><th>Did</th><th /></tr></thead>
             <tbody>
-              {a.rows.map((r) => (
-                <tr key={r.exercise} className={r.status === "skipped_by_you" ? "muted-row" : ""}>
+              {a.rows.map((r, n) => (
+                <tr key={`${r.exercise}-${n}`} className={r.status === "skipped_by_you" ? "muted-row" : ""}>
                   <td><strong>{r.exercise}</strong>{r.extra && <span className="muted"> · extra</span>}{r.goal && <span className="goal-tag">{r.goal}</span>}</td>
                   <td className="num">{r.planned ? `${r.planned.sets} × ${r.planned.reps}${r.planned.weight_kg != null ? ` at ${r.planned.weight_kg} kg` : ""}` : "–"}</td>
                   <td className="num">{r.done.length ? r.done.map((s) => `${s.kg ?? "BW"}×${s.reps ?? 0}`).join(" · ") : "–"}</td>

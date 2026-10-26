@@ -101,4 +101,43 @@ describe("Session page", () => {
       expect(body.targets.distance_m).toBe(8500);
     });
   });
+
+  it("labels the power axis and counts intervals on target", async () => {
+    open({ ...AFTER, actual: { ...AFTER.actual!, parts: [...AFTER.actual!.parts!,
+      { label: "Interval 2", target_w: 151, avg_w: 140, avg_hr: 155, avg_cadence: 86, status: "below" }] } });
+    await screen.findByRole("heading", { name: "Sweet Spot 3x10" });
+    const chart = screen.getByRole("group", { name: "Power over the ride" });
+    expect(within(chart).getByText("150 W")).toBeTruthy();
+    expect(screen.getByText("1 of 2 on target")).toBeTruthy();
+  });
+
+  it("labels the pace axis with the target band", async () => {
+    open({ item: { ...base, sport: "run", title: "Steady run", zwift: null, zwift_status: null, done: true, activity_id: 31,
+        targets: { pace_low: 335, pace_high: 350 } },
+      plan: { kind: "targets", pace_low: 335, pace_high: 350, hr_bpm: null },
+      actual: { ...AFTER.actual!, power: undefined, parts: undefined, pace: [[0, 340], [600, 345]], splits: null, zones: null } });
+    await screen.findByRole("heading", { name: "Steady run" });
+    const chart = screen.getByRole("group", { name: "Pace over the run" });
+    expect(within(chart).getByText("5:35")).toBeTruthy();
+    expect(within(chart).getByText("5:50")).toBeTruthy();
+  });
+
+  it("doesn't offer to plan a gym day that's already done", async () => {
+    open({ ...GYM, plan: { kind: "gym", routine: "Push", items: [{ id: "x", exercise: "Face Pull", equipment: "cable", kind: "add",
+      muscle: "rear_delt", sets: 3, reps: "8–12", weight_kg: 15, dumbbell: null, change: null, estimate: false, last: [],
+      replaces: null, reason: null, goal: null, skipped: true, suggested: true }] } });
+    await screen.findByRole("heading", { name: "Push" });
+    expect(screen.queryByRole("link", { name: "Plan it" })).toBeNull();
+  });
+
+  it("shows a lift planned twice as two rows", async () => {
+    const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const row = { exercise: "Bench Press (Barbell)", planned: { sets: 3, reps: "8–12", weight_kg: 80, dumbbell: null },
+      done: [{ kg: 80, reps: 8 }], status: "close" as const, extra: false, goal: null };
+    open({ ...GYM, actual: { ...GYM.actual!, rows: [row, { ...row, planned: { ...row.planned, weight_kg: 60 } }] } });
+    await screen.findByRole("heading", { name: "Push" });
+    expect(screen.getAllByText("Bench Press (Barbell)")).toHaveLength(2);
+    expect(errors.mock.calls.some((c) => String(c[0]).includes("same key"))).toBe(false);
+    errors.mockRestore();
+  });
 });

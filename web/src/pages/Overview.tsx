@@ -8,6 +8,7 @@ import type { AgendaItem, AgendaWeek } from "../lib/agenda";
 import { apiFetch } from "../lib/api";
 import { formatMinutes, type Overview as OverviewData } from "../lib/focus";
 import { formatDistance, SPORT_LABEL, type Sport } from "../lib/format";
+import { shiftWeek } from "../lib/musclemap";
 import { stagger, useCountUp } from "../lib/motion";
 
 const SPORTS: Sport[] = ["bike", "run", "swim", "gym", "other"];
@@ -52,7 +53,15 @@ type GoalProgress = { label: string; fraction: number } | null;
 // Rest days and notes can't be ticked off, so they don't count as to-dos.
 const trackable = (i: AgendaItem) => !["rest", "other"].includes(i.sport);
 
-function TodayBlock({ items, upcoming }: { items: AgendaItem[]; upcoming: AgendaItem[] }) {
+function TodayBlock({ items, upcoming }: { items: AgendaItem[] | "failed"; upcoming: AgendaItem[] }) {
+  if (items === "failed") {
+    return (
+      <Card variant="accent" i={0}>
+        <SectionHead title="Today" />
+        <p className="secondary" style={{ margin: 0 }}>Couldn't load today's plan. <Link to="/agenda">Open the agenda</Link></p>
+      </Card>
+    );
+  }
   const todo = items.filter(trackable);
   const done = todo.filter((i) => i.done).length;
   const next = upcoming.length
@@ -125,16 +134,24 @@ export default function Overview() {
   const [error, setError] = useState<string | null>(null);
   const [goals, setGoals] = useState<Goal[] | null>(null);
   const [goalsFailed, setGoalsFailed] = useState(false);
-  const [today, setToday] = useState<AgendaItem[] | null>(null);
+  const [today, setToday] = useState<AgendaItem[] | "failed" | null>(null);
   const [upcoming, setUpcoming] = useState<AgendaItem[]>([]);
 
   useEffect(() => {
     apiFetch<Goal[]>("/api/goals/active").then(setGoals).catch(() => setGoalsFailed(true));
+    const firstDay = (items: AgendaItem[], after: string) => {
+      const later = items.filter((i) => i.day > after);
+      return later.filter((i) => i.day === later[0]?.day);
+    };
     apiFetch<AgendaWeek>("/api/agenda").then((w) => {
       setToday(w.items.filter((i) => i.day === w.today));
-      const later = w.items.filter((i) => i.day > w.today);
-      setUpcoming(later.filter((i) => i.day === later[0]?.day));
-    }).catch(() => setToday([]));
+      const next = firstDay(w.items, w.today);
+      if (next.length) setUpcoming(next);
+      else {  // nothing left this week (always so on a Sunday): look at the next one
+        apiFetch<AgendaWeek>(`/api/agenda?week=${shiftWeek(w.week_start, 1)}`)
+          .then((n) => setUpcoming(firstDay(n.items, w.today))).catch(() => undefined);
+      }
+    }).catch(() => setToday("failed"));
   }, []);
 
   useEffect(() => {

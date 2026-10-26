@@ -21,12 +21,14 @@ const AGENDA = { week_start: "2026-10-26", today: "2026-10-29", items: [
 const GOALS = [{ id: 1, text: "Bench 100 kg", target: "by March 2027", progress: { label: "96 / 100 kg est. 1RM", fraction: 0.96 } }];
 
 let failGoals = false;
+let agenda: (path: string) => Promise<unknown> = () => Promise.resolve(AGENDA);
 vi.mock("../lib/api", () => ({
   apiFetch: (path: string) => path.startsWith("/api/goals") && failGoals ? Promise.reject(new Error("down"))
-    : Promise.resolve(path.startsWith("/api/overview") ? OVERVIEW : path.startsWith("/api/agenda") ? AGENDA : GOALS),
+    : path.startsWith("/api/agenda") ? agenda(path)
+    : Promise.resolve(path.startsWith("/api/overview") ? OVERVIEW : GOALS),
 }));
 vi.mock("../components/WeeklyVolumeChart", () => ({ default: () => null }));
-afterEach(cleanup);
+afterEach(() => { cleanup(); agenda = () => Promise.resolve(AGENDA); });
 
 describe("Overview", () => {
   it("shows today's to-dos with what's done, goals with progress, and goal tags on tips", async () => {
@@ -46,5 +48,19 @@ describe("Overview", () => {
     render(<MemoryRouter><Overview /></MemoryRouter>);
     expect(await screen.findByText("Couldn't load your goals.")).toBeTruthy();
     failGoals = false;
+  });
+
+  it("says when today's plan couldn't be loaded", async () => {
+    agenda = () => Promise.reject(new Error("down"));
+    render(<MemoryRouter><Overview /></MemoryRouter>);
+    expect(await screen.findByText("Couldn't load today's plan.")).toBeTruthy();
+  });
+
+  it("looks into next week for what's next on a Sunday", async () => {
+    agenda = (path) => Promise.resolve(path.includes("week=2026-11-02")
+      ? { week_start: "2026-11-02", today: "2026-11-01", items: [{ ...item, id: 9, day: "2026-11-03", sport: "run", title: "Easy run" }] }
+      : { week_start: "2026-10-26", today: "2026-11-01", items: [{ ...item, id: 8, day: "2026-11-01", sport: "rest", title: "Rest" }] });
+    render(<MemoryRouter><Overview /></MemoryRouter>);
+    expect(await screen.findByText(/Next · Tuesday: Easy run/)).toBeTruthy();
   });
 });

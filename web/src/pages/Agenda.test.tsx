@@ -16,7 +16,7 @@ const item = (over: Partial<AgendaItem>): AgendaItem => ({
 const WEEK: AgendaWeek = {
   week_start: "2026-10-26", today: "2026-10-26",
   items: [
-    item({ day: "2026-10-26", done: true, activity_id: 9, result: "Done · 52′" }),
+    item({ day: "2026-10-26", done: true, activity_id: 9, result: "Done · 52′", goal: "Bench 100 kg" }),
     item({ id: 2, day: "2026-10-29", sport: "bike", title: "Sweet Spot 3x10", routine: null, zwift_status: "pending",
       zwift: { blocks: [{ type: "steady", duration_s: 600, power: 0.9 }], duration_s: 600, summary: "10′ · 10′ at 151 W",
         filename: "2026-10-29 Sweet Spot 3x10.zwo" } }),
@@ -63,6 +63,7 @@ describe("Agenda page", () => {
   it("shows done sessions with what you did, and opens a session page", async () => {
     await open();
     expect(screen.getByText("Done · 52′")).toBeTruthy();
+    expect(screen.getByText("Bench 100 kg")).toBeTruthy();  // the goal it served stays visible once done
     fireEvent.click(screen.getByRole("button", { name: /Sweet Spot 3x10/ }));
     expect(navigate).toHaveBeenCalledWith("/agenda/2");
   });
