@@ -23,9 +23,15 @@ export interface PlanItem {
   /** Lighter sets before the top weight last time (ramping up); the target covers only the top-weight sets. */
   lighter_sets?: number;
   goal_extra?: boolean;  // one of its sets is the goal's extra; the session counts as done without it
+  /** The day time off ends for this muscle: the item is skipped, with `reason` saying why. */
+  off_until?: string | null;
 }
 
-export interface Plan { id: number; day: string | null; built_on: string; comeback: boolean; items: PlanItem[] }
+export interface Plan {
+  id: number; day: string | null; built_on: string; comeback: boolean; items: PlanItem[];
+  /** Said when time off took every exercise out of the routine. */
+  note?: string | null;
+}
 export interface PlanDays {
   days: { title: string; last_done: string; exercise_count: number }[];
   missed_available: boolean;
@@ -38,6 +44,7 @@ const kg = (x: number) => `${Number.isInteger(x) ? x : x.toFixed(1)}`;
 
 /** What changed since last time, in a few words; null when there's nothing to say. */
 export function changeLabel(item: PlanItem): string | null {
+  if (item.off_until) return null;  // off for now: the reason says it, not a change since last time
   switch (item.change) {
     case "up": {
       if (item.weight_kg == null) return "One more rep";

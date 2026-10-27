@@ -4,6 +4,8 @@ import { Card, SectionHead } from "../../components/ui";
 import { aheadLine, type ForecastDay } from "../../lib/forecast";
 import { dayMonth } from "../../lib/format";
 import { prefersReducedMotion } from "../../lib/motion";
+import type { TimeOffWindow } from "../../lib/timeoff";
+import { timeOffAreas } from "./timeOffAreas";
 
 /**
  * Each line in two parts: done (solid) and planned (dashed). Today's value is in both, so they meet at today.
@@ -18,7 +20,7 @@ function split(days: ForecastDay[], today: string | null) {
 }
 
 /** Fitness and fatigue for the last four weeks and the planned two ahead, form below, the outlook in one line. */
-export default function FitnessAhead({ days, i }: { days: ForecastDay[]; i: number }) {
+export default function FitnessAhead({ days, timeOff, i }: { days: ForecastDay[]; timeOff: TimeOffWindow[]; i: number }) {
   const c = useLoadColors();
   const animate = !prefersReducedMotion();
   const today = days.filter((d) => !d.planned).at(-1)?.day ?? null;
@@ -27,6 +29,7 @@ export default function FitnessAhead({ days, i }: { days: ForecastDay[]; i: numb
   const { x, y } = loadAxes(c, dayMonth);
   const lineProps = { type: "monotone" as const, strokeWidth: 2, dot: false, isAnimationActive: animate, animationDuration: 900 };
   const ahead = { strokeDasharray: "5 4", strokeOpacity: 0.65 };
+  const shade = timeOffAreas(timeOff, c.muted, (d) => d, days.length ? [days[0].day, days[days.length - 1].day] : null);
   const marker = today && <ReferenceLine x={today} stroke={c.muted} strokeDasharray="2 3" />;
   return (
     <Card i={i}>
@@ -37,6 +40,7 @@ export default function FitnessAhead({ days, i }: { days: ForecastDay[]; i: numb
             <CartesianGrid vertical={false} stroke={c.grid} />
             <XAxis {...x} hide />
             <YAxis {...y} />
+            {shade}
             <Tooltip cursor={{ stroke: "#5b6066" }} content={<LoadReadout />} />
             {today && <ReferenceLine x={today} stroke={c.muted} strokeDasharray="2 3"
               label={{ value: "Today", position: "top", fill: c.muted, fontSize: 11 }} />}
@@ -54,6 +58,7 @@ export default function FitnessAhead({ days, i }: { days: ForecastDay[]; i: numb
             <XAxis {...x} />
             <YAxis {...y} />
             <ReferenceLine y={0} stroke={c.axis} />
+            {shade}
             {marker}
             <Tooltip cursor={{ fill: "rgba(255,255,255,0.04)" }} content={<LoadReadout />} />
             <Bar dataKey="form" fill={c.form} isAnimationActive={animate} animationDuration={700}>

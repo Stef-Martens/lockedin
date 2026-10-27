@@ -60,7 +60,8 @@ const FTP: NonNullable<ForecastData["ftp"]> = {
   now: 251, source: "zwift", history: [["2026-08-01", 238], ["2026-09-15", 245], ["2026-10-20", 251]],
   projection: [["2026-10-20", 251, 251, 251], ["2026-12-15", 260, 254, 266]], summary: "Around 260 W by mid-December",
 };
-const FULL: ForecastData = { goals: [BENCH, FIVE_K, SQUAT], race: RACE, fitness: { days }, ftp: FTP };
+const OPERATION = { start: "2026-10-05", end: "2026-10-16", reason: "injury" as const, label: "Operation" };
+const FULL: ForecastData = { goals: [BENCH, FIVE_K, SQUAT], race: RACE, fitness: { days }, ftp: FTP, time_off: [] };
 
 const open = (data: ForecastData | Error) => {
   reply = () => (data instanceof Error ? Promise.reject(data) : Promise.resolve(data));
@@ -104,7 +105,7 @@ describe("Forecast", () => {
   });
 
   it("points to the coach when there are no goals, and leaves out FTP when there's none", async () => {
-    open({ goals: [], race: null, fitness: null, ftp: null });
+    open({ goals: [], race: null, fitness: null, ftp: null, time_off: [] });
     const line = await screen.findByText((_, el) => el?.tagName === "P" && el.textContent === "Set a goal with the coach and its forecast shows here.");
     expect(within(line).getByRole("link", { name: "coach" }).getAttribute("href")).toBe("/coach");
     expect(screen.queryByRole("heading", { name: "FTP" })).toBeNull();
@@ -138,6 +139,21 @@ describe("Forecast", () => {
     expect(c.getByText("251 W")).toBeTruthy();
     expect(c.getByText("Now · from Zwift")).toBeTruthy();
     expect(c.getByText("Around 260 W by mid-December")).toBeTruthy();
+  });
+
+  it("shades time off on the goal, fitness and FTP charts and says what the shading is", async () => {
+    open({ ...FULL, time_off: [OPERATION] });
+    expect(await screen.findByText("Shaded stretches are time off.")).toBeTruthy();
+    expect(within(await card("Bench 100 kg")).getByRole("img").querySelectorAll(".recharts-reference-area").length).toBe(1);
+    expect(within(await card("Fitness ahead")).getAllByRole("img")[0].querySelectorAll(".recharts-reference-area").length).toBe(1);
+    expect(within(await card("FTP")).getByRole("img").querySelectorAll(".recharts-reference-area").length).toBe(1);
+  });
+
+  it("shades nothing without time off", async () => {
+    open(FULL);
+    await card("FTP");
+    expect(document.querySelector(".recharts-reference-area")).toBeNull();
+    expect(screen.queryByText("Shaded stretches are time off.")).toBeNull();
   });
 
   it("keeps a failed request to one quiet line", async () => {

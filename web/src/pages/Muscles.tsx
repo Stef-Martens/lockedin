@@ -44,6 +44,7 @@ function Details({ m, map }: { m: MapMuscle; map: MuscleMap }) {
         </div>
       ))}
       {m.left_out && <div className="mm-line secondary">Left out in your preferences.</div>}
+      {m.off_until && <div className="mm-line secondary">Off until {day(m.off_until, { day: "numeric", month: "short" })}</div>}
       {(m.goals ?? []).map((g) => <div key={g} className="mm-line" style={{ color: "var(--accent)" }}>Works toward your goal: {g}</div>)}
       {cardio.map((c) => (
         <div key={c.sport} className="mm-line">
@@ -51,12 +52,12 @@ function Details({ m, map }: { m: MapMuscle; map: MuscleMap }) {
           {c.minutes}′ {CARDIO_PHRASE[c.sport]} <span className="muted">· {c.days.map((d) => day(d, { weekday: "short" })).join(", ")}</span>
         </div>
       ))}
-      {m.sets === 0 && !m.left_out && (
+      {m.sets === 0 && !m.left_out && !m.off_until && (
         <div className="mm-line secondary">
           {m.last_trained ? `No gym sets this week · last on ${day(m.last_trained)}` : "Not in your logs yet"}
         </div>
       )}
-      {m.sets === 0 && !m.left_out && m.suggestion && (() => {
+      {m.sets === 0 && !m.left_out && !m.off_until && m.suggestion && (() => {
         const line = focusLine({ type: "gym", ...m.suggestion });
         return <div className="mm-line">Try <strong>{line.title}</strong> <span className="muted">· {line.detail}</span></div>;
       })()}
@@ -128,8 +129,9 @@ export default function Muscles() {
   const byKey = new Map(map.muscles.map((m) => [m.key, m]));
   // The side column shows the keyboard-focused muscle, else the pinned one; the floating panel follows the mouse.
   const sideKey = focusKey ?? pinned;
-  const untrained = map.muscles.filter((m) => m.sets === 0 && !m.left_out);
+  const untrained = map.muscles.filter((m) => m.sets === 0 && !m.left_out && !m.off_until);
   const anyLeftOut = map.muscles.some((m) => m.left_out);
+  const anyOff = map.muscles.some((m) => m.off_until);
   const canBack = !!map.first_week && map.week_start > map.first_week;
   const go = (by: number) => {
     const from = week ?? map.week_start;  // from the URL, so quick clicks add up before the data arrives
@@ -158,7 +160,10 @@ export default function Muscles() {
           </div>
           <div className="legend">
             {SHADES.map((label, i) => <span key={label}><i className="swatch" style={{ background: `var(--muscle-${i})` }} />{label}</span>)}
-            {anyLeftOut && <span><i className="swatch" style={{ background: "var(--muscle-out)", outline: "1px dashed var(--ink-muted)" }} />Left out</span>}
+            {(anyLeftOut || anyOff) && (
+              <span><i className="swatch" style={{ background: "var(--muscle-out)", outline: "1px dashed var(--ink-muted)" }} />
+                {anyLeftOut && anyOff ? "Left out or off" : anyOff ? "Off" : "Left out"}</span>
+            )}
             {sportsThisWeek.map((s) => (
               <span key={s}><i className="swatch" style={{ background: `repeating-linear-gradient(45deg, ${CARDIO_COLOR[s]} 0 3px, transparent 3px 6px)` }} />
                 {s === "bike" ? "Bike" : s === "run" ? "Run" : "Swim"}</span>

@@ -17,10 +17,11 @@ export default function Forecast() {
         : !data ? <p className="muted">Loading…</p>
         : (
           <>
-            <Goals goals={data.goals} />
-            {data.fitness && data.fitness.days.length > 0 && <FitnessAhead days={data.fitness.days} i={n + 1} />}
+            {data.time_off.length > 0 && <p className="muted quiet-note">Shaded stretches are time off.</p>}
+            <Goals goals={data.goals} timeOff={data.time_off} />
+            {data.fitness && data.fitness.days.length > 0 && <FitnessAhead days={data.fitness.days} timeOff={data.time_off} i={n + 1} />}
             {data.race && data.race.predictions.length > 0 && <RaceTimes race={data.race} i={n + 2} />}
-            {data.ftp && <Ftp ftp={data.ftp} i={n + 6} />}
+            {data.ftp && <Ftp ftp={data.ftp} timeOff={data.time_off} i={n + 6} />}
           </>
         )}
     </>

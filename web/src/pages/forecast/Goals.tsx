@@ -2,13 +2,14 @@ import { Link } from "react-router-dom";
 import { Card, SectionHead } from "../../components/ui";
 import { type GoalForecast, goalTick, goalValue, STATUS } from "../../lib/forecast";
 import { dayMonthYear } from "../../lib/format";
+import type { TimeOffWindow } from "../../lib/timeoff";
 import ProjectionChart, { ProjectionLegend } from "./ProjectionChart";
 
 const COLOR: Record<GoalForecast["kind"], string> = {
   lift: "--sport-gym", ftp: "--series-power", distance: "--sport-run", time: "--series-pace", body: "--series-body",
 };
 
-function GoalCard({ g, i }: { g: GoalForecast; i: number }) {
+function GoalCard({ g, timeOff, i }: { g: GoalForecast; timeOff: TimeOffWindow[]; i: number }) {
   const s = STATUS[g.status];
   const thin = g.status === "too_little_data";
   const projection = thin ? [] : g.projection;
@@ -29,7 +30,7 @@ function GoalCard({ g, i }: { g: GoalForecast; i: number }) {
         <>
           <ProjectionChart history={g.history} projection={projection} colorVar={colorVar}
             format={(v) => goalValue(v, g.unit)} tick={(v) => goalTick(v, g.unit)} reversed={g.lower_is_better}
-            target={thin ? undefined : g.target} deadline={thin ? null : g.deadline}
+            target={thin ? undefined : g.target} deadline={thin ? null : g.deadline} timeOff={timeOff}
             label={`${g.text}: so far${projection.length ? " and where it's heading" : ""}, ${better}${g.deadline && !thin ? `, deadline ${dayMonthYear(g.deadline)}` : ""}`} />
           <ProjectionLegend colorVar={colorVar} projected={projection.length > 0} />
         </>
@@ -39,13 +40,13 @@ function GoalCard({ g, i }: { g: GoalForecast; i: number }) {
 }
 
 /** One card per measurable goal; with none, a pointer to the coach, where goals are set. */
-export default function Goals({ goals }: { goals: GoalForecast[] }) {
+export default function Goals({ goals, timeOff }: { goals: GoalForecast[]; timeOff: TimeOffWindow[] }) {
   return (
     <section aria-labelledby="forecast-goals">
       <SectionHead title={<span id="forecast-goals">Goals</span>} />
       {goals.length ? (
         <div className="grid-auto" style={{ ["--min" as string]: "340px" }}>
-          {goals.map((g, n) => <GoalCard key={g.goal_id} g={g} i={n + 1} />)}
+          {goals.map((g, n) => <GoalCard key={g.goal_id} g={g} timeOff={timeOff} i={n + 1} />)}
         </div>
       ) : (
         <p className="secondary flush">Set a goal with the <Link to="/coach">coach</Link> and its forecast shows here.</p>

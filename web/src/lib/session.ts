@@ -24,7 +24,11 @@ export interface SessionActual {
     done: { kg: number | null; reps: number | null }[]; status: Status; extra: boolean; goal: string | null }[];
 }
 
-export interface SessionDetail { item: AgendaItem; plan: SessionPlan; actual: SessionActual | null }
+export interface SessionDetail {
+  item: AgendaItem; plan: SessionPlan; actual: SessionActual | null;
+  /** Said for a run, ride or swim in the first two weeks after its time off: take it easy. */
+  easy_back?: string | null;
+}
 
 const LABELS: Record<string, { text: string; tone: "good" | "near" | "muted" }> = {
   on_target: { text: "On target", tone: "good" },

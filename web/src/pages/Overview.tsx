@@ -168,9 +168,16 @@ export default function Overview() {
 
   return (
     <>
-      <PageHeader eyebrow={eyebrow} title={!c ? "Overview" : c.days_since == null ? "Welcome" : "Welcome back"}
+      <PageHeader eyebrow={eyebrow} title={!c ? "Overview" : c.days_since == null ? "Welcome" : c.title}
         right={<Segmented label="Period" value={period} onChange={setPeriod}
           options={[{ value: "week", label: "Week" }, { value: "month", label: "Month" }]} />} />
+
+      {data.time_off_today && <div className="note rise">Time off: {data.time_off_today}</div>}
+      {data.back_from && (
+        <Card variant="accent" i={0}>
+          <p style={{ margin: 0 }}><strong>{data.back_from.title}</strong> What was off starts easier now.</p>
+        </Card>
+      )}
 
       {c && (
         <Card variant="accent" i={0}>

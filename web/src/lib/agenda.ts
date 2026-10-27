@@ -1,3 +1,5 @@
+import type { TimeOffDay } from "./timeoff";
+
 export type AgendaSport = "gym" | "bike" | "run" | "swim" | "rest" | "other";
 export type Block =
   | { type: "warmup" | "cooldown"; duration_s: number; from_power: number; to_power: number }
@@ -24,9 +26,11 @@ export interface AgendaItem {
   goal: string | null;
   /** "Done · 66′ · 128 W" once ticked off. */
   result: string | null;
+  /** "Running is off until 17 Dec" when time off rules it out that day. */
+  clash: string | null;
 }
 export interface Targets { distance_m?: number; duration_s?: number; pace_low?: number; pace_high?: number; hr_zone?: number }
-export interface AgendaWeek { week_start: string; today: string; items: AgendaItem[] }
+export interface AgendaWeek { week_start: string; today: string; items: AgendaItem[]; time_off: TimeOffDay[] }
 
 export const SPORT_COLOR: Record<AgendaSport, string> = {
   gym: "var(--sport-gym)", bike: "var(--sport-bike)", run: "var(--sport-run)", swim: "var(--sport-swim)",

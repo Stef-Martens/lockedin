@@ -7,6 +7,8 @@ import { formatDay } from "../lib/format";
 import { stagger } from "../lib/motion";
 import { shiftWeek } from "../lib/musclemap";
 import type { PlanDays } from "../lib/plan";
+import { bandText } from "../lib/timeoff";
+import TimeOffCard from "./agenda/TimeOffCard";
 
 const ZWIFT_TEXT = { synced: "In Zwift ✓", pending: "Goes to Zwift at the next sync" };
 
@@ -19,6 +21,7 @@ function ItemCard({ item, past, onOpen, i }: { item: AgendaItem; past: boolean; 
       <button className="agenda-item-main" onClick={onOpen}>
         <span className="agenda-item-title">{item.done && <span className="tick" aria-label="Done">✓</span>}{item.title}</span>
         {summary && <span className="agenda-item-sub">{summary}</span>}
+        {item.clash && <span className="clash">{item.clash}</span>}
         <span className="agenda-pills">
           {notDone && <span className="pill">Not done</span>}
           {item.goal && <span className="pill goal">{item.goal}</span>}
@@ -57,7 +60,7 @@ function Sheet({ title, onClose, children }: { title: string; onClose: () => voi
   );
 }
 
-function AddSheet({ day, onDone, onClose }: { day: string; onDone: () => void; onClose: () => void }) {
+function AddSheet({ day, onDone, onClose }: { day: string; onDone: (added: AgendaItem) => void; onClose: () => void }) {
   const [routines, setRoutines] = useState<string[]>([]);
   const [form, setForm] = useState<{ sport: AgendaSport; title: string; note: string; optional: boolean; routine: string }>(
     { sport: "gym", title: "", note: "", optional: false, routine: "" });
@@ -78,7 +81,7 @@ function AddSheet({ day, onDone, onClose }: { day: string; onDone: () => void; o
     e.preventDefault();
     const body = { day, sport: form.sport, title: form.title.trim(), note: form.note.trim() || null, optional: form.optional,
       routine: form.sport === "gym" && form.routine ? form.routine : null };
-    apiFetch("/api/agenda", { method: "POST", body: JSON.stringify(body) }).then(onDone).catch((err) => setError(err.message));
+    apiFetch<AgendaItem>("/api/agenda", { method: "POST", body: JSON.stringify(body) }).then(onDone).catch((err) => setError(err.message));
   };
   return (
     <Sheet title={`Add to ${formatDay(day, { weekday: "long", day: "numeric", month: "short" })}`} onClose={onClose}>
@@ -121,6 +124,7 @@ export default function Agenda() {
   const [data, setData] = useState<AgendaWeek | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [adding, setAdding] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);  // what a manual add clashes with, said once
   const navigate = useNavigate();
 
   const [reloads, setReloads] = useState(0);
@@ -138,7 +142,7 @@ export default function Agenda() {
   const days = weekDays(data.week_start);
   const range = `${formatDay(days[0], { day: "numeric", month: "short" })} – ${formatDay(days[6], { day: "numeric", month: "short" })}`;
   const isThisWeek = days.includes(data.today);
-  const done = () => { setAdding(null); setReloads((n) => n + 1); };
+  const done = (added: AgendaItem) => { setAdding(null); setNotice(added.clash ? `Added. ${added.clash}` : null); setReloads((n) => n + 1); };
   const from = week ?? data.week_start;  // from the URL, so quick clicks add up before the data arrives
   const training = data.items.filter((i) => !["rest", "other"].includes(i.sport));
 
@@ -152,6 +156,13 @@ export default function Agenda() {
           {!isThisWeek && <button className="btn" onClick={() => setParams({})}>Today</button>}
           <Link to="/coach" className="btn primary">Plan with coach</Link>
         </div>} />
+      <TimeOffCard onChange={() => setReloads((n) => n + 1)} />
+      {notice && (
+        <div className="note clash-note row spread" role="status">
+          <span>{notice}</span>
+          <button className="link-btn" onClick={() => setNotice(null)}>Dismiss</button>
+        </div>
+      )}
       <div className="legend">
         {(["bike", "gym", "run", "swim", "rest"] as AgendaSport[]).map((s) => (
           <span key={s}><i className="swatch" style={{ background: SPORT_COLOR[s] }} />{s === "bike" ? "Zwift" : SPORT_NAME[s]}</span>
@@ -160,6 +171,7 @@ export default function Agenda() {
       <div className="agenda-week">
         {days.map((d, n) => {
           const items = data.items.filter((i) => i.day === d);
+          const off = data.time_off.find((t) => t.day === d);
           const past = d < data.today;
           const long = formatDay(d, { weekday: "long" });
           return (
@@ -170,8 +182,9 @@ export default function Agenda() {
                 <span>{formatDay(d, { day: "numeric" })}{d === data.today ? " · today" : ""}</span>
               </div>
               <div className="agenda-day-items">
+                {off && <div className="agenda-band">{bandText(off)}</div>}
                 {items.map((it, i) => <ItemCard key={it.id} item={it} past={past} i={n + i} onOpen={() => navigate(`/agenda/${it.id}`)} />)}
-                <button className="agenda-add" aria-label={`Add to ${long}`} onClick={() => setAdding(d)}>+ Add</button>
+                <button className="agenda-add" aria-label={`Add to ${long}`} onClick={() => { setNotice(null); setAdding(d); }}>+ Add</button>
               </div>
             </section>
           );

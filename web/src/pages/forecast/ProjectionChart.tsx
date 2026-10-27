@@ -2,7 +2,9 @@ import { Area, CartesianGrid, ComposedChart, Line, ReferenceLine, ResponsiveCont
 import { dayMonth, dayMs } from "../../lib/format";
 import type { Band, Point } from "../../lib/forecast";
 import { prefersReducedMotion } from "../../lib/motion";
+import type { TimeOffWindow } from "../../lib/timeoff";
 import { useCssVar } from "../../lib/useCssVar";
+import { timeOffAreas } from "./timeOffAreas";
 
 /** One x on the chart: what happened (`actual`) and/or what's likely next with its low–high range. */
 interface Row { x: number; actual?: number; likely?: number; band?: [number, number] }
@@ -36,11 +38,13 @@ interface Props {
   reversed?: boolean;
   /** Steps rather than slopes: a value that holds until it changes (FTP). */
   step?: boolean;
+  /** Windows to shade behind the lines. */
+  timeOff?: TimeOffWindow[];
   height?: number;
 }
 
 export default function ProjectionChart({ history, projection, colorVar, format, tick, label, target, deadline,
-  reversed = false, step = false, height = 200 }: Props) {
+  reversed = false, step = false, timeOff = [], height = 200 }: Props) {
   const color = useCssVar(colorVar);
   const grid = useCssVar("--hairline");
   const muted = useCssVar("--ink-muted");
@@ -79,6 +83,7 @@ export default function ProjectionChart({ history, projection, colorVar, format,
               </div>
             );
           }} />
+          {timeOffAreas(timeOff, muted, (d) => dayMs(d), rows.length ? [rows[0].x, rows[rows.length - 1].x] : null)}
           <Area dataKey="band" stroke="none" fill={color} fillOpacity={0.14} isAnimationActive={animate} animationDuration={900}
             activeDot={false} connectNulls />
           {target != null && (

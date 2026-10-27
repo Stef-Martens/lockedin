@@ -21,7 +21,7 @@ export default function Session() {
   const error = loadError?.message ?? deleteError;
   if (error) return <><Link to="/agenda" className="back-link">‹ Agenda</Link><p className="error">{error}</p></>;
   if (!d) return <p className="muted">Loading…</p>;
-  const { item, plan, actual } = d;
+  const { item, plan, actual, easy_back } = d;
   const remove = () => apiFetch(`/api/agenda/${item.id}`, { method: "DELETE" })
     .then(() => navigate(`/agenda?week=${item.day}`)).catch((e) => setDeleteError(e.message));
 
@@ -34,6 +34,8 @@ export default function Session() {
           <div className="eyebrow">{longDay(item.day)} · {SPORT_NAME[item.sport]} · {item.source === "coach" ? "planned with the coach" : "added by you"}</div>
           <h1 className="session-title">{item.title}</h1>
           {item.result && <div className="secondary">{item.result}</div>}
+          {item.clash && !item.done && <div className="clash">{item.clash}</div>}
+          {easy_back && !item.done && <div className="secondary" style={{ fontSize: 13 }}>{easy_back}</div>}
           <div className="row" style={{ gap: 6, marginTop: 6 }}>
             {item.goal && <span className="goal-tag">for your goal: {item.goal}</span>}
             {item.zwift_status && !item.done && <span className={`pill zwift ${item.zwift_status}`}>

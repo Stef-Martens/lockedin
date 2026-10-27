@@ -9,7 +9,7 @@ const base = {
   id: 2, day: "2026-10-29", sport: "bike" as const, title: "Sweet Spot 3x10", note: "Seated", optional: false, routine: null,
   zwift: { blocks: [], duration_s: 3900, summary: "65′ · 3 × 10′ at 151 W", filename: "2026-10-29 Sweet Spot 3x10.zwo" },
   zwift_status: "synced" as const, sort: 0, source: "coach" as const, done: false, activity_id: null, targets: null,
-  goal_id: 1, goal: "FTP 200 W", result: null,
+  goal_id: 1, goal: "FTP 200 W", result: null, clash: null,
 };
 const parts = [
   { label: "Warm-up", start_s: 0, end_s: 600, from_w: 84, to_w: 126, from_frac: 0.5, to_frac: 0.75, work: false },
@@ -158,5 +158,12 @@ describe("Session page", () => {
     await screen.findByRole("heading", { name: "Rest" });
     expect(screen.getByText("Done · 30′ · 88 W")).toBeTruthy();
     expect(screen.getByText("Optional: easy 20–30 min spin under 126 W")).toBeTruthy();
+  });
+
+  it("says when a run is back after time off, and when time off clashes with the session", async () => {
+    open({ ...BEFORE, easy_back: "Back after your time off: keep it easy.", item: { ...base, clash: "Cycling is off until 17 Dec" } });
+    await screen.findByRole("heading", { name: "Sweet Spot 3x10" });
+    expect(screen.getByText("Back after your time off: keep it easy.")).toBeTruthy();
+    expect(screen.getByText("Cycling is off until 17 Dec").className).toContain("clash");
   });
 });

@@ -1,3 +1,4 @@
+import { dayMonth } from "./format";
 import type { CardioSport, MapMuscle } from "./types";
 
 export type Shade = 0 | 1 | 2 | 3;
@@ -25,6 +26,7 @@ const num = (x: number) => (Number.isInteger(x) ? `${x}` : x.toFixed(1));
 
 export function muscleLabel(m: MapMuscle): string {
   if (m.left_out) return `${m.name}: left out in your preferences`;
+  if (m.off_until) return `${m.name}: off until ${dayMonth(m.off_until)}`;
   const cardio = m.cardio.map((c) => `, ${c.minutes} minutes ${CARDIO_PHRASE[c.sport]}`).join("");
   return `${m.name}: ${num(m.sets)} sets this week${cardio}`;
 }

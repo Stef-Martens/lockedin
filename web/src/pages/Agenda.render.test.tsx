@@ -6,7 +6,7 @@ import Agenda from "./Agenda";
 
 // Real router hooks (no mocks): the page must survive going from "loading" to the loaded week.
 vi.mock("../lib/api", () => ({
-  apiFetch: () => Promise.resolve({ week_start: "2026-10-26", today: "2026-10-26", items: [] }),
+  apiFetch: (path: string) => Promise.resolve(path === "/api/time-off" ? [] : { week_start: "2026-10-26", today: "2026-10-26", items: [], time_off: [] }),
   ApiError: class ApiError extends Error {},
 }));
 afterEach(cleanup);

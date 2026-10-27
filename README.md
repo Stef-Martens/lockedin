@@ -268,6 +268,7 @@ The **Agenda** tab shows your week, Monday to Sunday, with what to do each day.
   - Anything left unticked just stays that way. There's no red.
 - **Today** shows at the top of the Overview.
 - **The sync now runs every 15 minutes,** so plans reach Zwift quickly. Run `sync/install.sh` once more to switch your Mac over.
+- **Time off** (section 12) shows as a **Time off** card above the week and as a thin band on the days it covers. A session that clashes with it says so ("Running is off until 17 Dec"); an add you make yourself still goes through and shows the same line once.
 
 To deploy: `supabase db push`, then `git push`, then re-run `sync/install.sh` on your Mac.
 
@@ -303,6 +304,29 @@ The **Forecast** page (sidebar, or **More** on the phone) answers: where am I he
 - **Fitness ahead:** fitness, fatigue and form for the last 4 weeks and the next 2. The future part assumes you do your agenda as planned (optional sessions left out): Zwift workouts by their planned TSS, runs and swims by time × the intensity of their heart-rate zone, gym at the usual flat 40 an hour.
 - **Race times:** predicted 5k, 10k and half marathon from your runs in the last 90 days (3 km or longer), by Riegel's formula, plus how your predicted 5k has moved. They come from training runs, so a race effort is usually a bit faster.
 - **FTP:** Zwift's FTP over time and, once there's enough of a trend, where it's heading.
+- **Time off** (section 12) is shaded on the goal, fitness and FTP charts. Goal forecasts run on training time: days when that goal's activity was off are cut out before the trend is fitted, so a month off doesn't read as "stopped improving", and the trend pauses through any time off still to come.
+
+## 12. Time off
+
+Tell LockedIn when you're away or can't do everything, and the whole app works around it instead of nagging.
+
+- **What you can record:**
+  - **A vacation:** everything off from one day to another.
+  - **An injury or operation:** each activity has its own last day off, e.g. "no running until 17 Dec, no upper body until 2 Jan". The activities are running, cycling, swimming, upper body, core and lower body.
+  - Time off has an optional label ("Operation") and can overlap; whatever any entry rules out is off.
+- **Entering it:**
+  - **With the coach:** say it in a sentence ("knee operation on 3 Dec, no running for 15 days, no upper body for a month"). It reads the entry back in plain words and saves it only after you agree.
+  - **On the Agenda page:** the **Time off** card lists what's under way or coming. **Add time off** asks for the reason, a label, the start and, per activity, "fine" or "off until [date]". For a vacation there's a shortcut, "Everything off from … to …". Edit or delete an entry from the list.
+- **What it changes:**
+  - **Agenda:** the coach doesn't plan what is off, and Zwift workouts for days when cycling is off aren't sent to your Mac. Days inside time off get a thin band; sessions that already clash are flagged, never moved or deleted.
+  - **Workout planner:** exercises for a muscle that is off are skipped with the reason ("Upper body is off until 2 Jan"), and when nothing is left the plan says so. Lifts coming back start lighter.
+  - **Coming back:** for two weeks after running, cycling or swimming is back, the coach plans it easy and the session page says why.
+  - **Overview:** a line says what is off today, and the comeback card says "Back from vacation" or "Back from: <label>".
+  - **Muscles and focus tips:** muscles that are off show "Off until 2 Jan", don't count as untrained and aren't suggested.
+  - **Streak:** see section 6.
+  - **Forecast:** see section 11.
+- **What it doesn't do:** it never decides what's safe after an operation, and the coach gives no advice on recovery. It only records what you say you can't do. Ask your surgeon or physio.
+- **Deploy:** the table comes with a migration, so run `supabase db push` **before** `git push`.
 
 ## Troubleshooting
 

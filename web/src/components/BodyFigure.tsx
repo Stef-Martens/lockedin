@@ -78,7 +78,7 @@ export default function BodyFigure({ side, muscles, focused, pinned, onHover, on
   const shape = (key: string, d: string, primary: boolean) => {
     const m = byKey.get(key);
     const level = m ? shadeLevel(m.sets, m.target_low, m.target_high) : 0;
-    const out = !!m?.left_out;
+    const out = !!(m?.left_out || m?.off_until);
     const cls = `muscle${out ? " out" : ""}${focused === key ? " hl" : ""}${pinned === key ? " pinned" : ""}`;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onPin(key); }

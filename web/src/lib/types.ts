@@ -150,6 +150,8 @@ export interface MapMuscle {
   suggestion: GymSuggestion | null;
   /** Left out in the owner's preferences (e.g. an injured lower back). */
   left_out?: boolean;
+  /** The day the muscle is back, while time off keeps it out (the week count leaves it out too). */
+  off_until?: string | null;
   /** Active goals whose lift trains this muscle. */
   goals?: string[];
 }
@@ -177,7 +179,7 @@ export interface MuscleMap {
   is_current: boolean;
   first_week: string | null;
   trained_count: number;
-  /** Muscles that count: 20 minus the ones left out. */
+  /** Muscles that count: 20 minus the ones left out or off. */
   total?: number;
   cardio: { sport: CardioSport; minutes: number; days: string[] }[];
   muscles: MapMuscle[];

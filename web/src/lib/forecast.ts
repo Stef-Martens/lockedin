@@ -1,5 +1,6 @@
 import { formatDuration, shortDay } from "./format";
 import { formNumber, formWords, loadNumber } from "./load";
+import type { TimeOffWindow } from "./timeoff";
 
 /** GET /api/forecast: where each goal, fitness, race times and FTP are heading. */
 export type Point = [string, number];                       // [day "YYYY-MM-DD", value]
@@ -31,6 +32,8 @@ export interface Forecast {
   race: { predictions: RacePrediction[]; history: Point[]; note: string } | null;   // history = predicted 5k seconds
   fitness: { days: ForecastDay[] } | null;
   ftp: { now: number; source: "zwift" | "owner" | "estimate"; history: Point[]; projection: Band[]; summary: string } | null;
+  /** Time off since the charts' first week, to shade. */
+  time_off: TimeOffWindow[];
 }
 
 export type Unit = GoalForecast["unit"];

@@ -21,7 +21,11 @@ export interface Overview {
   totals: { week: TotalsBySport; month: TotalsBySport };
   weekly: WeekRow[];
   streak: number;
-  comeback: { days_since: number | null; suggestion: string } | null;
+  comeback: { days_since: number | null; suggestion: string; title: string } | null;
+  /** "Vacation until 27 Dec", or "no running until 17 Dec, no upper body until 2 Jan"; null when nothing is off today. */
+  time_off_today: string | null;
+  /** Shown for two weeks after an injury restriction ends. */
+  back_from: { title: string; label: string | null } | null;
   wins: Win[];
   plateaus: Plateau[];
   focus: FocusItem[];

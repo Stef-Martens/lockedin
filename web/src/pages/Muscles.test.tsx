@@ -65,6 +65,20 @@ describe("Muscles page", () => {
   });
 });
 
+describe("Muscles with time off", () => {
+  it("says 'Off until 2 Jan' for an off muscle and doesn't call it untrained", async () => {
+    const { apiFetch } = await import("../lib/api");
+    vi.mocked(apiFetch).mockResolvedValueOnce({ ...MAP, trained_count: 1, total: 2, muscles: [...MAP.muscles,
+      muscle("biceps", "Biceps", 0, { off_until: "2027-01-02" })] });
+    await renderPage();
+    expect(screen.getByText("1 / 2")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Biceps" })).toBeNull();  // not a "no gym work yet" chip
+    fireEvent.click(shape("biceps"));
+    expect(screen.getByText("Off until 2 Jan")).toBeTruthy();
+    expect(screen.queryByText(/No gym sets this week|Not in your logs yet/)).toBeNull();
+  });
+});
+
 describe("placeTip", () => {
   const viewport = { w: 1440, h: 900 };
   it("sits below-right of the cursor when there's room", () => {

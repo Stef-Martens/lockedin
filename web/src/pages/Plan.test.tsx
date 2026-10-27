@@ -149,4 +149,19 @@ describe("Plan page", () => {
     await open("/plan?prefs=1");
     expect(await screen.findByText("Couldn't load the muscle list.")).toBeTruthy();
   });
+
+  it("shows an item that time off keeps out as off, with its reason and no change label", async () => {
+    const off = item({ id: "o1", exercise: "Bicep Curl (Dumbbell)", muscle: "biceps", skipped: true, change: "up", off_until: "2027-01-02",
+      reason: "Upper body is off until 2 Jan" });
+    const plan = { ...PLAN, items: [off], note: "Upper body is off until 2 Jan; nothing left of this routine." };
+    apiFetch.mockImplementation(() => Promise.resolve(plan));
+    await open("/plan?day=Chest%20-%20Schouders%20-%20Triceps");
+    await screen.findByText("Bicep Curl (Dumbbell)");
+    expect(screen.getByText("Upper body is off until 2 Jan; nothing left of this routine.")).toBeTruthy();
+    expect(screen.getByText("Upper body is off until 2 Jan")).toBeTruthy();
+    expect(screen.getByText("Off")).toBeTruthy();
+    expect(screen.queryByText(/^Up \d/)).toBeNull();
+    expect(screen.queryByRole("button", { name: "Swap Bicep Curl (Dumbbell)" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "More for Bicep Curl (Dumbbell)" })).toBeNull();
+  });
 });

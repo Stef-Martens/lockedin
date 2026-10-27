@@ -57,12 +57,15 @@ function ItemCard({ item, n, onAction }: { item: PlanItem; n: string; onAction: 
         <div className="plan-name">
           {item.kind === "swap" && <span className="plan-tag variety">Variety</span>}
           {item.estimate && <span className="plan-tag new">New</span>}
+          {item.off_until && <span className="plan-tag off">Off</span>}
           {item.exercise}
         </div>
-        <div className="row" style={{ gap: 4, flexWrap: "nowrap" }}>
-          {item.muscle && <button className="btn small" aria-label={`Swap ${item.exercise}`} onClick={() => onAction("swap")}>Swap</button>}
-          <ItemMenu item={item} onAction={onAction} />
-        </div>
+        {!item.off_until && (
+          <div className="row" style={{ gap: 4, flexWrap: "nowrap" }}>
+            {item.muscle && <button className="btn small" aria-label={`Swap ${item.exercise}`} onClick={() => onAction("swap")}>Swap</button>}
+            <ItemMenu item={item} onAction={onAction} />
+          </div>
+        )}
       </div>
       <div className="plan-body">
         <div className="plan-dose num">{doseLine(item)}</div>
@@ -153,6 +156,7 @@ function PlanView({ dayTitle, open }: { dayTitle: string | null; open: (params: 
         </div>} />
       {plan.comeback && <div className="note accent rise">Welcome back: your recent weights, lighter for lifts you haven't done in a while, and no extras today. Ease in.</div>}
       {notice && <div className="note" role="status">{notice}</div>}
+      {plan.note && <div className="note rise">{plan.note}</div>}
       {plan.items.length === 0 && <p className="muted">Nothing stands out: every muscle has had its share lately. Pick one of your days instead.</p>}
       <div className="plan-list">
         {main.map((item, i) => <ItemCard key={item.id} item={item} n={`${i + 1}`} onAction={act(item)} />)}
