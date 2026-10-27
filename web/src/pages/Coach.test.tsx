@@ -12,13 +12,20 @@ vi.mock("../lib/api", () => ({
       : path === "/api/coach/conversations" ? [] : path.startsWith("/api/coach/goals") ? [] : { id: 1 }),
   ApiError: class ApiError extends Error { status = 0; detail = ""; },
 }));
+let hang = false;  // an answer that never finishes, to leave the page mid-stream
+let streamSignal: AbortSignal | undefined;
 vi.mock("../lib/sse", () => ({
-  postStream: (_p: string, _b: unknown, onEvent: (e: unknown) => void) => {
+  postStream: (_p: string, _b: unknown, onEvent: (e: unknown) => void, signal?: AbortSignal) => {
+    streamSignal = signal;
+    if (hang) {
+      onEvent({ type: "text", text: "Thinking about your" });
+      return new Promise((_, reject) => signal?.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError"))));
+    }
     [{ type: "text", text: "half a sen" }, { type: "reset" }, { type: "text", text: "Whole answer." }, { type: "done" }].forEach(onEvent);
     return Promise.resolve();
   },
 }));
-afterEach(cleanup);
+afterEach(() => { cleanup(); hang = false; streamSignal = undefined; });
 const open = () => render(<MemoryRouter initialEntries={["/coach"]}><Routes><Route path="/coach" element={<Coach />} /><Route path="/coach/:id" element={<Coach />} /></Routes></MemoryRouter>);
 
 describe("Coach page", () => {
@@ -35,5 +42,16 @@ describe("Coach page", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Help me set goals" }));
     await waitFor(() => expect(screen.getByText("Whole answer.")).toBeTruthy());
     expect(screen.queryByText(/half a sen/)).toBeNull();
+  });
+
+  it("stops reading the answer when you leave the page", async () => {
+    ready = true;
+    hang = true;
+    const { unmount } = open();
+    fireEvent.click(await screen.findByRole("button", { name: "Help me set goals" }));
+    await screen.findByText(/Thinking about your/);
+    expect(streamSignal?.aborted).toBe(false);
+    unmount();
+    expect(streamSignal?.aborted).toBe(true);
   });
 });

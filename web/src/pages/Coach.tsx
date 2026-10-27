@@ -91,6 +91,9 @@ export default function Coach() {
   const [setup, setSetup] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const created = useRef<number | null>(null);
+  // The answer being streamed; leaving the Coach page stops reading it.
+  const streaming = useRef<AbortController | null>(null);
+  useEffect(() => () => streaming.current?.abort(), []);
   const endRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const busy = live !== null;
@@ -141,9 +144,12 @@ export default function Coach() {
     let failed: string | null = null;
     let ended = false;
     let notSetUp = false;
+    const ctrl = new AbortController();
+    streaming.current = ctrl;
+    const signal = ctrl.signal;
     try {
       if (target === null) {
-        target = (await apiFetch<{ id: number }>("/api/coach/conversations", { method: "POST" })).id;
+        target = (await apiFetch<{ id: number }>("/api/coach/conversations", { method: "POST", signal })).id;
         created.current = target;
         setLiveFor(target);
         navigate(`/coach/${target}`, { replace: true });
@@ -163,11 +169,13 @@ export default function Coach() {
         } else if (e.type === "error") failed = e.message;
         if (e.type === "done" || e.type === "error") ended = true;
         setLive(current);
-      });
+      }, signal);
     } catch (e) {
+      if (signal.aborted) return;  // left the page: nothing to show or reload
       if (e instanceof ApiError && e.status === 503) { setSetup(e.detail); notSetUp = true; }
       else failed = e instanceof Error ? e.message : "Something went wrong.";
     }
+    if (streaming.current === ctrl) streaming.current = null;
     if (!failed && !ended && !notSetUp) failed = "The connection dropped. Try again.";
     setActivity(null);
     setLive(null);
@@ -194,7 +202,7 @@ export default function Coach() {
   return (
     <>
       <PageHeader eyebrow="AI coach" title="Coach" sub="Ask about your training. It reads your data and remembers your goals."
-        right={<Link to="/coach" className="btn" style={{ textDecoration: "none" }} onClick={() => { setMessages([]); setError(null); }}>New chat</Link>} />
+        right={<Link to="/coach" className="btn" onClick={() => { setMessages([]); setError(null); }}>New chat</Link>} />
 
       <div className="coach">
         <aside className="coach-side">

@@ -2,10 +2,11 @@ import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { Card, PageHeader } from "../components/ui";
 import { ApiError, apiFetch } from "../lib/api";
+import { shortDay } from "../lib/format";
 import { stagger } from "../lib/motion";
+import { useApi } from "../lib/useApi";
 import { changeLabel, doseLine, lastLine, type Plan as PlanData, type PlanDays, type PlanItem, type Preferences } from "../lib/plan";
 
-const day = (iso: string) => new Date(`${iso}T12:00`).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
 
 function ItemMenu({ item, onAction }: { item: PlanItem; onAction: (action: "skip" | "never") => void }) {
   const [open, setOpen] = useState(false);
@@ -92,7 +93,7 @@ function DayPicker({ open }: { open: (params: Record<string, string>) => void })
           <button key={d.title} className="plan-day lift rise" style={stagger(i)} onClick={() => open({ day: d.title })}>
             <span className="plan-day-title">{d.title}</span>
             <span className="secondary">{d.exercise_count} exercises</span>
-            <span className="plan-day-last">last done<br />{day(d.last_done)}</span>
+            <span className="plan-day-last">last done<br />{shortDay(d.last_done)}</span>
           </button>
         ))}
         {days.missed_available && (
@@ -111,17 +112,11 @@ function DayPicker({ open }: { open: (params: Record<string, string>) => void })
 }
 
 function PlanView({ dayTitle, open }: { dayTitle: string | null; open: (params: Record<string, string>) => void }) {
-  const [plan, setPlan] = useState<PlanData | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
   const query = dayTitle ? `?day=${encodeURIComponent(dayTitle)}` : "";
-
-  const load = () => apiFetch<PlanData>(`/api/plan${query}`).then(setPlan).catch((e) => setError(e.message));
-  useEffect(() => {
-    setPlan(null);
-    setError(null);
-    load();
-  }, [query]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Switching days aborts the old day's plan, so it can't show up under the new title.
+  const { data: plan, error: loadError, reload, setData: setPlan } = useApi<PlanData>(`/api/plan${query}`);
+  const [rebuildError, setRebuildError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const act = (item: PlanItem) => (action: "swap" | "skip" | "never") => {
     setNotice(null);
@@ -129,16 +124,18 @@ function PlanView({ dayTitle, open }: { dayTitle: string | null; open: (params: 
       .then(setPlan)
       .catch((e) => {
         // The plan was rebuilt elsewhere (new day, new preferences): show the current one.
-        if (e instanceof ApiError && e.status === 404) { load(); return; }
+        if (e instanceof ApiError && e.status === 404) { reload(); return; }
         setNotice(e instanceof Error ? e.message : "That didn't work.");
       });
   };
   const rebuild = () => {
     setPlan(null);
-    apiFetch<PlanData>(`/api/plan/new${query}`, { method: "POST" }).then(setPlan).catch((e) => setError(e.message));
+    setRebuildError(null);
+    apiFetch<PlanData>(`/api/plan/new${query}`, { method: "POST" }).then(setPlan).catch((e) => setRebuildError(e.message));
   };
 
   const back = <button className="link-btn" onClick={() => open({})}>‹ All days</button>;
+  const error = loadError?.message ?? rebuildError;
   if (error) return <>{back}<p className="error">{error}</p></>;
   if (!plan) return <>{back}<p className="muted">Building your plan…</p></>;
 
@@ -148,7 +145,7 @@ function PlanView({ dayTitle, open }: { dayTitle: string | null; open: (params: 
   return (
     <>
       {back}
-      <PageHeader eyebrow={`${day(plan.built_on)} · ${main.length} exercises · ${working} working sets`}
+      <PageHeader eyebrow={`${shortDay(plan.built_on)} · ${main.length} exercises · ${working} working sets`}
         title={plan.day ?? "Just what I've missed"}
         right={<div className="row" style={{ gap: 8 }}>
           <button className="btn" onClick={() => open({ prefs: "1", ...(dayTitle ? { from: dayTitle } : { missed: "1" }) })}>Preferences</button>
@@ -235,6 +232,6 @@ export default function Plan() {
     return <PreferencesPanel done={() => setParams(from ? { day: from } : params.get("missed") === "1" ? { missed: "1" } : {})} />;
   }
   const dayTitle = params.get("day");
-  if (dayTitle || params.get("missed") === "1") return <PlanView dayTitle={dayTitle} open={open} />;
+  if (dayTitle || params.get("missed") === "1") return <PlanView key={dayTitle ?? "missed"} dayTitle={dayTitle} open={open} />;
   return <DayPicker open={open} />;
 }

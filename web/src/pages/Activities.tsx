@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { PageHeader } from "../components/ui";
 import { activityTitle, keyMetric } from "../lib/activity";
@@ -6,40 +6,60 @@ import { apiFetch } from "../lib/api";
 import { formatDate, formatDistance, formatDuration, SPORT_LABEL, type Sport } from "../lib/format";
 import { stagger } from "../lib/motion";
 import type { ActivityPage, ActivitySummary } from "../lib/types";
+import { useApi } from "../lib/useApi";
 
 const FILTERS: (Sport | "all")[] = ["all", "bike", "run", "swim", "gym", "other"];
+
+/** Pages after the first, for the filter they were loaded under. */
+interface More { path: string; items: ActivitySummary[]; next: string | null }
 
 export default function Activities() {
   const [params, setParams] = useSearchParams();
   const sport = (params.get("sport") as Sport | null) ?? "all";
   const showAll = params.get("all") === "1";
-  const [items, setItems] = useState<ActivitySummary[]>([]);
-  const [next, setNext] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const q = new URLSearchParams({ limit: "30" });
+  if (sport !== "all") q.set("sport", sport);
+  if (showAll) {
+    q.set("include_walks", "true");
+    q.set("include_superseded", "true");
+  }
+  const path = `/api/activities?${q}`;
 
-  const load = useCallback(async (before?: string) => {
-    setLoading(true);
-    setError(null);
-    const q = new URLSearchParams({ limit: "30" });
-    if (sport !== "all") q.set("sport", sport);
-    if (showAll) {
-      q.set("include_walks", "true");
-      q.set("include_superseded", "true");
-    }
-    if (before) q.set("before", before);
+  // A new filter aborts the old first page; its answer can never replace the new list.
+  const first = useApi<ActivityPage>(path);
+  const [more, setMore] = useState<More | null>(null);
+  const [moreBusy, setMoreBusy] = useState(false);
+  const [moreError, setMoreError] = useState<string | null>(null);
+  const moreRequest = useRef<AbortController | null>(null);
+  // …and a "Load more" still on its way for the old filter is dropped rather than appended to the new one.
+  useEffect(() => {
+    setMoreError(null);
+    return () => moreRequest.current?.abort();
+  }, [path]);
+
+  const mine = more?.path === path ? more : null;
+  const items = [...(first.data?.items ?? []), ...(mine?.items ?? [])];
+  const next = mine ? mine.next : first.data?.next_before ?? null;
+  const loading = first.loading || moreBusy;
+  const error = first.error?.message ?? moreError;
+
+  async function loadMore() {
+    if (!next) return;
+    moreRequest.current?.abort();
+    const ctrl = new AbortController();
+    moreRequest.current = ctrl;
+    setMoreBusy(true);
+    setMoreError(null);
     try {
-      const page = await apiFetch<ActivityPage>(`/api/activities?${q}`);
-      setItems((prev) => (before ? [...prev, ...page.items] : page.items));
-      setNext(page.next_before);
+      const page = await apiFetch<ActivityPage>(`${path}&before=${encodeURIComponent(next)}`, { signal: ctrl.signal });
+      if (ctrl.signal.aborted) return;
+      setMore((m) => ({ path, items: [...(m?.path === path ? m.items : []), ...page.items], next: page.next_before }));
     } catch (e) {
-      setError((e as Error).message);
+      if (!ctrl.signal.aborted) setMoreError((e as Error).message);
     } finally {
-      setLoading(false);
+      if (moreRequest.current === ctrl) setMoreBusy(false);
     }
-  }, [sport, showAll]);
-
-  useEffect(() => { load(); }, [load]);
+  }
 
   const setFilter = (n: { sport?: Sport | "all"; all?: boolean }) => {
     const s = n.sport ?? sport;
@@ -70,6 +90,7 @@ export default function Activities() {
             <p className="secondary" style={{ marginBottom: 0 }}>Rides and Watch workouts appear after the Mac sync runs, or <Link to="/import">import files yourself</Link>.</p>
           </div>
         )}
+        {first.loading && <p className="muted" style={{ padding: 12, margin: 0 }}>Loading…</p>}
         {items.length > 0 && (
           <div className="activity-table">
             <div className="activity-row head" aria-hidden="true">
@@ -80,7 +101,7 @@ export default function Activities() {
                 <span className="secondary num">{formatDate(a.start_at)}</span>
                 <span className="row" style={{ gap: 10, flexWrap: "nowrap", minWidth: 0 }}>
                   <span className="dot" style={{ background: `var(--sport-${a.sport})` }} />
-                  <span style={{ fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  <span className="ellipsis" style={{ fontWeight: 500 }}>
                     {activityTitle(a)}{a.superseded_by && <span className="muted" style={{ fontWeight: 400 }}> · duplicate</span>}
                   </span>
                 </span>
@@ -93,9 +114,9 @@ export default function Activities() {
           </div>
         )}
       </section>
-      {next && (
+      {next && !first.loading && (
         <div style={{ textAlign: "center" }}>
-          <button className="btn" disabled={loading} onClick={() => load(next)}>{loading ? "Loading…" : "Load more"}</button>
+          <button className="btn" disabled={loading} onClick={loadMore}>{moreBusy ? "Loading…" : "Load more"}</button>
         </div>
       )}
     </>

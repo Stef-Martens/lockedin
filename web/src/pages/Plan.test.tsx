@@ -122,7 +122,7 @@ describe("Plan page", () => {
     fireEvent.click(screen.getByRole("button", { name: "Preferences" }));
     fireEvent.click(await screen.findByRole("button", { name: "‹ Back" }));
     await screen.findByText("Face Pull");
-    expect(apiFetch).toHaveBeenLastCalledWith("/api/plan", undefined);
+    expect(apiFetch).toHaveBeenLastCalledWith("/api/plan", { signal: expect.any(AbortSignal) });
   });
 
   it("reloads the plan when an item is gone", async () => {
@@ -130,7 +130,7 @@ describe("Plan page", () => {
     await screen.findByText("Face Pull");
     apiFetch.mockImplementationOnce(() => Promise.reject(new ApiError(404, "Not found")));
     fireEvent.click(screen.getByRole("button", { name: "Swap Face Pull" }));
-    await waitFor(() => expect(apiFetch).toHaveBeenLastCalledWith("/api/plan?day=Chest%20-%20Schouders%20-%20Triceps", undefined));
+    await waitFor(() => expect(apiFetch).toHaveBeenLastCalledWith("/api/plan?day=Chest%20-%20Schouders%20-%20Triceps", { signal: expect.any(AbortSignal) }));
     expect(await screen.findByText("Face Pull")).toBeTruthy();
   });
 
