@@ -102,9 +102,9 @@ def s(name="Squat (Barbell)", kg=100.0, reps=5, set_type="normal"):
     return HevySet(name, 0, 0, set_type, kg, reps, None, None, None, None, None)
 
 
-def test_e1rm_only_for_strength_range_sets():
+def test_e1rm_only_for_usable_rep_ranges():
     assert e1rm(s(reps=12)) == pytest.approx(140)
-    assert e1rm(s(reps=13)) is None and e1rm(s(reps=30)) is None
+    assert e1rm(s(reps=13)) is not None and e1rm(s(reps=21)) is None and e1rm(s(reps=30)) is None
     assert e1rm(s("Assisted Pull Up", kg=30, reps=8)) is None
     assert e1rm(s("Pull Up (Assisted)", kg=30, reps=8)) is None
 
@@ -122,7 +122,7 @@ def test_hevy_upload_too_large_is_rejected_even_without_content_length(client, m
 
 def test_migration_clears_stored_e1rm_of_high_rep_and_assisted_sets(conn):
     from conftest import ROOT
-    csv = (HEADER + f'"Mix","20 Oct 2026, 18:00","20 Oct 2026, 19:00","{BENCH}",0,normal,60,15\n'
+    csv = (HEADER + f'"Mix","20 Oct 2026, 18:00","20 Oct 2026, 19:00","{BENCH}",0,normal,50,21\n'
            f'"Mix","20 Oct 2026, 18:00","20 Oct 2026, 19:00","{BENCH}",1,normal,80,8\n'
            '"Mix","20 Oct 2026, 18:00","20 Oct 2026, 19:00","Assisted Dip",0,normal,20,8\n')
     import_hevy(conn, parse_hevy_csv(csv))

@@ -7,6 +7,7 @@ from sqlalchemy import Connection, text
 
 from lockedin.fitness import ftp_at
 from lockedin.focus.sessions import counted
+from lockedin.hevy.importer import PR_MAX_REPS
 from lockedin.plan.goals import goal_for, known_exercises
 
 WINDOW = timedelta(weeks=8)
@@ -184,7 +185,8 @@ def progress(conn: Connection, now: datetime, goal: dict) -> dict | None:
             return _sane(_result(float(best) if best else None, n[0], "kg", f" × {reps}"))
         best = conn.execute(text(
             "select max(s.e1rm) from gym_sets s join exercises e on e.id = s.exercise_id join activities a on a.id = s.workout_id "
-            f"where e.name = :n and s.set_type <> 'warmup' and {counted('a')} and a.start_at > :since and a.start_at <= :now"
+            f"where e.name = :n and s.set_type <> 'warmup' and s.reps <= {PR_MAX_REPS} and {counted('a')} "
+            "and a.start_at > :since and a.start_at <= :now"
         ), {"n": lift, "since": now - WINDOW, "now": now}).scalar()
         return _sane(_result(float(best) if best else None, n[0], "kg", " est. 1RM"))
 

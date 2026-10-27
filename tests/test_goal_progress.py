@@ -100,3 +100,9 @@ def test_arm_goals_use_both_arms(conn):
                          {"t": ids[name], "d": d, "v": v})
     p = progress(conn, NOW, goal(conn, "40 cm arms", "body", created=datetime(2026, 9, 5, tzinfo=UTC)))
     assert p["current"] == 38 and p["fraction"] == pytest.approx(1.5 / 3.5)  # from 36.5 (avg at goal time) toward 40
+
+
+def test_lift_goal_ignores_high_rep_estimates(conn):
+    add_gym(conn, datetime(2026, 10, 20, 17, tzinfo=UTC), [(BENCH, 72, 10, "normal"), (BENCH, 75, 15, "normal")])
+    p = progress(conn, NOW, goal(conn, "Bench 100 kg", "gym", exercise=BENCH))
+    assert p["label"] == "96 / 100 kg est. 1RM"  # the 15-rep set's 112.5 doesn't count

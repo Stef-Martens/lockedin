@@ -6,6 +6,7 @@ from datetime import date, datetime, timedelta
 from sqlalchemy import Connection, text
 
 from lockedin.focus.sessions import Session, counted, counted_sessions
+from lockedin.hevy.importer import PR_MAX_REPS
 from lockedin.timeutil import TZ
 
 EPOCH = datetime(2000, 1, 1, tzinfo=TZ)
@@ -46,7 +47,8 @@ def _local(dt: datetime) -> date:
 def _gym_prs(conn: Connection, since: datetime, now: datetime) -> list[Win]:
     rows = conn.execute(text(
         "with sets as (select e.name, a.id as aid, a.start_at, s.e1rm from gym_sets s join activities a on a.id = s.workout_id "
-        f"join exercises e on e.id = s.exercise_id where s.e1rm is not null and {counted('a')} and a.start_at <= :now) "
+        f"join exercises e on e.id = s.exercise_id where s.e1rm is not null and s.reps <= {PR_MAX_REPS} and {counted('a')} "
+        "and a.start_at <= :now) "
         "select name, (array_agg(aid order by e1rm desc))[1] as aid, (array_agg(start_at order by e1rm desc))[1] as at, "
         "max(e1rm) as best, (select max(e1rm) from sets p where p.name = sets.name and p.start_at <= :since) as prior "
         "from sets where start_at > :since group by name"

@@ -90,3 +90,9 @@ def test_previous_best_is_shown_with_one_decimal(conn):
     add_gym(conn, NOW - timedelta(days=2), [("Lateral Raise (Dumbbell)", 32, 10, "normal")])   # 42.666…
     (w,) = [w for w in recent_wins(conn, NOW) if w.kind == "e1rm_pr"]
     assert w.detail == "est. 1RM 42.7 kg (was 38.3)"
+
+
+def test_high_rep_set_is_never_a_best(conn):
+    add_gym(conn, NOW - timedelta(days=30), [(BENCH, 75, 7, "normal")])   # 92.5
+    add_gym(conn, NOW - timedelta(days=2), [(BENCH, 70, 15, "normal")])   # Epley 105, but 15 reps
+    assert [w for w in recent_wins(conn, NOW) if w.kind == "e1rm_pr"] == []

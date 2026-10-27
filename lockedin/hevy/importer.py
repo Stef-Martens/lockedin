@@ -20,7 +20,8 @@ class HevyImportResult:
     skipped: list[tuple[int, str]]
 
 
-E1RM_MAX_REPS = 12  # Epley overestimates past this
+E1RM_MAX_REPS = 20  # past this Epley is too rough even to pick a working weight from
+PR_MAX_REPS = 12  # bests and goals only trust sets in a strength range (Epley drifts past ~10–12 reps)
 
 
 def e1rm(s: HevySet) -> float | None:
