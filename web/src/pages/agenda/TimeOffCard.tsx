@@ -38,7 +38,7 @@ function Form({ initial, onSaved, onCancel }: { initial: { id: number | null; fo
             <input type="date" aria-label="From" required value={form.start} onChange={(e) => set({ start: e.target.value })} />
           </label>
           <label className="field">to
-            <input type="date" aria-label="To" value={form.all} onChange={(e) => set({ all: e.target.value })} />
+            <input type="date" aria-label="To" min={form.start} value={form.all} onChange={(e) => set({ all: e.target.value })} />
           </label>
         </div>
       ) : (
@@ -48,6 +48,18 @@ function Form({ initial, onSaved, onCancel }: { initial: { id: number | null; fo
       )}
       <div className="timeoff-parts">
         <div className="muted" style={{ fontSize: 13 }}>{form.reason === "vacation" ? "Or only some things:" : "What's off, and until when:"}</div>
+        {form.reason === "injury" && (
+          <div className="timeoff-part">
+            <select aria-label="Everything" value={form.all === "" ? "fine" : "off"}
+              onChange={(e) => set({ all: e.target.value === "off" ? form.start : "" })}>
+              <option value="fine">Everything: fine</option>
+              <option value="off">Everything: off until</option>
+            </select>
+            {form.all !== "" && (
+              <input type="date" aria-label="Everything until" min={form.start} value={form.all} onChange={(e) => set({ all: e.target.value })} />
+            )}
+          </div>
+        )}
         {PARTS.map((p) => (
           <div key={p.category} className="timeoff-part">
             <select aria-label={p.name} value={form.until[p.category] === "" ? "fine" : "off"}
@@ -56,7 +68,7 @@ function Form({ initial, onSaved, onCancel }: { initial: { id: number | null; fo
               <option value="off">{p.name}: off until</option>
             </select>
             {form.until[p.category] !== "" && (
-              <input type="date" aria-label={`${p.name} until`} value={form.until[p.category]} onChange={(e) => setUntil(p.category, e.target.value)} />
+              <input type="date" aria-label={`${p.name} until`} min={form.start} value={form.until[p.category]} onChange={(e) => setUntil(p.category, e.target.value)} />
             )}
           </div>
         ))}
@@ -80,12 +92,13 @@ export default function TimeOffCard({ onChange }: { onChange: () => void }) {
 
   useEffect(() => {
     let current = true;
+    setFailed(null);
     apiFetch<TimeOffEntry[]>("/api/time-off").then((e) => { if (current) setEntries(e); })
       .catch(() => { if (current) setFailed("Couldn't load your time off."); });
     return () => { current = false; };
   }, [reloads]);
 
-  const changed = () => { setEditing(null); setConfirm(null); setReloads((n) => n + 1); onChange(); };
+  const changed = () => { setEditing(null); setConfirm(null); setFailed(null); setReloads((n) => n + 1); onChange(); };
   const remove = (id: number) => apiFetch(`/api/time-off/${id}`, { method: "DELETE" }).then(changed).catch((e) => { setConfirm(null); setFailed(e.message); });
 
   return (

@@ -150,6 +150,15 @@ describe("Agenda page", () => {
     apiFetch.mockReset();
   });
 
+  it("doesn't flag a done item as clashing", async () => {
+    mock(() => Promise.resolve({ ...WEEK, items: [...WEEK.items, item({ id: 6, day: "2026-10-26", sport: "run", title: "Easy run", routine: null,
+      done: true, activity_id: 4, result: "Done · 30′", clash: "Running is off until 17 Dec" })] }));
+    await open();
+    expect(within(screen.getByRole("region", { name: /^Mon / })).getByText("Easy run")).toBeTruthy();
+    expect(screen.queryByText("Running is off until 17 Dec")).toBeNull();
+    apiFetch.mockReset();
+  });
+
   it("shows the clash of a manual add once", async () => {
     mock((_path: string, init?: RequestInit) => init?.method === "POST" ? Promise.resolve(item({ id: 9, day: "2026-10-28", sport: "run", routine: null, title: "Easy run 30′", clash: "Running is off until 17 Dec" }))
       : Promise.resolve(WEEK));

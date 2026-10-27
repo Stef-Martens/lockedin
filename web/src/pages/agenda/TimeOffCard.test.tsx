@@ -108,6 +108,55 @@ describe("TimeOffCard", () => {
     expect(sent("DELETE").path).toBe("/api/time-off/7");
   });
 
+  it("keeps a vacation's 'everything off' in sight after switching to an injury", async () => {
+    render(<TimeOffCard onChange={() => undefined} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Add time off" }));
+    fireEvent.change(screen.getByLabelText("Reason"), { target: { value: "vacation" } });
+    fireEvent.change(screen.getByLabelText("From"), { target: { value: "2026-12-03" } });
+    fireEvent.change(screen.getByLabelText("To"), { target: { value: "2026-12-05" } });
+    fireEvent.change(screen.getByLabelText("Reason"), { target: { value: "injury" } });
+    expect(screen.getByLabelText<HTMLSelectElement>("Everything").value).toBe("off");
+    expect(screen.getByLabelText<HTMLInputElement>("Everything until").value).toBe("2026-12-05");
+    fireEvent.change(screen.getByLabelText("Everything"), { target: { value: "fine" } });
+    fireEvent.change(screen.getByLabelText("Running"), { target: { value: "off" } });
+    fireEvent.change(screen.getByLabelText("Running until"), { target: { value: "2026-12-17" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(sent("POST").body.restrictions).toEqual([{ category: "run", until: "2026-12-17" }]));
+  });
+
+  it("shows and can remove 'everything off' on an injury", async () => {
+    entries = [{ ...OPERATION, restrictions: [...OPERATION.restrictions, { category: "all", until: "2026-12-05" }] }];
+    render(<TimeOffCard onChange={() => undefined} />);
+    const row = (await screen.findByText(/^Operation · from 3 Dec/)).closest("li") as HTMLElement;
+    fireEvent.click(within(row).getByRole("button", { name: "Edit" }));
+    expect(screen.getByLabelText<HTMLInputElement>("Everything until").value).toBe("2026-12-05");
+    fireEvent.change(screen.getByLabelText("Everything"), { target: { value: "fine" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(sent("PATCH").body.restrictions).toEqual(OPERATION.restrictions));
+  });
+
+  it("can't pick an end before the start", async () => {
+    render(<TimeOffCard onChange={() => undefined} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Add time off" }));
+    fireEvent.change(screen.getByLabelText("From"), { target: { value: "2026-12-03" } });
+    expect(screen.getByLabelText<HTMLInputElement>("To").min).toBe("2026-12-03");
+    fireEvent.change(screen.getByLabelText("Running"), { target: { value: "off" } });
+    expect(screen.getByLabelText<HTMLInputElement>("Running until").min).toBe("2026-12-03");
+  });
+
+  it("clears an earlier error once something works", async () => {
+    failWith = new Error("Network down");
+    render(<TimeOffCard onChange={() => undefined} />);
+    const row = (await screen.findByText(/^Operation · from 3 Dec/)).closest("li") as HTMLElement;
+    fireEvent.click(within(row).getByRole("button", { name: "Delete" }));
+    fireEvent.click(within(row).getByRole("button", { name: "Yes, delete it" }));
+    expect((await screen.findByRole("alert")).textContent).toBe("Network down");
+    failWith = null;
+    fireEvent.click(within(row).getByRole("button", { name: "Delete" }));
+    fireEvent.click(within(row).getByRole("button", { name: "Yes, delete it" }));
+    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+  });
+
   it("shows the server's message when it refuses", async () => {
     failWith = new Error("Every restriction must end on or after the start.");
     render(<TimeOffCard onChange={() => undefined} />);

@@ -21,7 +21,7 @@ function ItemCard({ item, past, onOpen, i }: { item: AgendaItem; past: boolean; 
       <button className="agenda-item-main" onClick={onOpen}>
         <span className="agenda-item-title">{item.done && <span className="tick" aria-label="Done">✓</span>}{item.title}</span>
         {summary && <span className="agenda-item-sub">{summary}</span>}
-        {item.clash && <span className="clash">{item.clash}</span>}
+        {item.clash && !item.done && <span className="clash">{item.clash}</span>}
         <span className="agenda-pills">
           {notDone && <span className="pill">Not done</span>}
           {item.goal && <span className="pill goal">{item.goal}</span>}
