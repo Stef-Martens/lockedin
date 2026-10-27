@@ -2,7 +2,7 @@
 
 import math
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 from sqlalchemy import Connection, text
 
@@ -113,7 +113,7 @@ def progression(last_sets: list[tuple[float | None, int | None]], equipment: str
 
 def _routine_item(conn: Connection, now: datetime, name: str, routine_sets: list, equipment: dict, primary: dict,
                   logging: str, back: bool, goals: list[dict], item_id: str | None = None,
-                  known: list[str] | None = None, back_muscles: frozenset[str] = frozenset()) -> dict:
+                  known: list[str] | None = None, back_muscles: dict[str, date] | None = None) -> dict:
     last_sets = latest_sets(conn, now, name) or routine_sets
     last = last_logged(conn, now, name)
     tag = equipment.get(name, "other")
@@ -122,11 +122,13 @@ def _routine_item(conn: Connection, now: datetime, name: str, routine_sets: list
     fields = {"id": item_id} if item_id else {}
     goal = goal_label(goal_for(name, goals, known))
     muscle = (primary.get(name) or [None])[0]
+    back_on = (back_muscles or {}).get(muscle)
     return _item(exercise=name, equipment=tag, muscle=muscle,
                  last=[{"kg": kg, "reps": reps} for kg, reps in last_sets], goal=goal,
                  **progression(last_sets, load, logging, back, ready_on=GOAL_READY_ON if goal else None,
                                days_away=(now - last).days if last else None,
-                               back_from_off=muscle in back_muscles), **fields)
+                               back_from_off=bool(back_on) and (last is None or last.astimezone(TZ).date() < back_on)),
+                 **fields)
 
 
 def _suggested(p: dict, kind: str, muscle: str, reason: str, replaces: str | None = None) -> dict:
@@ -135,13 +137,19 @@ def _suggested(p: dict, kind: str, muscle: str, reason: str, replaces: str | Non
                  change="new" if p["estimate"] else None, replaces=replaces, reason=reason, suggested=True)
 
 
-def _back_muscles(conn: Connection, day: date) -> frozenset[str]:
-    """Muscles whose region was restricted and came back within the last 14 days (and isn't off again)."""
+def _back_muscles(conn: Connection, day: date) -> dict[str, date]:
+    """Muscle -> its first day back, for muscles whose region came back within the last 14 days (and isn't off again)."""
     off = off_on(conn, day)
-    regions = [r for c, rs in REGIONS.items() if c not in off and back_from(conn, day, c, BACK_FROM_OFF_DAYS) for r in rs]
-    if not regions:
-        return frozenset()
-    return frozenset(conn.execute(text("select key from muscles where region = any(:r)"), {"r": regions}).scalars())
+    back_on: dict[str, date] = {}
+    for c, regs in REGIONS.items():
+        if c in off or not (e := back_from(conn, day, c, BACK_FROM_OFF_DAYS)):
+            continue
+        until = max(r["until"] for r in e["restrictions"] if r["category"] in (c, "all") and r["until"] < day)
+        back_on |= dict.fromkeys(regs, until + timedelta(days=1))
+    if not back_on:
+        return {}
+    rows = conn.execute(text("select key, region from muscles where region = any(:r)"), {"r": list(back_on)})
+    return {r.key: back_on[r.region] for r in rows}
 
 
 def _off_reasons(conn: Connection, items: list[dict], off: dict[str, date]) -> None:
@@ -167,9 +175,10 @@ def _freshness(conn: Connection, now: datetime, prefs: Preferences) -> dict:
     return {"built_on": now.astimezone(TZ).date().isoformat(), "prefs_hash": prefs_hash(prefs)}
 
 
-def build_plan(conn: Connection, now: datetime, title: str | None) -> dict:
-    today = now.astimezone(TZ).date()
-    prefs = load_preferences(conn, today)
+def build_plan(conn: Connection, now: datetime, title: str | None, on: date | None = None) -> dict:
+    """`on`: the day the plan is for, whose time off applies (default today)."""
+    day = on or now.astimezone(TZ).date()
+    prefs = load_preferences(conn, day)
     back = in_comeback(conn, now)
     known = known_exercises(conn)
     goals = active_goals(conn)
@@ -193,7 +202,7 @@ def build_plan(conn: Connection, now: datetime, title: str | None) -> dict:
     names = [e.name for e in found.exercises]
     equipment, primary, secondary = _library(conn, names)
 
-    back_muscles = _back_muscles(conn, today)
+    back_muscles = _back_muscles(conn, day)
     items = [_routine_item(conn, now, ex.name, ex.last_sets, equipment, primary, logging, back, goals, known=known,
                            back_muscles=back_muscles) for ex in found.exercises]
     for it in items:

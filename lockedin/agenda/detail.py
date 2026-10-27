@@ -41,7 +41,7 @@ def _gym_plan(conn: Connection, now: datetime, item: dict, start: datetime | Non
     if saved is not None:
         return {"kind": "gym", "routine": routine, "items": saved}
     try:
-        return {"kind": "gym", "routine": routine, "items": build_plan(conn, now, routine)["items"]}
+        return {"kind": "gym", "routine": routine, "items": build_plan(conn, now, routine, on=day)["items"]}
     except (LookupError, ValueError):
         return {"kind": "gym", "routine": routine, "items": []}
 

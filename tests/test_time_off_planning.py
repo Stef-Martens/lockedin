@@ -5,6 +5,7 @@ from conftest import owner_headers
 from focus_helpers import add_gym, add_session
 
 from lockedin import timeoff
+from lockedin.agenda.store import ItemIn, create
 from lockedin.app import app
 from lockedin.focus.mix import session_suggestions
 from lockedin.focus.musclemap import muscle_map
@@ -61,6 +62,15 @@ def test_first_days_back_are_eased(conn):
     assert items[SQUAT]["change"] != "eased"
     later = items_by(build_plan(conn, NOW + timedelta(days=14), MIXED))  # 15 days after: back to normal
     assert later[BENCH]["change"] != "eased"
+
+
+def test_easing_does_not_compound_after_the_first_session_back(conn):
+    mixed_day(conn, NOW - timedelta(days=10))
+    add_session(conn, "run", NOW - timedelta(days=1), 2700)
+    off(conn, start=TODAY - timedelta(days=20), upper=TODAY - timedelta(days=1))
+    add_gym(conn, NOW, [(BENCH, 52.5, 8, "normal")] * 3 + [(SQUAT, 80, 8, "normal")] * 3, title=MIXED)
+    bench = items_by(build_plan(conn, NOW + timedelta(days=3), MIXED))[BENCH]
+    assert bench["change"] != "eased" and bench["weight_kg"] == 52.5
 
 
 def test_not_eased_when_the_region_is_off_again(conn):
@@ -133,3 +143,18 @@ def test_off_muscles_leave_the_muscle_counts(conn):
     assert upper and trained_upper and any(m["sets"] == 0 for m in upper)
     assert after["total"] == before["total"] - len(upper)
     assert after["trained_count"] == before["trained_count"] - len(trained_upper)
+
+
+def test_session_page_plans_a_future_gym_day_with_that_days_time_off(client, clean_db, clock):
+    with clean_db.begin() as c:
+        add_gym(c, NOW - timedelta(days=3), [(BENCH, 60, 8, "normal")] * 3 + [(SQUAT, 80, 8, "normal")] * 3, title=MIXED)
+        off(c, start=date(2026, 10, 28), upper=date(2026, 10, 31))
+        inside = create(c, NOW, ItemIn(day=date(2026, 10, 29), sport="gym", title="Gym", routine=MIXED), "manual")["id"]
+        after = create(c, NOW, ItemIn(day=date(2026, 11, 2), sport="gym", title="Gym", routine=MIXED), "manual")["id"]
+
+    def bench(item_id):
+        plan = client.get(f"/api/agenda/{item_id}/detail", headers=H).json()["plan"]
+        return items_by(plan)[BENCH]
+    assert bench(inside)["skipped"] is True and bench(inside)["off_until"] == "2026-10-31"
+    app.dependency_overrides[get_now] = lambda: NOW + timedelta(days=4)  # 30 Oct: upper body is off today
+    assert bench(after)["skipped"] is False and bench(after)["off_until"] is None
