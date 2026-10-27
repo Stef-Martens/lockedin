@@ -9,7 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from sqlalchemy import Connection, text
 
 from lockedin.agenda.actual import result_line
-from lockedin.agenda.steps import RunSteps, derive
+from lockedin.agenda.steps import RunSteps, derive, summary_line
 from lockedin.agenda.zwo import ZwiftWorkout, duration_s, filename, render, strip_control, summary
 from lockedin.fitness import ftp_at
 from lockedin.focus.sessions import counted
@@ -175,7 +175,8 @@ def _out(row, ftp: float | None, today: date, done: dict[int, int], goals: dict[
     return {"id": row.id, "day": row.day.isoformat(), "sport": row.sport, "title": row.title, "note": row.note,
             "optional": row.optional, "routine": row.routine, "zwift": zwift, "zwift_status": status,
             "sort": row.sort, "source": row.source, "done": row.id in done, "activity_id": done.get(row.id),
-            "targets": row.targets, "goal_id": row.goal_id, "goal": (goals or {}).get(row.goal_id)}
+            "targets": row.targets, "goal_id": row.goal_id, "goal": (goals or {}).get(row.goal_id),
+            "plan_line": summary_line(row.sport, row.targets) if row.sport == "run" and (row.targets or {}).get("steps") else None}
 
 
 def _ticks(conn: Connection, rows: list, start: date, end: date) -> dict[int, int]:
@@ -277,6 +278,9 @@ def update(conn: Connection, now: datetime, item_id: int, patch: ItemPatch, sour
     if row is None:
         raise LookupError(f"There's no agenda item {item_id}.")
     changes = patch.model_dump(exclude_unset=True)
+    kept = (row.targets or {}).get("steps")
+    if kept and isinstance(changes.get("targets"), dict) and "steps" not in changes["targets"]:
+        changes["targets"]["steps"] = kept  # a targets edit that doesn't mention steps keeps them
     current = {k: getattr(row, k) for k in ItemIn.model_fields}
     merged = ItemIn(**{**current, **changes})  # re-checks the combination (e.g. a routine on a run)
     if "routine" in changes:
