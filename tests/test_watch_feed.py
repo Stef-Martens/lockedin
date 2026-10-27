@@ -107,7 +107,7 @@ def test_run_without_steps(client, clock):
     item = feed(client)["items"][0]
     assert item["summary"] == "8 km @ 5:30–5:50"
     assert item["workout"] == {
-        "kind": "run", "display_name": "Steady", "location": "outdoor", "warmup": None,
+        "kind": "run", "display_name": "Wed 28 Oct · Steady", "location": "outdoor", "warmup": None,
         "blocks": [{"iterations": 1, "steps": [{"purpose": "work", "goal": {"type": "distance", "meters": 8000},
                                                  "alert": {"type": "speed", "min_mps": 2.857, "max_mps": 3.03}}]}],
         "cooldown": None}
@@ -122,7 +122,7 @@ def test_run_and_swim_goals_fall_back(client, clock):
                                                         "alert": None}
     assert free["workout"]["blocks"][0]["steps"][0]["goal"] == {"type": "open"}
     assert free["summary"] is None
-    assert swim["workout"] == {"kind": "swim", "display_name": "Swim", "location": "pool", "goal": {"type": "open"}}
+    assert swim["workout"] == {"kind": "swim", "display_name": "Fri 30 Oct · Swim", "location": "pool", "goal": {"type": "open"}}
 
 
 def test_auth(client, clock):

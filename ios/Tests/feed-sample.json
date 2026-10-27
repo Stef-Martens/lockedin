@@ -11,7 +11,7 @@
       "summary": "10′ warm-up Z2 · 4 × (5′ @ 5:30–5:50, 2′ jog) · cool-down",
       "workout": {
         "kind": "run",
-        "display_name": "Tempo",
+        "display_name": "Tue 27 Oct · Tempo",
         "location": "outdoor",
         "warmup": {
           "goal": {
@@ -69,7 +69,7 @@
       "summary": "1500 m @ 2:00/100 m",
       "workout": {
         "kind": "swim",
-        "display_name": "Swim",
+        "display_name": "Wed 28 Oct · Swim",
         "location": "pool",
         "goal": {
           "type": "distance",

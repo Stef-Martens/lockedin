@@ -115,7 +115,7 @@ The format, the rounding and the units are the builder's to choose. It stays sho
   - without runs that clash with time off
 
   Per run: `id`, `day`, `title`, `optional`, `summary`, and `workout`, ready for WorkoutKit. Workout fields:
-  - `display_name`: the title
+  - `display_name`: the day and the title, like "Thu 30 Oct · Tempo" (the watch shows added workouts by name only, with no date)
   - `location`: `outdoor` *(my call; the agenda has no indoor/outdoor today)*
   - `warmup`, `blocks`, `cooldown`, with goals and alerts already in final form: pace as a speed range in m/s, heart rate as a bpm range
   - **Runs without steps:** one work block of one step, using the run's distance or duration and its pace or zone. With neither, an open goal.

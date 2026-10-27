@@ -1,6 +1,7 @@
 """The watch feed: the coming week's runs and swims, shaped for the iPhone app to hand to WorkoutKit."""
 
-from datetime import datetime, timedelta
+import calendar
+from datetime import date, datetime, timedelta
 
 from sqlalchemy import Connection
 
@@ -52,18 +53,24 @@ def _summary_goal(targets: dict) -> dict:
     return {"time_s": targets.get("duration_s")}
 
 
+def _name(item: dict) -> str:
+    """"Thu 30 Oct · Tempo": the watch lists added workouts by name only, so the day tells them apart."""
+    d = date.fromisoformat(item["day"])
+    return f"{calendar.day_abbr[d.weekday()]} {d.day} {calendar.month_abbr[d.month]} · {item['title']}"
+
+
 def _run(item: dict, zones: dict) -> dict:
     targets = item["targets"] or {}
     steps = targets.get("steps") or {
         "blocks": [{"repeat": 1, "steps": [{"kind": "work", "goal": _summary_goal(targets), "target": targets}]}]}
     blocks = [{"iterations": b["repeat"],
                "steps": [{"purpose": s["kind"], **_step(s, zones)} for s in b["steps"]]} for b in steps["blocks"]]
-    return {"kind": "run", "display_name": item["title"], "location": "outdoor", "warmup": _step(steps.get("warmup"), zones),
+    return {"kind": "run", "display_name": _name(item), "location": "outdoor", "warmup": _step(steps.get("warmup"), zones),
             "blocks": blocks, "cooldown": _step(steps.get("cooldown"), zones)}
 
 
 def _swim(item: dict) -> dict:
-    return {"kind": "swim", "display_name": item["title"], "location": "pool",
+    return {"kind": "swim", "display_name": _name(item), "location": "pool",
             "goal": _goal(_summary_goal(item["targets"] or {}))}
 
 

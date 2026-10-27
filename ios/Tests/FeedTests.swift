@@ -25,7 +25,7 @@ final class FeedTests: XCTestCase {
         let plan = try workoutPlan(for: try sample().items[0])
         guard case .custom(let run) = plan.workout else { return XCTFail("expected a custom workout") }
         XCTAssertEqual(run.activity, .running)
-        XCTAssertEqual(run.displayName, "Tempo")
+        XCTAssertEqual(run.displayName, "Tue 27 Oct · Tempo")
         XCTAssertEqual(run.blocks.count, 1)
         XCTAssertEqual(run.blocks[0].iterations, 4)
         XCTAssertEqual(run.blocks[0].steps.map(\.purpose), [.work, .recovery])

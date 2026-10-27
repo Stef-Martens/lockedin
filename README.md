@@ -360,6 +360,7 @@ A free Apple ID signs apps for 7 days only. When the app stops opening, run `mak
 ### Limits of the watch (watchOS 10)
 
 - **One tap per run or swim.** The watch can't receive a whole week by itself, so each one goes over through **Add to Watch**. The app can't tell which ones you already added.
+- **They stay until you delete them.** Each one is named with its day, like "Thu 30 Oct · Tempo", and sits among the custom workouts of **Outdoor Run** or **Pool Swim**. The app can't edit or remove them. To clear an old one: on the watch, open **Workout**, tap the **⋯** on Outdoor Run (or Pool Swim), scroll to it, tap its **⋯** → **Delete**.
 - **No swim steps.** The watch takes a pool swim with one goal; structured swims need watchOS 11.
 
 ### Later: automatic with a newer watch
