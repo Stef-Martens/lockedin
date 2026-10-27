@@ -93,10 +93,12 @@ class AnthropicLLM:
                 system=[{"type": "text", "text": system}],
                 messages=messages,
                 tools=tools,
-                thinking={"type": "adaptive"},
+                # A thinking block is bound to the system prompt and tools it was made with; after a deploy that
+                # changes either, an old chat's blocks no longer match. Drop them rather than fail the request.
+                thinking={"type": "adaptive", "block_binding": {"prefix_mismatch_behavior": "drop_block"}},
                 output_config={"effort": "medium"},
                 cache_control={"type": "ephemeral"},
-                betas=["server-side-fallback-2026-07-01"],
+                betas=["server-side-fallback-2026-07-01", "thinking-binding-controls-2026-08-01"],
                 fallbacks="default",
                 **extra,
             ) as stream:

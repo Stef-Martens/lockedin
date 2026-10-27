@@ -234,8 +234,12 @@ def test_anthropic_adapter_request_shape(monkeypatch):
     out = list(llm.stream(system="SYS", messages=[{"role": "user", "content": "x"}], tools=[]))
     assert out == [{"type": "text", "text": "Hi"}, Final(content=[{"type": "text", "text": "Hi"}], stop_reason="end_turn")]
     assert sent["model"] == "claude-opus-5-5" and sent["fallbacks"] == "default"
-    assert sent["betas"] == ["server-side-fallback-2026-07-01"] and sent["cache_control"] == {"type": "ephemeral"}
+    assert sent["betas"] == ["server-side-fallback-2026-07-01", "thinking-binding-controls-2026-08-01"]
+    assert sent["cache_control"] == {"type": "ephemeral"}
     assert sent["output_config"] == {"effort": "medium"} and sent["system"] == [{"type": "text", "text": "SYS"}]
+    # Old chats outlive deploys that change the system prompt or tools; their thinking blocks are then bound to
+    # a different conversation. Dropping them beats a 400 ("The coach request was rejected").
+    assert sent["thinking"] == {"type": "adaptive", "block_binding": {"prefix_mismatch_behavior": "drop_block"}}
 
 
 
