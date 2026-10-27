@@ -10,6 +10,7 @@ from lockedin.focus.preferences import load_preferences
 from lockedin.focus.sessions import COUNTED_SQL, counted
 from lockedin.focus.suggest import gym_suggestions
 from lockedin.goals.steer import goal_muscles
+from lockedin.timeoff import off_muscles
 from lockedin.timeutil import TZ, week_start
 
 # Cardio draws stripes on these muscles; it never adds gym sets.
@@ -108,6 +109,7 @@ def muscle_map(conn: Connection, now: datetime, week: date | None) -> dict:
         candidates.setdefault(key, []).append((name, n, best))
 
     avoid = set(load_preferences(conn).avoid_muscles)
+    off = off_muscles(conn, now.astimezone(TZ).date())
     helps = goal_muscles(conn, now)
     suggestions = {s.muscle_key: asdict(s) for s in gym_suggestions(conn, now, limit=20)} if is_current else {}
     first = conn.execute(text(
@@ -132,6 +134,7 @@ def muscle_map(conn: Connection, now: datetime, week: date | None) -> dict:
                        if m.key in CARDIO_MUSCLES[c["sport"]]],
             "suggestion": suggestions.get(m.key),
             "left_out": m.key in avoid,
+            "off_until": off[m.key].isoformat() if m.key in off else None,
             "goals": helps.get(m.key, []),
         })
     return {

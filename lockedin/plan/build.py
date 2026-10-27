@@ -2,7 +2,7 @@
 
 import math
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 
 from sqlalchemy import Connection, text
 
@@ -13,7 +13,8 @@ from lockedin.focus.wins import stalled_exercises
 from lockedin.goals.steer import goal_muscles
 from lockedin.plan.goals import active_goals, goal_for, goal_label, known_exercises
 from lockedin.plan.routines import Routine, last_logged, latest_sets, routine
-from lockedin.plan.steps import eased, gap_cut, step_up
+from lockedin.plan.steps import BACK_FROM_OFF_CUT, BACK_FROM_OFF_DAYS, eased, gap_cut, step_up
+from lockedin.timeoff import REGIONS, WORDS, _fmt, back_from, off_on
 from lockedin.timeutil import TZ
 
 MAX_SWAPS = 1
@@ -57,17 +58,19 @@ def _item(**fields) -> dict:
     base = {"id": uuid.uuid4().hex[:10], "exercise": "", "equipment": "other", "kind": "routine", "muscle": None,
             "sets": 3, "reps": "8–12", "weight_kg": None, "dumbbell": None, "change": None, "estimate": False,
             "last": [], "replaces": None, "reason": None, "goal": None, "skipped": False, "suggested": False,
-            "tried": [], "lighter_sets": 0, "goal_extra": False}
+            "tried": [], "lighter_sets": 0, "goal_extra": False, "off_until": None}
     return {**base, **fields}
 
 
 def progression(last_sets: list[tuple[float | None, int | None]], equipment: str, dumbbell_logging: str,
-                welcome_back: bool, ready_on: int | None = None, days_away: int | None = None) -> dict:
+                welcome_back: bool, ready_on: int | None = None, days_away: int | None = None,
+                back_from_off: bool = False) -> dict:
     """Target for the sets at last session's top weight: up a step once every one of them hit 12 reps
     (only the best `ready_on` of them, for a goal lift whose extra set shouldn't hold it back).
     Lighter sets before them (ramping up) are counted separately, so the plan never asks for more heavy sets.
     Sets logged with no reps (left empty in Hevy) don't count. A lift last done `days_away` days ago (over 3 weeks)
-    doesn't go up: it starts lighter, whether or not the owner trained other things meanwhile."""
+    doesn't go up: it starts lighter, whether or not the owner trained other things meanwhile. So does a lift
+    whose region time off just ended (`back_from_off`)."""
     last_sets = [(kg, reps) for kg, reps in last_sets if reps]
     weights = [kg for kg, _ in last_sets if kg]
     top = max(weights) if weights else None
@@ -77,10 +80,13 @@ def progression(last_sets: list[tuple[float | None, int | None]], equipment: str
     dumbbell = dumbbell_logging if equipment == "dumbbell" else None
     sets = max(len(at_top), 1)
     lighter = len(last_sets) - len(at_top) if top is not None else 0
-    if (cut := gap_cut(days_away)) and at_top:
+    cut = gap_cut(days_away)
+    reason = f"Back after {days_away // 7} weeks: lighter to ease in" if cut else "Back after your time off: lighter to ease in"
+    if not cut and back_from_off:
+        cut = BACK_FROM_OFF_CUT
+    if cut and at_top:
         # During a comeback the change stays "welcome_back": that's how a stored plan remembers it was built for one.
-        eased_in = {"change": "welcome_back" if welcome_back else "eased", "sets": sets,
-                    "reason": f"Back after {days_away // 7} weeks: lighter to ease in"}
+        eased_in = {"change": "welcome_back" if welcome_back else "eased", "sets": sets, "reason": reason}
         if top is None:
             best = max(at_top)
             return {**eased_in, "weight_kg": None, "reps": str(max(1, math.floor(best * (1 - cut)))) if best else "8–12",
@@ -107,7 +113,7 @@ def progression(last_sets: list[tuple[float | None, int | None]], equipment: str
 
 def _routine_item(conn: Connection, now: datetime, name: str, routine_sets: list, equipment: dict, primary: dict,
                   logging: str, back: bool, goals: list[dict], item_id: str | None = None,
-                  known: list[str] | None = None) -> dict:
+                  known: list[str] | None = None, back_muscles: frozenset[str] = frozenset()) -> dict:
     last_sets = latest_sets(conn, now, name) or routine_sets
     last = last_logged(conn, now, name)
     tag = equipment.get(name, "other")
@@ -115,10 +121,12 @@ def _routine_item(conn: Connection, now: datetime, name: str, routine_sets: list
     load = "other" if tag == "bodyweight" and any(kg for kg, _ in last_sets) else tag
     fields = {"id": item_id} if item_id else {}
     goal = goal_label(goal_for(name, goals, known))
-    return _item(exercise=name, equipment=tag, muscle=(primary.get(name) or [None])[0],
+    muscle = (primary.get(name) or [None])[0]
+    return _item(exercise=name, equipment=tag, muscle=muscle,
                  last=[{"kg": kg, "reps": reps} for kg, reps in last_sets], goal=goal,
                  **progression(last_sets, load, logging, back, ready_on=GOAL_READY_ON if goal else None,
-                               days_away=(now - last).days if last else None), **fields)
+                               days_away=(now - last).days if last else None,
+                               back_from_off=muscle in back_muscles), **fields)
 
 
 def _suggested(p: dict, kind: str, muscle: str, reason: str, replaces: str | None = None) -> dict:
@@ -127,12 +135,41 @@ def _suggested(p: dict, kind: str, muscle: str, reason: str, replaces: str | Non
                  change="new" if p["estimate"] else None, replaces=replaces, reason=reason, suggested=True)
 
 
+def _back_muscles(conn: Connection, day: date) -> frozenset[str]:
+    """Muscles whose region was restricted and came back within the last 14 days (and isn't off again)."""
+    off = off_on(conn, day)
+    regions = [r for c, rs in REGIONS.items() if c not in off and back_from(conn, day, c, BACK_FROM_OFF_DAYS) for r in rs]
+    if not regions:
+        return frozenset()
+    return frozenset(conn.execute(text("select key from muscles where region = any(:r)"), {"r": regions}).scalars())
+
+
+def _off_reasons(conn: Connection, items: list[dict], off: dict[str, date]) -> None:
+    """Skips routine items whose muscle is off, saying until when."""
+    category = {reg: c for c, regs in REGIONS.items() for reg in regs}
+    regions = dict(conn.execute(text("select key, region from muscles")).all())
+    for it in items:
+        if it["muscle"] in off:
+            word = WORDS[category[regions[it["muscle"]]]]
+            it.update(skipped=True, off_until=off[it["muscle"]].isoformat(),
+                      reason=f"{word[0].upper()}{word[1:]} is off until {_fmt(off[it['muscle']])}")
+
+
+def off_note(items: list[dict]) -> str | None:
+    """Said when time off took every exercise out of the routine."""
+    if not items or not all(it["skipped"] and it.get("off_until") for it in items):
+        return None
+    reasons = list(dict.fromkeys(it["reason"] for it in items))
+    return ", ".join([reasons[0]] + [f"{r[0].lower()}{r[1:]}" for r in reasons[1:]]) + "; nothing left of this routine."
+
+
 def _freshness(conn: Connection, now: datetime, prefs: Preferences) -> dict:
     return {"built_on": now.astimezone(TZ).date().isoformat(), "prefs_hash": prefs_hash(prefs)}
 
 
 def build_plan(conn: Connection, now: datetime, title: str | None) -> dict:
-    prefs = load_preferences(conn)
+    today = now.astimezone(TZ).date()
+    prefs = load_preferences(conn, today)
     back = in_comeback(conn, now)
     known = known_exercises(conn)
     goals = active_goals(conn)
@@ -156,8 +193,9 @@ def build_plan(conn: Connection, now: datetime, title: str | None) -> dict:
     names = [e.name for e in found.exercises]
     equipment, primary, secondary = _library(conn, names)
 
-    items = [_routine_item(conn, now, ex.name, ex.last_sets, equipment, primary, logging, back, goals, known=known)
-             for ex in found.exercises]
+    back_muscles = _back_muscles(conn, today)
+    items = [_routine_item(conn, now, ex.name, ex.last_sets, equipment, primary, logging, back, goals, known=known,
+                           back_muscles=back_muscles) for ex in found.exercises]
     for it in items:
         # A goal lift gets one more heavy set, up to 4, so it doesn't creep up as the extra set becomes "last time".
         if it["goal"] and it["change"] in ("up", "same"):
@@ -166,6 +204,11 @@ def build_plan(conn: Connection, now: datetime, title: str | None) -> dict:
                 it["sets"] += 1
                 it["reason"] = f"+1 set for your goal: {it['goal']}"
 
+    _off_reasons(conn, items, prefs.off_muscles)
+    if note := off_note(items):
+        return {"day": title, "source_activity_id": found.activity_id, "comeback": back, "items": items, "note": note,
+                **_freshness(conn, now, prefs)}
+
     if not back:
         in_plan = set(names)
         # Variety: swap the first stuck lift (not one a goal is about) for another exercise for the same muscle.
@@ -173,7 +216,7 @@ def build_plan(conn: Connection, now: datetime, title: str | None) -> dict:
         for i, it in enumerate(items):
             if len([x for x in items if x["kind"] == "swap"]) >= MAX_SWAPS:
                 break
-            if it["exercise"] in stalled and it["muscle"] and not it["goal"]:
+            if it["exercise"] in stalled and it["muscle"] and not it["goal"] and not it["skipped"]:
                 p = weighted_pick(conn, it["muscle"], now, logging, never, frozenset(in_plan))
                 if p:
                     reason = f"Variety: {it['exercise']} hasn't improved in 6 weeks; same muscle, different angle."
@@ -212,7 +255,8 @@ def _restore(conn: Connection, now: datetime, plan: dict, it: dict) -> dict:
         raise LookupError("There's no other exercise to swap this for.")
     equipment, primary, _ = _library(conn, [ex.name])
     return _routine_item(conn, now, ex.name, ex.last_sets, equipment, primary, _dumbbell_logging(conn),
-                         in_comeback(conn, now), active_goals(conn), item_id=it["id"], known=known_exercises(conn))
+                         in_comeback(conn, now), active_goals(conn), item_id=it["id"], known=known_exercises(conn),
+                         back_muscles=_back_muscles(conn, now.astimezone(TZ).date()))
 
 
 def swap_item(conn: Connection, now: datetime, plan: dict, item_id: str) -> dict:
@@ -225,7 +269,7 @@ def swap_item(conn: Connection, now: datetime, plan: dict, item_id: str) -> dict
     it = items[idx]
     if not it["muscle"]:
         raise LookupError("There's no other exercise to swap this for.")
-    prefs = load_preferences(conn)
+    prefs = load_preferences(conn, now.astimezone(TZ).date())
     never = frozenset(prefs.never_exercises) | _avoided_exercises(conn, prefs.avoid_muscles)
     tried = set(it.get("tried", [])) | {it["exercise"]}
     skip = frozenset({x["exercise"] for x in items} | tried | ({it["replaces"]} if it["replaces"] else set()))

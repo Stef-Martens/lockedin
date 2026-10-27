@@ -10,7 +10,7 @@ from lockedin.db import get_conn
 from lockedin.focus.consistency import in_comeback
 from lockedin.focus.preferences import load_preferences, prefs_hash
 from lockedin.goals.progress import progress
-from lockedin.plan.build import NoRoutine, build_plan, swap_item
+from lockedin.plan.build import NoRoutine, build_plan, off_note, swap_item
 from lockedin.plan.goals import active_goals
 from lockedin.plan.routines import routine, routines
 from lockedin.routes.overview import get_now
@@ -27,7 +27,12 @@ def _built_in_comeback(row) -> bool:
 def _out(row, conn: Connection, now: datetime) -> dict:
     # What the plan was built for, so the banner always matches the targets shown.
     back = _built_in_comeback(row) if row.day else in_comeback(conn, now)
-    return {"id": row.id, "day": row.day, "built_on": row.built_on.isoformat(), "comeback": back, "items": row.items}
+    return {"id": row.id, "day": row.day, "built_on": row.built_on.isoformat(), "comeback": back, "items": row.items,
+            "note": off_note(row.items)}
+
+
+def _prefs(conn: Connection, now: datetime):
+    return load_preferences(conn, now.astimezone(TZ).date())
 
 
 def _store(conn: Connection, plan: dict):
@@ -49,7 +54,7 @@ def _build(conn: Connection, now: datetime, day: str | None):
 
 def _is_fresh(conn: Connection, now: datetime, row) -> bool:
     """Same local day, same latest workout for the routine, same preferences."""
-    if row.built_on != now.astimezone(TZ).date() or row.prefs_hash != prefs_hash(load_preferences(conn)):
+    if row.built_on != now.astimezone(TZ).date() or row.prefs_hash != prefs_hash(_prefs(conn, now)):
         return False
     if row.day is None:
         return True
@@ -94,11 +99,11 @@ def _locked(conn: Connection, plan_id: int, item_id: str):
     return row
 
 
-def _save_items(conn: Connection, plan_id: int, items: list, refresh_hash: bool = False):
+def _save_items(conn: Connection, now: datetime, plan_id: int, items: list, refresh_hash: bool = False):
     sets = ", prefs_hash = :hash" if refresh_hash else ""
     return conn.execute(text(
         f"update workout_plans set items = cast(:items as jsonb), updated_at = now(){sets} where id = :i returning *"
-    ), {"items": json.dumps(items), "i": plan_id, "hash": prefs_hash(load_preferences(conn))}).one()
+    ), {"items": json.dumps(items), "i": plan_id, "hash": prefs_hash(_prefs(conn, now))}).one()
 
 
 def _swapped(conn: Connection, now: datetime, row, item_id: str) -> list:
@@ -111,14 +116,14 @@ def _swapped(conn: Connection, now: datetime, row, item_id: str) -> list:
 @router.post("/plan/{plan_id}/items/{item_id}/swap")
 def swap(plan_id: int, item_id: str, conn: Connection = Depends(get_conn), now: datetime = Depends(get_now)) -> dict:
     row = _locked(conn, plan_id, item_id)
-    return _out(_save_items(conn, plan_id, _swapped(conn, now, row, item_id)), conn, now)
+    return _out(_save_items(conn, now, plan_id, _swapped(conn, now, row, item_id)), conn, now)
 
 
 @router.post("/plan/{plan_id}/items/{item_id}/skip")
 def skip(plan_id: int, item_id: str, conn: Connection = Depends(get_conn), now: datetime = Depends(get_now)) -> dict:
     row = _locked(conn, plan_id, item_id)
     items = [{**it, "skipped": not it["skipped"]} if it["id"] == item_id else it for it in row.items]
-    return _out(_save_items(conn, plan_id, items), conn, now)
+    return _out(_save_items(conn, now, plan_id, items), conn, now)
 
 
 @router.post("/plan/{plan_id}/items/{item_id}/never")
@@ -127,7 +132,7 @@ def never(plan_id: int, item_id: str, conn: Connection = Depends(get_conn), now:
     item = next(it for it in row.items if it["id"] == item_id)
     if not item["suggested"]:
         raise HTTPException(400, "This one is from your own routine; use Swap or Skip instead.")
-    was_current = row.prefs_hash == prefs_hash(load_preferences(conn))
+    was_current = row.prefs_hash == prefs_hash(_prefs(conn, now))
     never = [n for n in load_preferences(conn).never_exercises if n != item["exercise"]] + [item["exercise"]]
     conn.execute(text("update profile set never_exercises = :n, updated_at = now() where id = 1"),
                  {"n": never[-MAX_NEVER:]})  # keep the latest 200
@@ -138,7 +143,7 @@ def never(plan_id: int, item_id: str, conn: Connection = Depends(get_conn), now:
     except LookupError:
         items = [it for it in row.items if it["id"] != item_id]  # nothing else for that muscle: drop the extra
     # The plan now reflects the new preference, so keep it current instead of rebuilding it on the next open.
-    return _out(_save_items(conn, plan_id, items, refresh_hash=True), conn, now)
+    return _out(_save_items(conn, now, plan_id, items, refresh_hash=True), conn, now)
 
 
 @router.get("/goals/active")

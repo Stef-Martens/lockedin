@@ -10,6 +10,8 @@ from lockedin.focus.effort import Effort, effort_for_window
 from lockedin.focus.sessions import counted_sessions
 from lockedin.focus.zones import hr_zone_bounds, max_hr_at, power_zone_bounds
 from lockedin.goals.steer import sport_goals
+from lockedin.timeoff import away_on, off_on
+from lockedin.timeutil import TZ
 
 ACTIVE_DAYS = 42
 LOOKBACK_DAYS = 21
@@ -64,10 +66,16 @@ def _intervals(sport: str, max_hr: int | None, ftp: float | None) -> str:
 
 
 def session_suggestions(conn: Connection, now: datetime) -> list[SessionSuggestion]:
+    day = now.astimezone(TZ).date()
+    if away_on(conn, day):
+        return []
+    off = off_on(conn, day)
     max_hr = max_hr_at(conn, now)
     ftp = ftp_at(conn, now)
     out: list[SessionSuggestion] = []
     for sport in ("run", "bike"):
+        if sport in off:
+            continue
         if len(counted_sessions(conn, now - timedelta(days=ACTIVE_DAYS), now, sport)) < 2:
             continue
         noun = "run" if sport == "run" else "ride"
@@ -87,6 +95,8 @@ def session_suggestions(conn: Connection, now: datetime) -> list[SessionSuggesti
     # Goals of a sport always bring a session of that sport, first in line.
     goals = sport_goals(conn)
     for sport, label in goals.items():
+        if sport in off:
+            continue
         mine = next((s for s in out if s.sport == sport), None)
         if mine is None:
             if sport == "run":

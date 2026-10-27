@@ -13,6 +13,8 @@ MAX_STEP_SHARE = 0.10
 FRESH_DAYS = 21
 LONG_GAP_DAYS = 56
 GAP_CUTS = ((LONG_GAP_DAYS, 0.10), (None, 0.20))  # up to 8 weeks away: −10%; longer: −20%
+BACK_FROM_OFF_DAYS = 14  # a lift's region was restricted and ended within this many days: ease in
+BACK_FROM_OFF_CUT = 0.10
 EPS = 1e-9
 
 

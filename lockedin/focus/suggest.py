@@ -12,6 +12,8 @@ from lockedin.focus.preferences import load_preferences
 from lockedin.focus.sessions import counted
 from lockedin.goals.steer import goal_muscles
 from lockedin.plan.steps import gap_cut
+from lockedin.timeoff import away_on
+from lockedin.timeutil import TZ
 
 TARGET_REPS = 12          # 12 reps at full effort ≈ 10 reps at RPE 8, so "3 × 8–12" stays honest
 NEW_EXERCISE_FACTOR = 0.8  # never-done exercises start light
@@ -139,7 +141,10 @@ def low_reason(c) -> str:
 
 
 def gym_suggestions(conn: Connection, now: datetime, limit: int = 3) -> list[GymSuggestion]:
-    prefs = load_preferences(conn)
+    day = now.astimezone(TZ).date()
+    if away_on(conn, day):
+        return []
+    prefs = load_preferences(conn, day)
     never = frozenset(prefs.never_exercises)
     dumbbell_logging = conn.execute(text("select dumbbell_weights from profile where id = 1")).scalar() or "pair"
     helps = goal_muscles(conn, now)
