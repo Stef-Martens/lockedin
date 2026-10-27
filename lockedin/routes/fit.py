@@ -26,7 +26,8 @@ def known(body: KnownRequest, conn: Connection = Depends(get_conn)) -> dict:
 @router.post("/upload")
 async def upload(file: UploadFile = File(...), source: Literal["zwift", "healthfit"] | None = Form(None),
                  conn: Connection = Depends(get_conn)) -> dict:
-    data = await file.read()
-    if len(data) > get_settings().max_upload_bytes:
-        raise HTTPException(413, "File too large (max 4 MB).")
+    limit = get_settings().max_upload_bytes
+    data = await file.read(limit + 1)  # Content-Length is checked up front, but may be missing or wrong
+    if len(data) > limit:
+        raise HTTPException(413, f"File too large (max {limit // 1_000_000} MB).")
     return asdict(import_fit(conn, data, file.filename or "upload.fit", source))
