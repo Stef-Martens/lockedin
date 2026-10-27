@@ -13,6 +13,7 @@ from lockedin.agenda.zwo import ZwiftWorkout, duration_s, filename, render, stri
 from lockedin.fitness import ftp_at
 from lockedin.focus.sessions import counted
 from lockedin.plan.routines import routines
+from lockedin.timeoff import CATEGORIES, WORDS, clash, entry_on, item_category, off_on
 from lockedin.timeutil import TZ
 
 Sport = Literal["gym", "bike", "run", "swim", "rest", "other"]
@@ -124,6 +125,14 @@ def _check_routine(conn: Connection, now: datetime, routine: str | None) -> None
         raise ValueError(f"Unknown routine '{routine}'. Your routines: {known}.")
 
 
+def _check_time_off(conn: Connection, day: date, sport: str, routine: str | None) -> None:
+    """The coach doesn't plan something that is off on that day."""
+    off = off_on(conn, day)
+    category = item_category(conn, {"sport": sport, "routine": routine}) if off else None
+    if message := clash(off, category):
+        raise ValueError(f"{message}, so I can't plan it then.")
+
+
 def _zwift_json(item: ItemIn) -> str | None:
     return json.dumps(item.zwift.model_dump()) if item.zwift else None
 
@@ -202,15 +211,34 @@ def items_between(conn: Connection, now: datetime, start: date, end: date, resul
     ftp = ftp_at(conn, now)
     goals = _goal_labels(conn, {r.goal_id for r in rows})
     items = [_out(r, ftp, local_today(now), done, goals) for r in rows]
+    offs: dict[date, dict[str, date]] = {}
+    cats: dict[tuple, str | None] = {}
+    for item, r in zip(items, rows, strict=True):
+        off = offs.setdefault(r.day, off_on(conn, r.day))
+        if off and (r.sport, r.routine) not in cats:
+            cats[r.sport, r.routine] = item_category(conn, {"sport": r.sport, "routine": r.routine})
+        item["clash"] = clash(off, cats.get((r.sport, r.routine)))
     for item in items:
         item["result"] = result_line(conn, item) if results and item["done"] else None
     return items
 
 
+def _time_off(conn: Connection, days: list[date]) -> list[dict]:
+    out = []
+    for day in days:
+        if (entry := entry_on(conn, day)) is None:
+            continue
+        off = off_on(conn, day)
+        words = "everything off" if "all" in off else ", ".join(f"no {WORDS[c]}" for c in CATEGORIES if c in off)
+        out.append({"day": day.isoformat(), "reason": entry["reason"], "label": entry["label"], "text": words})
+    return out
+
+
 def week(conn: Connection, now: datetime, any_day: date | None) -> dict:
     start = monday(any_day or local_today(now))
+    days = [start + timedelta(days=i) for i in range(7)]
     return {"week_start": start.isoformat(), "today": local_today(now).isoformat(),
-            "items": items_between(conn, now, start, start + timedelta(days=6), results=True)}
+            "items": items_between(conn, now, start, days[-1], results=True), "time_off": _time_off(conn, days)}
 
 
 def get_item(conn: Connection, now: datetime, item_id: int) -> dict:
@@ -223,6 +251,8 @@ def get_item(conn: Connection, now: datetime, item_id: int) -> dict:
 def create(conn: Connection, now: datetime, item: ItemIn, source: str) -> dict:
     _check_routine(conn, now, item.routine)
     _check_goal(conn, item.goal_id)
+    if source == "coach":
+        _check_time_off(conn, item.day, item.sport, item.routine)
     item_id = conn.execute(text(
         "insert into agenda_items (day, sport, title, note, optional, routine, zwift, targets, goal_id, sort, source) "
         "values (:day, :sport, :title, :note, :optional, :routine, cast(:zwift as jsonb), cast(:targets as jsonb), "
@@ -232,7 +262,7 @@ def create(conn: Connection, now: datetime, item: ItemIn, source: str) -> dict:
     return get_item(conn, now, item_id)
 
 
-def update(conn: Connection, now: datetime, item_id: int, patch: ItemPatch) -> dict:
+def update(conn: Connection, now: datetime, item_id: int, patch: ItemPatch, source: str = "manual") -> dict:
     row = conn.execute(text(f"select {FIELDS} from agenda_items where id = :i for update"), {"i": item_id}).first()
     if row is None:
         raise LookupError(f"There's no agenda item {item_id}.")
@@ -243,6 +273,8 @@ def update(conn: Connection, now: datetime, item_id: int, patch: ItemPatch) -> d
         _check_routine(conn, now, merged.routine)
     if "goal_id" in changes:
         _check_goal(conn, merged.goal_id)
+    if source == "coach" and {"day", "sport", "routine"} & changes.keys():
+        _check_time_off(conn, merged.day, merged.sport, merged.routine)
     reset = ", zwift_synced_at = null" if FILE_FIELDS & changes.keys() else ""
     conn.execute(text(
         "update agenda_items set day = :day, sport = :sport, title = :title, note = :note, optional = :optional, "
@@ -259,12 +291,14 @@ def delete(conn: Connection, item_id: int) -> None:
 
 
 def zwift_feed(conn: Connection, now: datetime) -> list[dict]:
-    """The .zwo files that belong in Zwift now: bike workouts from today on, with names unique even on a
+    """The .zwo files that belong in Zwift now: bike workouts from today on (not on days cycling is off), with names unique even on a
     case-insensitive disk. Nothing is marked as in Zwift until the Mac confirms it wrote the file."""
     rows = conn.execute(text(
         f"select {FIELDS} from agenda_items where sport = 'bike' and zwift is not null and day >= :today "
         "order by day, sort, id"
     ), {"today": local_today(now)}).all()
+    bike_off = {d: "bike" in off_on(conn, d) for d in {r.day for r in rows}}
+    rows = [r for r in rows if not bike_off[r.day]]
     taken: set[str] = set()
     out = []
     for r in rows:

@@ -224,7 +224,7 @@ def _save_agenda(conn: Connection, args: dict, now: datetime) -> list[dict]:
                     if type(change.get("id")) is not int:  # bool is an int to Python, not an id
                         raise ValueError(f"'{op}' needs the item's id (from get_agenda)")
                     if op == "update":
-                        out.append({"op": "updated", **agenda.update(conn, now, change["id"], agenda.ItemPatch(**fields))})
+                        out.append({"op": "updated", **agenda.update(conn, now, change["id"], agenda.ItemPatch(**fields), "coach")})
                     else:
                         agenda.delete(conn, change["id"])
                         out.append({"op": "deleted", "id": change["id"]})

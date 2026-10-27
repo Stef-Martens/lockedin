@@ -8,6 +8,8 @@ from typing import Literal
 from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy import Connection, text
 
+from lockedin.focus.sessions import counted
+
 CATEGORIES = ("run", "bike", "swim", "upper", "core", "lower", "all")
 REGIONS = {"upper": ("arms", "back", "chest", "shoulders"), "core": ("core",), "lower": ("legs",)}
 WORDS = {"run": "running", "bike": "cycling", "swim": "swimming", "upper": "upper body", "core": "core",
@@ -143,3 +145,29 @@ def describe(off: dict[str, date]) -> str:
     if "all" in off:
         return f"everything off until {_fmt(off['all'])}"
     return ", ".join(f"no {WORDS[c]} until {_fmt(off[c])}" for c in CATEGORIES if c in off)
+
+
+def item_category(conn: Connection, item: dict) -> str | None:
+    """The category an agenda item falls under: its sport for run/bike/swim; for a gym routine, the region
+    (upper/core/lower) holding more than half of the routine's last working sets by primary muscle."""
+    if item["sport"] in ("run", "bike", "swim"):
+        return item["sport"]
+    if item["sport"] != "gym" or not item.get("routine"):
+        return None
+    rows = conn.execute(text(
+        "select coalesce(array_agg(distinct m.region) filter (where m.region is not null), '{}') as regions "
+        "from gym_sets s join exercises e on e.id = s.exercise_id "
+        "left join library_muscles lm on lm.exercise_name = e.name and lm.role = 'primary' "
+        "left join muscles m on m.key = lm.muscle_key "
+        "where s.workout_id = (select a.id from gym_workouts w join activities a on a.id = w.activity_id "
+        f"where w.title = :t and {counted('a')} order by a.start_at desc limit 1) and s.set_type <> 'warmup' "
+        "group by s.id"), {"t": item["routine"]}).all()
+    for category, regions in REGIONS.items():
+        if 2 * sum(bool(set(regions) & set(r.regions)) for r in rows) > len(rows):
+            return category
+    return None
+
+
+def clash(off: dict[str, date], category: str | None) -> str | None:
+    """"Running is off until 17 Dec", when `category` is off in `off` (from off_on)."""
+    return f"{WORDS[category].capitalize()} is off until {_fmt(off[category])}" if category in off else None

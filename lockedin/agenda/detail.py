@@ -1,7 +1,7 @@
 """Everything the session page shows: the plan, and once done, the plan against what was done."""
 
 import re
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 from sqlalchemy import Connection, text
 
@@ -12,6 +12,7 @@ from lockedin.agenda.zwo import ZwiftWorkout, duration_s
 from lockedin.fitness import ftp_at, known_ftp_at
 from lockedin.focus.zones import hr_zone_bounds, max_hr_at
 from lockedin.plan.build import build_plan
+from lockedin.timeoff import back_from, off_on
 from lockedin.timeutil import TZ
 
 
@@ -79,6 +80,16 @@ def _gym_rows(conn: Connection, plan_items: list, activity_id: int) -> list[dict
     return rows
 
 
+def _easy_back(conn: Connection, item: dict) -> str | None:
+    """A run, ride or swim in the first two weeks after that activity's time off ended."""
+    if item["sport"] not in ("run", "bike", "swim"):
+        return None
+    day = date.fromisoformat(item["day"])
+    if item["sport"] in off_on(conn, day) or back_from(conn, day, item["sport"], 14) is None:
+        return None
+    return "First two weeks back after your time off: keep it easy."
+
+
 def detail(conn: Connection, now: datetime, item_id: int) -> dict:
     item = get_item(conn, now, item_id)  # LookupError → 404
     a = act.activity(conn, item["activity_id"]) if item["activity_id"] else None
@@ -123,4 +134,4 @@ def detail(conn: Connection, now: datetime, item_id: int) -> dict:
         elif item["sport"] == "gym":
             actual["rows"] = _gym_rows(conn, plan.get("items", []), a.id)
     item["result"] = act.result_line(conn, item) if a is not None else None
-    return {"item": item, "plan": plan, "actual": actual}
+    return {"item": item, "plan": plan, "actual": actual, "easy_back": _easy_back(conn, item)}
