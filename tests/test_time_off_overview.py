@@ -110,13 +110,27 @@ def test_back_from_card_for_fourteen_days(client, clean_db, at):
     assert client.get("/api/overview", headers=H).json()["back_from"] is None
 
 
-def test_back_from_card_without_a_label_and_not_for_vacations(client, clean_db, at):
+def test_back_from_card_without_a_label(client, clean_db, at):
     with clean_db.begin() as c:
         make(c, label=None, start=date(2026, 9, 1), swim=date(2026, 10, 20))
-        make(c, "vacation", None, start=date(2026, 10, 10), all=date(2026, 10, 24))
     at(NOW)
     assert client.get("/api/overview", headers=H).json()["back_from"] == \
         {"title": "Back from your operation", "label": None}
+
+
+def test_a_vacation_never_makes_a_back_from_card(client, clean_db, at):
+    with clean_db.begin() as c:
+        make(c, "vacation", "Italy", start=date(2026, 10, 10), all=date(2026, 10, 24))
+    at(NOW)
+    assert client.get("/api/overview", headers=H).json()["back_from"] is None
+
+
+def test_a_later_ending_vacation_does_not_hide_the_injury_card(client, clean_db, at):
+    with clean_db.begin() as c:
+        make(c, label="Knee operation", start=date(2026, 9, 1), swim=date(2026, 10, 20))
+        make(c, "vacation", "Italy", start=date(2026, 10, 10), all=date(2026, 10, 24))
+    at(NOW)
+    assert client.get("/api/overview", headers=H).json()["back_from"]["label"] == "Knee operation"
 
 
 def test_back_from_card_gone_when_off_again(client, clean_db, at):
