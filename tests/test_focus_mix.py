@@ -16,7 +16,7 @@ def test_steady_runs_get_intervals_and_a_long_run(conn):
     assert mix.counts["steady"] == 4 and mix.counts["hard"] == 0
     sugg = session_suggestions(conn, NOW)
     assert [s.title for s in sugg] == ["Long easy run", "Intervals"]
-    assert sugg[0].detail == "60–75 min in zone 2 (HR 114–133 bpm)"
+    assert sugg[0].detail == "60–75 min easy (HR 124–148 bpm)"
     assert sugg[1].detail == "6 × 3 min hard (zone 4, HR 152–171 bpm) with 2 min easy jogs"
 
 
@@ -47,4 +47,4 @@ def test_unknown_zones_omit_the_numbers(conn):
     for d in (2, 6, 11):
         add_session(conn, "run", NOW - timedelta(days=d), 2700, distance_m=7000)
     sugg = session_suggestions(conn, NOW)
-    assert sugg[0].detail == "60–75 min in zone 2"
+    assert sugg[0].detail == "60–75 min easy, at a pace you can talk at"

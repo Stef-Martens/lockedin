@@ -30,11 +30,12 @@ def test_power_and_distance_prs(conn):
 
 
 def test_fastest_run_only_counts_runs_of_3km(conn):
-    add_session(conn, "run", NOW - timedelta(days=30), 2400, distance_m=8000, avg_pace=330.0)
-    add_session(conn, "run", NOW - timedelta(days=2), 600, distance_m=2000, avg_pace=280.0)   # too short
-    add_session(conn, "run", NOW - timedelta(days=1), 1500, distance_m=5000, avg_pace=310.0)
+    add_session(conn, "run", NOW - timedelta(days=30), 1650, distance_m=5000, avg_pace=330.0)
+    add_session(conn, "run", NOW - timedelta(days=20), 500, distance_m=2000, avg_pace=250.0)  # too short to count
+    add_session(conn, "run", NOW - timedelta(days=2), 560, distance_m=2000, avg_pace=280.0)   # too short
+    add_session(conn, "run", NOW - timedelta(days=1), 1550, distance_m=5000, avg_pace=310.0)
     fast = [w for w in recent_wins(conn, NOW) if w.kind == "fastest_run"]
-    assert [w.detail for w in fast] == ["5:10 /km (was 5:30)"]
+    assert [w.detail for w in fast] == ["5:10 /km over 5.0 km (was 5:30)"]
 
 
 def test_watch_duplicate_is_never_a_win(conn):
