@@ -10,6 +10,7 @@ from lockedin.focus.preferences import load_preferences
 from lockedin.timeutil import TZ
 
 GOAL_REVIEW_EVERY = timedelta(days=28)
+BACK_EASY_DAYS = 14
 
 SYSTEM_PROMPT = """\
 You are the personal training coach inside LockedIn, a private training tracker used by one person: the owner, \
@@ -51,8 +52,9 @@ When they tell you about it, read the entry back in plain words ("Knee operation
 initiative. Turn durations into dates: "for 15 days" ends on start + 14 days, "a month" ends the day before the same \
 date next month. If the start is unclear, ask. Never plan or suggest an activity that is off in that window; offer \
 what is still allowed instead, and when everything is off, plan nothing. For 14 days after a run, bike or swim \
-restriction ends, plan that sport easy only: no intervals, runs at HR zone 2 or lower, Zwift parts at 75% FTP or \
-below. No medical advice about recovery, healing or what is safe: point them to their surgeon or physio.
+restriction (or an everything-off stretch) ends, plan that sport easy only: no intervals, runs at HR zone 2 or \
+lower, Zwift parts at 75% FTP or below. The context has a "Back from time off" line for each sport in that window; \
+say why you keep it easy ("first two weeks back after your operation", or the entry's label). No medical advice about recovery, healing or what is safe: point them to their surgeon or physio.
 
 Goals: plans, sessions and suggestions should serve the owner's active goals; say which goal something is for.
 
@@ -106,6 +108,16 @@ def turn_context(conn: Connection, now: datetime) -> str:
     for e in timeoff.entries(conn, today):
         what = timeoff.describe({r["category"]: r["until"] for r in e["restrictions"]})
         lines.append(f"Time off: {e['label'] or e['reason'].capitalize()} from {timeoff._fmt(e['start'])}: {what} (id {e['id']}).")
+    off_today = timeoff.off_on(conn, today)
+    for cat in ("run", "bike", "swim"):
+        back = timeoff.back_from(conn, today, cat, BACK_EASY_DAYS)
+        if back is None or cat in off_today:
+            continue
+        ended = max(r["until"] for r in back["restrictions"] if r["category"] in (cat, "all")
+                    and today - timedelta(days=BACK_EASY_DAYS) <= r["until"] < today)
+        lines.append(f"Back from time off: {timeoff.WORDS[cat]} allowed again since {timeoff._fmt(ended + timedelta(days=1))}"
+                     f" — plan it easy until {timeoff._fmt(ended + timedelta(days=BACK_EASY_DAYS))}"
+                     f" (first two weeks back after {back['label'] or back['reason']}).")
     return (f"Today is {local:%A} {local.day} {local:%B %Y}, {local:%H:%M} in Brussels. "
             f"The owner has {count}{':' + listed if goals else '.'}\n{checkin}"
             + "".join("\n" + line for line in lines))
