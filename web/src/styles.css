@@ -1,7 +1,7 @@
 /* Night Shift: dark ground, condensed display numbers, one lime accent. */
 :root {
   color-scheme: dark;
-  --tabbar-h: 52px;  /* phone tab bar, without the safe area; the Coach composer sits on top of it */
+  --tabbar-h: 58px;  /* phone tab bar, without the safe area; the Coach composer sits on top of it */
   --page: #0f1011;
   --surface: #17191b;
   --surface-raised: #1e2124;
@@ -129,23 +129,34 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-
     background: rgba(15, 16, 17, 0.92); backdrop-filter: blur(8px); border-bottom: 1px solid var(--hairline);
   }
   .topbar .brand { font-size: 22px; padding: 0; }
-  .main { padding: 18px calc(var(--gutter) + env(safe-area-inset-right)) calc(96px + env(safe-area-inset-bottom)) calc(var(--gutter) + env(safe-area-inset-left)); }
-  .topbar .link-btn { padding: 10px 4px; margin: -10px -4px; }
+  .topbar .sync { font-size: 12.5px; color: var(--ink-muted); }
+  .main { padding: 18px calc(var(--gutter) + env(safe-area-inset-right)) calc(var(--tabbar-h) + 44px + env(safe-area-inset-bottom)) calc(var(--gutter) + env(safe-area-inset-left)); }
+  /* Each tab fills the bar's full height (58px), icon over label: well past the 44px tap minimum. */
   .tabbar {
-    display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); align-items: center; position: fixed;
+    display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); align-items: stretch; position: fixed;
     height: calc(var(--tabbar-h) + env(safe-area-inset-bottom)); box-sizing: border-box; bottom: 0; left: 0; right: 0; z-index: 10;
-    padding: 8px 6px calc(10px + env(safe-area-inset-bottom)); background: #0b0c0d; border-top: 1px solid var(--hairline);
+    padding: 0 calc(4px + env(safe-area-inset-right)) env(safe-area-inset-bottom) calc(4px + env(safe-area-inset-left));
+    background: #0b0c0d; border-top: 1px solid var(--hairline);
   }
-  .tabbar a, .tab-more > button { text-align: center; font-size: 11.5px; padding: 8px 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-3); text-decoration: none; }
+  .tabbar a, .tab-more > button {
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; min-width: 0; min-height: 44px;
+    font-size: 11px; line-height: 1.1; color: var(--ink-3); text-decoration: none; -webkit-tap-highlight-color: transparent;
+  }
+  .tabbar a > span, .tab-more > button > span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .tabbar a.active, .tab-more > button.active { color: var(--accent); font-weight: 600; }
+  .tabbar .icon { flex: none; }
   .tab-more { position: relative; display: flex; }
-  .tab-more > button { flex: 1; background: none; border: 0; color: var(--ink-3); cursor: pointer; font-family: inherit; }
+  .tab-more > button { flex: 1; background: none; border: 0; padding: 0; cursor: pointer; font-family: inherit; }
   .tab-more-menu {
-    position: absolute; right: 4px; bottom: calc(100% + 10px); min-width: 160px; padding: 6px; background: var(--surface-raised);
+    position: absolute; right: 4px; bottom: calc(100% + 10px); min-width: 180px; padding: 6px; background: var(--surface-raised);
     border: 1px solid var(--axis); border-radius: 12px; box-shadow: 0 12px 28px rgba(0, 0, 0, 0.5); display: flex; flex-direction: column;
   }
-  .tab-more-menu a { text-align: left; padding: 10px 12px; font-size: 14px; border-radius: 8px; color: var(--ink-2); }
+  .tab-more-menu a, .tab-more-menu button {
+    display: flex; align-items: center; min-height: 44px; text-align: left; padding: 0 12px; font-size: 15px; border-radius: 8px;
+    color: var(--ink-2); text-decoration: none; background: none; border: 0; font-family: inherit; cursor: pointer;
+  }
   .tab-more-menu a.active { color: var(--accent); }
+  .tab-more-menu .tab-more-signout { margin-top: 4px; border-top: 1px solid var(--axis); border-radius: 0 0 8px 8px; color: var(--ink-3); }
   h1 { font-size: 36px; }
 }
 
@@ -180,6 +191,7 @@ a.tile { display: block; color: var(--ink); text-decoration: none; }
 .btn.primary:hover { background: var(--accent-hover); transform: translateY(-1px); }
 .btn.ghost { border-color: transparent; color: var(--ink-3); padding: 6px 8px; }
 .btn:disabled { opacity: 0.5; cursor: default; transform: none; }
+a.btn { display: inline-block; text-decoration: none; }
 .segmented { display: inline-flex; background: var(--surface); border-radius: 12px; padding: 4px; gap: 2px; flex-wrap: wrap; }
 .segmented button, .segmented a {
   border: 0; background: transparent; color: var(--ink-3); padding: 8px 16px; border-radius: 9px; cursor: pointer;
@@ -527,7 +539,9 @@ a.tile { display: block; color: var(--ink); text-decoration: none; }
 .big-check { width: 60px; height: 60px; border-radius: 50%; display: grid; place-items: center; border: 3px dashed var(--axis); color: var(--ink-muted); font-size: 14px; }
 .big-check.done { border: 0; background: var(--accent); color: var(--accent-ink); font-size: 32px; font-weight: 800; }
 .session-grid { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 16px; align-items: start; }
-.session-chart { width: 100%; height: auto; display: block; margin: 6px 0 10px; overflow: visible; }
+/* pan-y: a finger sliding sideways scrubs the readout, up and down still scrolls the page. */
+.session-chart { width: 100%; height: auto; display: block; margin: 6px 0 10px; overflow: visible; touch-action: pan-y; }
+.session-chart.scrub { cursor: crosshair; -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
 .session-chart polygon.work { fill: var(--sport-bike); }
 .session-chart polygon.easy { fill: #2c4a6e; }
 .session-chart .ftp-line { stroke: var(--ink-muted); stroke-dasharray: 4 4; }
@@ -571,3 +585,40 @@ a.tile { display: block; color: var(--ink); text-decoration: none; }
 }
 
 .table td.num, .table th.num { white-space: nowrap; }
+
+/* ---------- Small shared pieces (were repeated inline styles) ---------- */
+.back-link { font-size: 14px; color: var(--ink-3); text-decoration: none; }
+.back-link:hover { color: var(--ink); }
+.flush { margin: 0; }
+.small-print { font-size: 13px; margin-bottom: 0; }
+.ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.column { display: flex; flex-direction: column; gap: 14px; }
+.check-row { gap: 8px; font-size: 14px; }
+fieldset.plain { border: 0; padding: 0; margin: 0; min-width: 0; }
+.quiet-note { margin: 0; font-size: 13px; }
+.big-stat { font-size: 48px; margin-top: 10px; }
+.mix-bar { display: flex; height: 12px; border-radius: 6px; overflow: hidden; margin-top: 18px; background: var(--hairline); gap: 2px; }
+.mix-legend { font-size: 13px; color: var(--ink-3); margin-top: 10px; gap: 8px; }
+.tag-form { padding: 12px 0; border-top: 1px solid var(--hairline); }
+.history-delta { display: block; font-size: 12px; color: var(--ink-3); }
+.guide-list { margin: 0; padding-left: 18px; font-size: 14px; color: var(--ink-2); line-height: 1.7; }
+.checkin-date { gap: 10px; font-size: 14px; color: var(--ink-3); }
+.checkin-date input { background: var(--sunken); border: 1px solid var(--axis); border-radius: 10px; padding: 9px 10px; color: var(--ink); color-scheme: dark; font-size: 15px; }
+.checkin-meter { width: 160px; height: 6px; background: var(--hairline); border-radius: 3px; overflow: hidden; }
+.checkin-meter > div { height: 100%; background: var(--accent); border-radius: 3px; transition: width 0.25s ease; }
+.reminder-hevy { gap: 10px; margin-top: 14px; color: var(--ink-2); cursor: pointer; }
+.reminder-hevy input { width: 18px; height: 18px; accent-color: var(--accent); }
+.load-form-title { margin-top: 10px; }
+@media (prefers-reduced-motion: reduce) { .checkin-meter > div { transition: none; } }
+
+/* ---------- Touch: no zoom on focus, 44px tap targets ---------- */
+@media (max-width: 899px), (pointer: coarse) {
+  /* iOS Safari zooms into any field under 16px when it gets focus. */
+  .field input, .field select, .field textarea, .checkin-date input { font-size: 16px; }
+  .chip { min-height: 44px; }
+  /* Compact buttons keep their look; an invisible band above and below takes the tap. */
+  .btn.small, .btn.ghost { position: relative; }
+  .btn.small::after, .btn.ghost::after { content: ""; position: absolute; left: 0; right: 0; top: -8px; bottom: -8px; }
+  .btn.ghost { min-height: 34px; }
+  .link-btn { display: inline-flex; align-items: center; min-height: 44px; }
+}
