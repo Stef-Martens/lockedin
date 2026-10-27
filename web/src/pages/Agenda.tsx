@@ -3,11 +3,11 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { PageHeader } from "../components/ui";
 import { apiFetch } from "../lib/api";
 import { SPORT_COLOR, SPORT_NAME, weekDays, type AgendaItem, type AgendaSport, type AgendaWeek } from "../lib/agenda";
+import { formatDay } from "../lib/format";
 import { stagger } from "../lib/motion";
 import { shiftWeek } from "../lib/musclemap";
 import type { PlanDays } from "../lib/plan";
 
-const fmt = (iso: string, opts: Intl.DateTimeFormatOptions) => new Date(`${iso}T12:00`).toLocaleDateString("en-GB", opts);
 const ZWIFT_TEXT = { synced: "In Zwift ✓", pending: "Goes to Zwift at the next sync" };
 
 function ItemCard({ item, past, onOpen, i }: { item: AgendaItem; past: boolean; onOpen: () => void; i: number }) {
@@ -81,7 +81,7 @@ function AddSheet({ day, onDone, onClose }: { day: string; onDone: () => void; o
     apiFetch("/api/agenda", { method: "POST", body: JSON.stringify(body) }).then(onDone).catch((err) => setError(err.message));
   };
   return (
-    <Sheet title={`Add to ${fmt(day, { weekday: "long", day: "numeric", month: "short" })}`} onClose={onClose}>
+    <Sheet title={`Add to ${formatDay(day, { weekday: "long", day: "numeric", month: "short" })}`} onClose={onClose}>
       <form onSubmit={add} className="stack">
         <label className="field">What
           <select value={form.sport} onChange={(e) => setSport(e.target.value as AgendaSport)}>
@@ -136,7 +136,7 @@ export default function Agenda() {
   if (error) return <p className="error">{error}</p>;
   if (!data) return <p className="muted">Loading…</p>;
   const days = weekDays(data.week_start);
-  const range = `${fmt(days[0], { day: "numeric", month: "short" })} – ${fmt(days[6], { day: "numeric", month: "short" })}`;
+  const range = `${formatDay(days[0], { day: "numeric", month: "short" })} – ${formatDay(days[6], { day: "numeric", month: "short" })}`;
   const isThisWeek = days.includes(data.today);
   const done = () => { setAdding(null); setReloads((n) => n + 1); };
   const from = week ?? data.week_start;  // from the URL, so quick clicks add up before the data arrives
@@ -150,7 +150,7 @@ export default function Agenda() {
           <span className="agenda-range">{range}</span>
           <button className="btn" aria-label="Next week" onClick={() => setParams({ week: shiftWeek(from, 1) })}>›</button>
           {!isThisWeek && <button className="btn" onClick={() => setParams({})}>Today</button>}
-          <Link to="/coach" className="btn primary" style={{ textDecoration: "none" }}>Plan with coach</Link>
+          <Link to="/coach" className="btn primary">Plan with coach</Link>
         </div>} />
       <div className="legend">
         {(["bike", "gym", "run", "swim", "rest"] as AgendaSport[]).map((s) => (
@@ -161,13 +161,13 @@ export default function Agenda() {
         {days.map((d, n) => {
           const items = data.items.filter((i) => i.day === d);
           const past = d < data.today;
-          const long = fmt(d, { weekday: "long" });
+          const long = formatDay(d, { weekday: "long" });
           return (
             <section key={d} className={`agenda-day${d === data.today ? " today" : ""}${past ? " past" : ""}`}
-              aria-label={`${fmt(d, { weekday: "short" })} ${fmt(d, { day: "numeric", month: "short" })}`}>
+              aria-label={`${formatDay(d, { weekday: "short" })} ${formatDay(d, { day: "numeric", month: "short" })}`}>
               <div className="agenda-day-head">
-                <b>{fmt(d, { weekday: "short" })}</b>
-                <span>{fmt(d, { day: "numeric" })}{d === data.today ? " · today" : ""}</span>
+                <b>{formatDay(d, { weekday: "short" })}</b>
+                <span>{formatDay(d, { day: "numeric" })}{d === data.today ? " · today" : ""}</span>
               </div>
               <div className="agenda-day-items">
                 {items.map((it, i) => <ItemCard key={it.id} item={it} past={past} i={n + i} onOpen={() => navigate(`/agenda/${it.id}`)} />)}

@@ -4,11 +4,11 @@ import BodyFigure from "../components/BodyFigure";
 import { Card, PageHeader } from "../components/ui";
 import { ApiError, apiFetch } from "../lib/api";
 import { focusLine } from "../lib/focus";
+import { formatDay } from "../lib/format";
 import { CARDIO_COLOR, CARDIO_PHRASE, shadeLevel, shiftWeek } from "../lib/musclemap";
 import type { MapMuscle, MuscleMap } from "../lib/types";
 
-const day = (iso: string, opts: Intl.DateTimeFormatOptions = { weekday: "short", day: "numeric", month: "short" }) =>
-  new Date(`${iso}T12:00`).toLocaleDateString("en-GB", opts);
+const day = (iso: string, opts: Intl.DateTimeFormatOptions = { weekday: "short", day: "numeric", month: "short" }) => formatDay(iso, opts);
 const num = (x: number) => (Number.isInteger(x) ? `${x}` : x.toFixed(1));
 const SHADES = ["No gym sets", "A little", "On target", "Lots"];
 const GAP = 12;
@@ -147,7 +147,7 @@ export default function Muscles() {
     <>
       <PageHeader eyebrow="What you trained" title="Muscles"
         sub="Every muscle starts grey on Monday and fills in as you log gym sets. Stripes are time on the bike, running or swimming."
-        right={<Link to="/plan" className="btn primary" style={{ textDecoration: "none" }}>Plan a workout</Link>} />
+        right={<Link to="/plan" className="btn primary">Plan a workout</Link>} />
 
       <Card i={1}>
         <div className="row spread" style={{ marginBottom: 12 }}>

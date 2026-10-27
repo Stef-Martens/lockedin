@@ -1,15 +1,13 @@
 import { useState } from "react";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { formatMinutes, type WeekRow } from "../lib/focus";
-import { SPORT_LABEL, type Sport } from "../lib/format";
+import { dayMonth, SPORT_LABEL, type Sport } from "../lib/format";
 import { prefersReducedMotion } from "../lib/motion";
 import { useCssVar } from "../lib/useCssVar";
 import SportDot from "./SportDot";
 import { Card, Segmented } from "./ui";
 
 const STACK: Sport[] = ["bike", "run", "swim", "gym", "other"];
-const shortDate = (iso: string) =>
-  new Date(`${iso}T12:00:00Z`).toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "Europe/Brussels" });
 
 /** Weekly training minutes stacked by sport; colour follows the sport, never its rank. */
 export default function WeeklyVolumeChart({ rows, weeks, onWeeks, i }: {
@@ -48,7 +46,7 @@ export default function WeeklyVolumeChart({ rows, weeks, onWeeks, i }: {
             <tbody>
               {[...rows].reverse().map((r) => (
                 <tr key={r.week_start}>
-                  <td>{shortDate(r.week_start)}</td>
+                  <td>{dayMonth(r.week_start)}</td>
                   {shown.map((s) => <td key={s} className="num">{r[s] ? formatMinutes(r[s]) : "–"}</td>)}
                   <td className="num">{formatMinutes(STACK.reduce((t, s) => t + r[s], 0))}</td>
                 </tr>
@@ -60,7 +58,7 @@ export default function WeeklyVolumeChart({ rows, weeks, onWeeks, i }: {
         <ResponsiveContainer width="100%" height={240}>
           <BarChart data={rows} margin={{ top: 8, right: 4, bottom: 0, left: 0 }} barCategoryGap="28%">
             <CartesianGrid vertical={false} stroke={grid} />
-            <XAxis dataKey="week_start" tickFormatter={shortDate} tick={{ fill: muted, fontSize: 12 }} stroke={axis} tickLine={false} minTickGap={16} />
+            <XAxis dataKey="week_start" tickFormatter={dayMonth} tick={{ fill: muted, fontSize: 12 }} stroke={axis} tickLine={false} minTickGap={16} />
             <YAxis tickFormatter={(m: number) => (m >= 60 ? `${Math.round(m / 60)}h` : `${m}`)} tick={{ fill: muted, fontSize: 12 }}
               axisLine={false} tickLine={false} width={36} allowDecimals={false} />
             <Tooltip
@@ -70,7 +68,7 @@ export default function WeeklyVolumeChart({ rows, weeks, onWeeks, i }: {
                 const row = payload[0].payload as WeekRow;
                 return (
                   <div className="chart-tooltip num">
-                    <div className="muted">Week of {shortDate(String(label))}</div>
+                    <div className="muted">Week of {dayMonth(String(label))}</div>
                     {STACK.filter((s) => row[s] > 0).map((s) => (
                       <div key={s} className="row" style={{ gap: 6 }}><SportDot sport={s} />{SPORT_LABEL[s]} {formatMinutes(row[s])}</div>
                     ))}
