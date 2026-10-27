@@ -1,21 +1,45 @@
 """Single-owner auth: Supabase JWTs for the app, a static bearer token for the Mac sync script."""
 
 import hmac
+import logging
 from functools import lru_cache
 from typing import Literal
 
 import jwt
 from fastapi import Header, HTTPException
 
-from lockedin.config import get_settings
+from lockedin.config import Settings, get_settings
+
+log = logging.getLogger(__name__)
 
 NOT_SIGNED_IN = "Not signed in."
 MIN_SYNC_TOKEN_LEN = 16  # a placeholder like "change-me" must never unlock uploads
+# The local Supabase stack's public default: anyone could sign an owner token with it.
+LOCAL_JWT_SECRET = "super-secret-jwt-token-with-at-least-32-characters-long"
+MIN_JWT_SECRET_BYTES = 32
+REQUIRED_CLAIMS = ["exp", "sub", "email", "iss", "aud"]
 
 
 @lru_cache
 def _jwks_client() -> jwt.PyJWKClient:
-    return jwt.PyJWKClient(f"{get_settings().supabase_url}/auth/v1/.well-known/jwks.json", cache_keys=True)
+    # Keys cached 10 min (an unknown kid refetches); a slow auth server fails the request in 5 s, not 30.
+    return jwt.PyJWKClient(f"{get_settings().supabase_url}/auth/v1/.well-known/jwks.json", cache_keys=True,
+                           lifespan=600, timeout=5)
+
+
+@lru_cache
+def _weak_secret_warning() -> None:
+    log.warning("SUPABASE_JWT_SECRET is the local default or shorter than %d bytes; HS256 tokens are refused. "
+                "Set the project's real JWT secret, or clear it to use signing keys only.", MIN_JWT_SECRET_BYTES)
+
+
+def _hs256_secret(s: Settings) -> str | None:
+    """The legacy shared secret, unless it's guessable outside the local stack (then HS256 fails closed)."""
+    secret = s.supabase_jwt_secret
+    if secret and not s.is_local and (secret == LOCAL_JWT_SECRET or len(secret.encode()) < MIN_JWT_SECRET_BYTES):
+        _weak_secret_warning()
+        return None
+    return secret
 
 
 def _bearer(authorization: str | None) -> str:
@@ -26,19 +50,22 @@ def _bearer(authorization: str | None) -> str:
 
 def _owner_email(token: str) -> str:
     s = get_settings()
+    checks = {"audience": "authenticated", "issuer": f"{s.supabase_url}/auth/v1",
+              "options": {"require": REQUIRED_CLAIMS}}
     try:
         alg = jwt.get_unverified_header(token).get("alg")
         if alg == "HS256":
-            if not s.supabase_jwt_secret:
+            secret = _hs256_secret(s)
+            if not secret:
                 raise HTTPException(401, NOT_SIGNED_IN)
-            claims = jwt.decode(token, s.supabase_jwt_secret, algorithms=["HS256"], audience="authenticated")
+            claims = jwt.decode(token, secret, algorithms=["HS256"], **checks)
         else:
             key = _jwks_client().get_signing_key_from_jwt(token).key
-            claims = jwt.decode(token, key, algorithms=["ES256", "RS256"], audience="authenticated")
+            claims = jwt.decode(token, key, algorithms=["ES256", "RS256"], **checks)
     except (jwt.PyJWTError, jwt.PyJWKClientError) as e:
         raise HTTPException(401, NOT_SIGNED_IN) from e
-    email = str(claims.get("email", "")).lower()
-    if email != s.owner_email.lower():
+    email = str(claims["email"]).lower()
+    if email != s.owner_email.lower() or (s.owner_id and str(claims["sub"]).lower() != s.owner_id):
         raise HTTPException(401, NOT_SIGNED_IN)
     return email
 

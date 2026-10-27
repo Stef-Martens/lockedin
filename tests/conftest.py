@@ -109,7 +109,8 @@ def token_for(email: str = OWNER_EMAIL, *, expires_in: int = 3600, secret: str =
     import jwt
     now = int(time.time())
     return jwt.encode({"sub": "u1", "email": email, "aud": "authenticated", "role": "authenticated",
-                       "iat": now, "exp": now + expires_in}, secret, algorithm="HS256")
+                       "iss": f"{os.environ['SUPABASE_URL']}/auth/v1", "iat": now, "exp": now + expires_in},
+                      secret, algorithm="HS256")
 
 
 def owner_headers() -> dict:
