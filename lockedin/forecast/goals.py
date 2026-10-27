@@ -48,6 +48,17 @@ def off_days(conn: Connection, category: str | None, first: date, last: date) ->
     return out
 
 
+def windows(days: Collection[date]) -> list[dict]:
+    """Days merged into runs of consecutive days, for shading: [{"start", "end"}] with an inclusive end."""
+    out: list[dict] = []
+    for d in sorted(days):
+        if out and out[-1]["end"] == d - timedelta(days=1):
+            out[-1]["end"] = d
+        else:
+            out.append({"start": d, "end": d})
+    return [{"start": w["start"].isoformat(), "end": w["end"].isoformat()} for w in out]
+
+
 def _history(conn: Connection, now: datetime, goal: dict, kind: str,
              off: Collection[date] = frozenset()) -> list[tuple[date, float]]:
     """One value per week: that week's best for lifts, runs and swims; for FTP and body measurements (the latest
@@ -104,7 +115,8 @@ def goal_forecast(conn: Connection, now: datetime, goal: dict) -> dict | None:
     due = deadline(goal.get("text") or "", created, today)
     out = {"goal_id": goal["id"], "text": goal["text"], "kind": kind, "unit": p["unit"], "lower_is_better": lower,
            "target": target, "current": current, "deadline": due.isoformat() if due else None,
-           "history": [[d.isoformat(), round(v, 2)] for d, v in history], "projection": [], "eta": None}
+           "history": [[d.isoformat(), round(v, 2)] for d, v in history], "projection": [], "eta": None,
+           "off_windows": windows(off)}
 
     if (current <= target) if lower else (current >= target):
         return {**out, "status": "reached", "summary": f"Reached: {p['label']}."}

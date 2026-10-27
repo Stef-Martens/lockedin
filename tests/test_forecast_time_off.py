@@ -144,3 +144,16 @@ def test_forecast_lists_time_off_for_the_charts(conn):
     off(conn, date(2026, 3, 1), reason="vacation", label="Long ago", all=date(2026, 3, 8))  # over 26 weeks ago
     assert forecast(conn, NOW)["time_off"] == [
         {"start": "2026-12-03", "end": "2027-01-02", "reason": "injury", "label": "Knee operation"}]
+
+
+def test_each_goal_shades_only_what_pauses_it(conn):
+    for i in range(10):
+        add_session(conn, "run", NOW - timedelta(weeks=9 - i, hours=3), 1680 - 10 * i, distance_m=5000)
+        add_gym(conn, NOW - timedelta(weeks=9 - i, hours=2), [(BENCH, 70.0 + i, 5, "normal")])
+    goal(conn, "Run 5k under 25 min", area="run")
+    goal(conn, "Bench 110 kg", exercise=BENCH)
+    off(conn, date(2026, 12, 3), upper=date(2027, 1, 2))
+    off(conn, date(2026, 12, 20), reason="vacation", label=None, all=date(2026, 12, 27))
+    windows = {g["text"]: g["off_windows"] for g in forecast(conn, NOW)["goals"]}
+    assert windows == {"Run 5k under 25 min": [{"start": "2026-12-20", "end": "2026-12-27"}],
+                       "Bench 110 kg": [{"start": "2026-12-03", "end": "2027-01-02"}]}

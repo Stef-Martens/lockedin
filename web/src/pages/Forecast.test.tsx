@@ -30,16 +30,18 @@ const BENCH: GoalForecast = {
   deadline: "2027-03-01", history: weekly("2026-09-07", [90, 92.5, 94, 95, 96.5]),
   projection: [["2026-10-12", 96.5, 96.5, 96.5], ["2026-10-19", 97.4, 96.8, 98], ["2026-12-28", 100, 98, 102.5]],
   eta: { likely: "2027-01-15", early: "2026-12-20", late: "2027-02-20" }, status: "on_track",
-  summary: "Around mid-January (likely Dec–Feb), before your deadline",
+  summary: "Around mid-January (likely Dec–Feb), before your deadline", off_windows: [],
 };
 const FIVE_K: GoalForecast = {
   goal_id: 2, text: "Run 5k under 25 min", kind: "time", unit: "min", lower_is_better: true, target: 25, current: 26.5,
   deadline: null, history: weekly("2026-09-14", [28, 27.25, 26.5]), projection: [["2026-09-28", 26.5, 26.5, 26.5], ["2026-11-23", 25, 24.5, 25.8]],
   eta: { likely: "2026-11-23", early: null, late: null }, status: "eta", summary: "Around late November at this pace",
+  off_windows: [],
 };
 const SQUAT: GoalForecast = {
   goal_id: 3, text: "Squat 140 kg", kind: "lift", unit: "kg", lower_is_better: false, target: 140, current: 120, deadline: "2027-06-01",
   history: [["2026-10-19", 120]], projection: [], eta: null, status: "too_little_data", summary: "A few more weeks of squats and this can say when",
+  off_windows: [],
 };
 const days = [
   ...Array.from({ length: 28 }, (_, n) => ({ day: `2026-${n < 2 ? "09" : "10"}-${String(n < 2 ? 29 + n : n - 1).padStart(2, "0")}`,
@@ -142,9 +144,11 @@ describe("Forecast", () => {
   });
 
   it("shades time off on the goal, fitness and FTP charts and says what the shading is", async () => {
-    open({ ...FULL, time_off: [OPERATION] });
+    const upper = { start: OPERATION.start, end: OPERATION.end };
+    open({ ...FULL, goals: [{ ...BENCH, off_windows: [upper] }, FIVE_K, SQUAT], time_off: [OPERATION] });
     expect(await screen.findByText("Shaded stretches are time off.")).toBeTruthy();
     expect(within(await card("Bench 100 kg")).getByRole("img").querySelectorAll(".recharts-reference-area").length).toBe(1);
+    expect(within(await card("Run 5k under 25 min")).getByRole("img").querySelectorAll(".recharts-reference-area").length).toBe(0);
     expect(within(await card("Fitness ahead")).getAllByRole("img")[0].querySelectorAll(".recharts-reference-area").length).toBe(1);
     expect(within(await card("FTP")).getByRole("img").querySelectorAll(".recharts-reference-area").length).toBe(1);
   });

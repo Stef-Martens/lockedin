@@ -2,7 +2,6 @@ import { Area, CartesianGrid, ComposedChart, Line, ReferenceLine, ResponsiveCont
 import { dayMonth, dayMs } from "../../lib/format";
 import type { Band, Point } from "../../lib/forecast";
 import { prefersReducedMotion } from "../../lib/motion";
-import type { TimeOffWindow } from "../../lib/timeoff";
 import { useCssVar } from "../../lib/useCssVar";
 import { timeOffAreas } from "./timeOffAreas";
 
@@ -39,7 +38,7 @@ interface Props {
   /** Steps rather than slopes: a value that holds until it changes (FTP). */
   step?: boolean;
   /** Windows to shade behind the lines. */
-  timeOff?: TimeOffWindow[];
+  timeOff?: { start: string; end: string }[];
   height?: number;
 }
 

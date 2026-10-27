@@ -18,6 +18,7 @@ export interface GoalForecast {
   eta: { likely: string; early: string | null; late: string | null } | null;
   status: "reached" | "on_track" | "behind" | "eta" | "not_at_this_pace" | "too_little_data";
   summary: string;             // ready-to-show plain English, e.g. "Around mid-March (likely Feb–May)"
+  off_windows: { start: string; end: string }[];  // when time off pauses this goal (its category, or away); end inclusive
 }
 
 export interface RacePrediction {
@@ -32,7 +33,7 @@ export interface Forecast {
   race: { predictions: RacePrediction[]; history: Point[]; note: string } | null;   // history = predicted 5k seconds
   fitness: { days: ForecastDay[] } | null;
   ftp: { now: number; source: "zwift" | "owner" | "estimate"; history: Point[]; projection: Band[]; summary: string } | null;
-  /** Time off since the charts' first week, to shade. */
+  /** Time off since the charts' first week, to shade on the fitness and FTP charts (goals have their own off_windows). */
   time_off: TimeOffWindow[];
 }
 
