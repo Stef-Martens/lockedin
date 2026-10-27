@@ -4,6 +4,7 @@ import Bike from "./trends/Bike";
 import Gym from "./trends/Gym";
 import Run from "./trends/Run";
 import Swim from "./trends/Swim";
+import TrainingLoad from "./trends/TrainingLoad";
 
 type Tab = "bike" | "run" | "swim" | "gym";
 const TABS: { key: Tab; label: string }[] = [
@@ -22,6 +23,7 @@ export default function Trends() {
           ))}
         </nav>
       } />
+      <TrainingLoad />
       {tab === "bike" && <Bike />}
       {tab === "run" && <Run />}
       {tab === "swim" && <Swim />}
