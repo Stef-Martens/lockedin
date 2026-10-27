@@ -7,11 +7,13 @@ from datetime import date, datetime, time, timedelta
 from sqlalchemy import Connection
 
 from lockedin.focus.sessions import Session, counted_sessions
+from lockedin.timeoff import entries
 from lockedin.timeutil import TZ, week_start
 
 SPORTS = ("bike", "run", "swim", "gym", "other")
 STREAK_MIN_SESSIONS = 2
 COMEBACK_DAYS = 7
+PROTECTED_DAYS = 4  # a week with this many days of time off can't break the streak
 EPOCH = datetime(2000, 1, 1, tzinfo=TZ)
 
 
@@ -27,6 +29,7 @@ class Comeback:
     days_since: int | None
     last_session: Session | None
     suggestion: str
+    title: str = "Welcome back"
 
 
 def _local_midnight(d: date) -> datetime:
@@ -60,12 +63,22 @@ def weekly_volume(conn: Connection, now: datetime, weeks: int) -> list[dict]:
     return [{k: (round(v) if k != "week_start" else v) for k, v in r.items()} for r in rows.values()]
 
 
+def _protected_weeks(conn: Connection) -> set[date]:
+    """Mondays of the weeks with PROTECTED_DAYS or more days inside any time off."""
+    days = Counter()
+    for d in {e["start"] + timedelta(days=i) for e in entries(conn) for i in range((e["end"] - e["start"]).days + 1)}:
+        days[week_start(_local_midnight(d))] += 1
+    return {wk for wk, n in days.items() if n >= PROTECTED_DAYS}
+
+
 def week_streak(conn: Connection, now: datetime) -> int:
+    """Consecutive weeks with enough sessions; a protected week with too few is skipped, not counted."""
     per_week = Counter(week_start(s.start_at) for s in counted_sessions(conn, EPOCH, now))
+    protected = _protected_weeks(conn)
     this_week = week_start(now)
     streak, wk = 0, this_week - timedelta(weeks=1)
-    while per_week[wk] >= STREAK_MIN_SESSIONS:
-        streak += 1
+    while per_week[wk] >= STREAK_MIN_SESSIONS or wk in protected:
+        streak += per_week[wk] >= STREAK_MIN_SESSIONS
         wk -= timedelta(weeks=1)
     return streak + (1 if per_week[this_week] >= STREAK_MIN_SESSIONS else 0)
 
@@ -90,4 +103,9 @@ def comeback(conn: Connection, now: datetime) -> Comeback | None:
         text_ = "Ease back in: a short full-body session, 3 exercises × 3 sets, nothing heavy."
     else:
         text_ = "Ease back in: 30 minutes of something easy you enjoy."
-    return Comeback(days, last, text_)
+    title = "Welcome back"
+    today = now.astimezone(TZ).date()
+    if last and any(e["reason"] == "vacation" and e["start"] <= today
+                    for e in entries(conn, last.start_at.astimezone(TZ).date())):
+        title = "Back from vacation"
+    return Comeback(days, last, text_, title)

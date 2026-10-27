@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
 from itertools import zip_longest
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -13,11 +13,33 @@ from lockedin.focus.mix import session_suggestions
 from lockedin.focus.suggest import gym_suggestions
 from lockedin.focus.wins import plateaus, recent_wins
 from lockedin.reminders import checkin_due, hevy_due, next_checkin_due
+from lockedin.timeoff import _fmt, describe, entries, entry_on, off_on
 from lockedin.timeutil import TZ
 
 router = APIRouter(prefix="/api", dependencies=[Depends(require_owner)])
 
 FOCUS_ITEMS = 3
+BACK_FROM_DAYS = 14
+
+
+def _time_off_today(conn: Connection, today: date) -> str | None:
+    off = off_on(conn, today)
+    if "all" in off:
+        entry = entry_on(conn, today)
+        return f"{'Vacation' if entry and entry['reason'] == 'vacation' else 'Time off'} until {_fmt(off['all'])}"
+    return describe(off) if off else None
+
+
+def _back_from_card(conn: Connection, today: date) -> dict | None:
+    """The injury with a restriction that ended in the last BACK_FROM_DAYS days (latest-ending), unless it is off again."""
+    off = off_on(conn, today)
+    lo = today - timedelta(days=BACK_FROM_DAYS)
+    hits = [(r["until"], e["id"], e) for e in entries(conn, lo) if e["reason"] == "injury"
+            for r in e["restrictions"] if lo <= r["until"] < today and r["category"] not in off]
+    if not hits:
+        return None
+    e = max(hits, key=lambda h: h[:2])[2]
+    return {"title": f"Back from: {e['label']}" if e["label"] else "Back from your operation", "label": e["label"]}
 
 
 def get_now() -> datetime:
@@ -48,6 +70,8 @@ def overview(weeks: int = 12, conn: Connection = Depends(get_conn), now: datetim
         "weekly": weekly_volume(conn, now, weeks),
         "streak": week_streak(conn, now),
         "comeback": back,
+        "time_off_today": _time_off_today(conn, today),
+        "back_from": _back_from_card(conn, today),
         "wins": recent_wins(conn, now),
         "plateaus": [] if back else plateaus(conn, now),
         "focus": focus,

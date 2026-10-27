@@ -147,7 +147,7 @@ The **Overview** page answers two questions: am I improving, and what should I f
 - **Recent wins** are personal bests from the last 2 weeks (estimated 1RM, 20-min power, longest, fastest) and "more consistent than last year".
   - **Fastest run or swim** only beats earlier ones of a similar distance (within 10%).
   - **More consistent** compares sessions per week over the last 8 weeks with the same 8 weeks last year.
-- **Streak** counts consecutive weeks with at least 2 sessions. After 7 days without training, the page opens with a "Welcome back" card instead of comparisons.
+- **Streak** counts consecutive weeks with at least 2 sessions. A week with 4 or more days of time off can't break it: it counts if you trained twice, and is skipped over if not. After 7 days without training, the page opens with a "Welcome back" card instead of comparisons ("Back from vacation" when the break overlapped one). In the 14 days after an injury restriction ends, the Overview also says "Back from: <your label>" (or "Back from your operation"), and it shows a line about what is off today.
 - **Trends** has a page per sport: power, efficiency and best 20 min for the bike; pace and aerobic efficiency for runs; pace per 100 m for swims; and for the gym, muscle coverage, volume and progress per exercise. Exercises the library doesn't know appear under **Tag your exercises**.
 
 **Muscles:**
