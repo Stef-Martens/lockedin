@@ -140,4 +140,13 @@ describe("Session page", () => {
     expect(errors.mock.calls.some((c) => String(c[0]).includes("same key"))).toBe(false);
     errors.mockRestore();
   });
+
+  it("keeps a done rest day's note next to what you did", async () => {
+    open({ item: { ...base, sport: "rest", title: "Rest", note: "Optional: easy 20–30 min spin under 126 W", zwift: null, zwift_status: null,
+        done: true, activity_id: 40, result: "Done · 30′ · 88 W", goal: null },
+      plan: { kind: "note" }, actual: { ...AFTER.actual!, activity_id: 40, parts: undefined } });
+    await screen.findByRole("heading", { name: "Rest" });
+    expect(screen.getByText("Done · 30′ · 88 W")).toBeTruthy();
+    expect(screen.getByText("Optional: easy 20–30 min spin under 126 W")).toBeTruthy();
+  });
 });

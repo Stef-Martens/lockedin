@@ -456,7 +456,8 @@ export default function Session() {
         </div>
       </Card>
       {editing && <Edit item={item} onCancel={() => setEditing(false)} onSaved={() => { setEditing(false); load(); }} />}
-      {actual ? <ActualSection d={d} /> : <PlanSection plan={plan} item={item} />}
+      {actual && <ActualSection d={d} />}
+      {(!actual || plan.kind === "note") && <PlanSection plan={plan} item={item} />}
       {actual && plan.kind !== "note" && (
         <details className="card session-plan-details">
           <summary>What was planned</summary>

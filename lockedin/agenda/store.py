@@ -160,7 +160,9 @@ def _out(row, ftp: float | None, today: date, done: dict[int, int], goals: dict[
 
 
 def _ticks(conn: Connection, rows: list, start: date, end: date) -> dict[int, int]:
-    """item id → activity id that ticks it. Each activity ticks one item; items with a routine match first."""
+    """item id → activity id that ticks it. Each activity ticks one item. First the exact matches (a gym
+    workout titled like the item's routine, a ride for a ride); then a gym item takes any gym workout left that
+    day (the Hevy title was changed); last a rest day takes whatever is left (the optional spin was done)."""
     acts = conn.execute(text(
         "select a.id, a.sport, (a.start_at at time zone 'Europe/Brussels')::date as day, w.title "
         f"from activities a left join gym_workouts w on w.activity_id = a.id where {counted('a')} "
@@ -171,16 +173,22 @@ def _ticks(conn: Connection, rows: list, start: date, end: date) -> dict[int, in
         by_day[a.day].append(a)
     used: set[int] = set()
     done: dict[int, int] = {}
-    for item in sorted(rows, key=lambda r: (r.day, 0 if r.routine else 1, r.sort, r.id)):
-        for a in by_day[item.day]:
-            if a.id in used:
+
+    def exact(item, a) -> bool:
+        if item.sport == "gym":
+            return a.sport == "gym" and (not item.routine or a.title == item.routine)
+        return item.sport in ("bike", "run", "swim") and a.sport == item.sport
+
+    passes = (exact, lambda item, a: item.sport == "gym" and a.sport == "gym", lambda item, a: item.sport == "rest")
+    ordered = sorted(rows, key=lambda r: (r.day, 0 if r.routine else 1, r.sort, r.id))
+    for fits in passes:
+        for item in ordered:
+            if item.id in done:
                 continue
-            fits = (a.sport == "gym" and (not item.routine or a.title == item.routine)) if item.sport == "gym" \
-                else item.sport in ("bike", "run", "swim") and a.sport == item.sport
-            if fits:
+            a = next((a for a in by_day[item.day] if a.id not in used and fits(item, a)), None)
+            if a is not None:
                 used.add(a.id)
                 done[item.id] = a.id
-                break
     return done
 
 

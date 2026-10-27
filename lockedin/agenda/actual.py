@@ -14,7 +14,7 @@ ON_TARGET = 0.03
 MAX_POINTS = 600
 SMOOTH_S = 30
 MIN_COVERAGE = 0.5  # a planned part counts as ridden when the ride covers at least half of it
-ACTIVITY = ("id, start_at, duration_s, moving_s, distance_m, avg_power, np, tss, avg_hr, avg_pace_s_per_km, "
+ACTIVITY = ("id, sport, start_at, duration_s, moving_s, distance_m, avg_power, np, tss, avg_hr, avg_pace_s_per_km, "
             "swim_pace_s_per_100m, swim_lengths, swim_strokes")
 
 
@@ -152,7 +152,8 @@ def result_line(conn: Connection, item: dict) -> str | None:
     if a is None:
         return None
     minutes = f"{round((a.moving_s or a.duration_s) / 60)}′"
-    if item["sport"] == "bike":
+    sport = a.sport if item["sport"] == "rest" else item["sport"]  # a rest day ticked by a ride says what the ride was
+    if sport == "bike":
         bits = [minutes] + ([f"{a.avg_power} W"] if a.avg_power else [])
         if item.get("zwift"):
             ftp = ftp_at(conn, a.start_at)
@@ -160,13 +161,13 @@ def result_line(conn: Connection, item: dict) -> str | None:
             _, on = zwift_parts(parts(ZwiftWorkout(blocks=item["zwift"]["blocks"]), ftp), s, ftp)
             if on:
                 bits.append("intervals on target")
-    elif item["sport"] == "run":
+    elif sport == "run":
         bits = ([f"{a.distance_m / 1000:.1f} km"] if a.distance_m else [minutes]) + \
             ([f"{_clock(a.avg_pace_s_per_km)}/km"] if a.avg_pace_s_per_km else [])
-    elif item["sport"] == "swim":
+    elif sport == "swim":
         bits = ([f"{round(a.distance_m)} m"] if a.distance_m else [minutes]) + \
             ([f"{_clock(a.swim_pace_s_per_100m)}/100 m"] if a.swim_pace_s_per_100m else [])
-    elif item["sport"] == "gym":
+    elif sport == "gym":
         n = conn.execute(text("select count(distinct exercise_id) from gym_sets where workout_id = :i"), {"i": a.id}).scalar()
         bits = [f"{n} exercises", minutes]
     else:

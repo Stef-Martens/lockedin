@@ -179,3 +179,43 @@ def test_requires_owner(client, method, path):
 def test_coach_can_read_agenda(clean_db):
     with clean_db.begin() as c:
         assert c.execute(text("select has_table_privilege('coach_ro', 'agenda_items', 'select')")).scalar()
+
+
+def test_a_renamed_gym_workout_still_ticks_its_day(client, clean_db, clock):
+    with clean_db.begin() as c:
+        add_gym(c, datetime(2026, 10, 20, 17, tzinfo=UTC), [("Bench Press (Barbell)", 80, 8, "normal")], title="Chest - Schouders - Triceps")
+    post(client, day="2026-10-21", sport="gym", title="Chest - Schouders - Triceps", routine="Chest - Schouders - Triceps")
+    with clean_db.begin() as c:
+        gym = add_gym(c, datetime(2026, 10, 21, 6, 56, tzinfo=UTC), [("Bench Press (Barbell)", 82.5, 5, "normal")],
+                      title="Chest - shoulder - tricep")
+    item = week(client, "2026-10-19")["items"][0]
+    assert item["done"] is True and item["activity_id"] == gym
+
+
+def test_the_routine_named_workout_wins(client, clean_db, clock):
+    with clean_db.begin() as c:
+        for t in ("Push", "Pull"):
+            add_gym(c, datetime(2026, 10, 20, 17, tzinfo=UTC) if t == "Push" else datetime(2026, 10, 19, 17, tzinfo=UTC),
+                    [("Bench Press (Barbell)", 80, 8, "normal")], title=t)
+    post(client, day="2026-10-22", sport="gym", title="Push", routine="Push")
+    post(client, day="2026-10-22", sport="gym", title="Pull", routine="Pull")
+    with clean_db.begin() as c:
+        pull = add_gym(c, datetime(2026, 10, 22, 17, tzinfo=UTC), [("Lat Pulldown (Cable)", 60, 10, "normal")], title="Pull")
+    items = {i["title"]: i for i in week(client, "2026-10-19")["items"]}
+    assert items["Pull"]["activity_id"] == pull and items["Push"]["done"] is False
+
+
+def test_a_ride_on_a_rest_day_ticks_it(client, clean_db, clock):
+    post(client, day="2026-10-20", sport="rest", title="Rest", note="Optional: easy 20–30 min spin under 126 W")
+    post(client, day="2026-10-22", sport="bike", title="Sweet Spot")
+    post(client, day="2026-10-22", sport="rest", title="Rest")
+    with clean_db.begin() as c:
+        spin = add_session(c, "bike", datetime(2026, 10, 20, 18, 59, tzinfo=UTC), 1808, source="zwift", avg_power=88)
+        add_session(c, "bike", datetime(2026, 10, 22, 17, tzinfo=UTC), 3600, source="zwift")
+    items = week(client, "2026-10-19")["items"]
+    monday = next(i for i in items if i["day"] == "2026-10-20")
+    assert monday["done"] is True and monday["activity_id"] == spin
+    thursday = {i["sport"]: i for i in items if i["day"] == "2026-10-22"}
+    assert thursday["bike"]["done"] is True and thursday["rest"]["done"] is False  # the ride belongs to the planned ride
+    lines = client.get(f"/api/agenda/{monday['id']}/detail", headers=H).json()["item"]["result"]
+    assert lines == "Done · 30′ · 88 W"

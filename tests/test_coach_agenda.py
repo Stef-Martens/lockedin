@@ -83,3 +83,8 @@ def test_turn_context_mentions_todays_plan(clean_db):
     with clean_db.begin() as c:
         ctx = turn_context(c, NOW)
     assert "Recovery Spin 30" in ctx and "Easy run" in ctx
+
+
+def test_prompt_asks_for_optional_sessions_as_their_own_item():
+    from lockedin.coach.prompt import SYSTEM_PROMPT
+    assert "own item with optional: true" in SYSTEM_PROMPT
