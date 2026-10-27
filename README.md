@@ -74,6 +74,7 @@ Free projects **pause after about a week with no activity**. Your regular syncs 
    | `OWNER_EMAIL` | your login email |
    | `OWNER_ID` | optional: your Supabase user id (**Authentication → Users**). When set, a login must match it as well as the email |
    | `SYNC_TOKEN` | a long random string: `python3 -c "import secrets; print(secrets.token_urlsafe(32))"` |
+   | `WATCH_TOKEN` | optional: the key for the iPhone app (section 13). Another long random string, made the same way, at least 16 characters. It can only read the coming runs and swims |
    | `VITE_SUPABASE_URL` | same as `SUPABASE_URL` |
    | `VITE_SUPABASE_ANON_KEY` | the **anon / publishable** key (safe for the browser) |
    | `ANTHROPIC_API_KEY` | for the AI coach (section 10); from [console.anthropic.com](https://console.anthropic.com) → API keys. Optional: without it, the Coach page shows a setup message |
@@ -328,6 +329,43 @@ Tell LockedIn when you're away or can't do everything, and the whole app works a
 - **What it doesn't do:** it never decides what's safe after an operation, and the coach gives no advice on recovery. It only records what you say you can't do. Ask your surgeon or physio.
 - **Deploy:** the table comes with a migration, so run `supabase db push` **before** `git push`.
 
+## 13. Runs and swims on the Apple Watch
+
+A small iPhone app, **LockedIn**, lists your planned runs and swims for today and the next 7 days, grouped by day. Tap one and Apple's workout sheet opens; tap **Add to Watch** and it's in the watch's **Workout** app, ready to start.
+
+- **Runs** go over with all their steps: warm-up, the repeat blocks of work and recovery, cool-down. Each step keeps its pace range or heart-rate range, and the watch alerts you when you're outside it. Heart rate uses LockedIn's own zones in beats per minute (zone 1 starts at 60 % of max HR), not the watch's zones; with no max HR known, heart-rate targets are left off.
+- **Swims** go over as a pool swim with the planned distance (or time) as the goal. The set itself is shown under the swim in the app, to read at the pool.
+- **Optional** sessions are marked. Sessions that are done, or that clash with time off, aren't listed.
+- **The list** refreshes when you open the app and when you pull down. Problems show in words above the list: no connection, a wrong watch key, or LockedIn being down. A run the app can't build says so on its own row; the others still work.
+
+### One-time setup
+
+1. **The watch key.** In Vercel, add `WATCH_TOKEN` (section 2): `python3 -c "import secrets; print(secrets.token_urlsafe(32))"`. Redeploy. It's separate from `SYNC_TOKEN` and can only read the coming runs and swims.
+2. **The tools on your Mac:** Xcode, and `brew install xcodegen`.
+3. **Your Apple ID in Xcode:** **Xcode → Settings → Accounts → +** → Apple ID. A free account is enough; Xcode makes a **Personal Team** for it.
+4. **Your team ID.** Find it with
+   ```bash
+   security find-certificate -c "Apple Development" -p | openssl x509 -noout -subject
+   ```
+   It's the `OU=` part (10 characters). Save it in `ios/.team-id` (git-ignored), or set `LOCKEDIN_TEAM_ID` each time.
+5. **Developer Mode on the iPhone.** Plug the iPhone into the Mac once and tap **Trust** on the phone. Then on the iPhone: **Settings → Privacy & Security → Developer Mode** → on. The phone restarts and asks you to confirm.
+6. **Install:** `make ios`. It finds the iPhone (on the cable, or on the same Wi-Fi once it has been paired), builds the app, installs it and opens it. To pick a phone yourself: `IOS_DEVICE=<identifier from xcrun devicectl list devices> make ios`.
+7. **Trust the certificate.** The first time, the app won't open and `make ios` says so. On the iPhone: **Settings → General → VPN & Device Management** → your Apple ID → **Trust**. Run `make ios` again.
+8. **In the app:** enter your LockedIn address (`<your-app>.vercel.app`) and the watch key. They're kept in the iPhone's Keychain. The gear button changes them later.
+
+### Every 7 days
+
+A free Apple ID signs apps for 7 days only. When the app stops opening, run `make ios` again with the iPhone nearby. Your address and key stay.
+
+### Limits of the watch (watchOS 10)
+
+- **One tap per run or swim.** The watch can't receive a whole week by itself, so each one goes over through **Add to Watch**. The app can't tell which ones you already added.
+- **No swim steps.** The watch takes a pool swim with one goal; structured swims need watchOS 11.
+
+### Later: automatic with a newer watch
+
+With a watch on watchOS 11 or newer, a watch app and Apple's workout scheduler could put the next 7 days on the watch without any taps, and swims could get their steps too. The feed and the steps stay as they are.
+
 ## Troubleshooting
 
 | Symptom | Fix |
@@ -348,6 +386,7 @@ Tell LockedIn when you're away or can't do everything, and the whole app works a
 lockedin/         FastAPI app (imports, dedupe, routes)
 supabase/         config + SQL migrations
 sync/             Mac uploader + launchd agent
+ios/              iPhone app that puts planned runs and swims on the Apple Watch (`make ios`)
 web/              React + Vite app (`node web/scripts/make-icons.mjs` redraws the app icons)
 samples/          synthetic FIT files and Hevy CSVs for testing (`make samples` rebuilds them)
 tests/            pytest suite (web tests live next to the pages: `npm --prefix web test`)
