@@ -75,6 +75,14 @@ def test_context_lists_current_and_upcoming_time_off(clean_db):
         assert "Time off" not in turn_context(c, NOW)
 
 
+def test_context_lists_every_restriction_of_an_entry_with_everything_off(clean_db):
+    run(clean_db, {"action": "create", "entry": {**KNEE, "restrictions": [{"category": "all", "until": "2026-12-05"},
+                                                                         *KNEE["restrictions"]]}})
+    with clean_db.begin() as c:
+        assert ("Time off: Knee operation from 3 Dec: no running until 17 Dec, no upper body until 2 Jan, "
+                "everything off until 5 Dec") in turn_context(c, NOW)
+
+
 def test_context_names_an_unlabelled_entry_by_its_reason(clean_db):
     run(clean_db, {"action": "create", "entry": {
         "reason": "vacation", "start": "2026-10-20", "restrictions": [{"category": "all", "until": "2026-10-30"}]}})

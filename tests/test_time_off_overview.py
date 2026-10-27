@@ -6,6 +6,7 @@ from focus_helpers import add_session
 
 from lockedin import timeoff
 from lockedin.app import app
+from lockedin.focus import consistency
 from lockedin.focus.consistency import comeback, week_streak
 from lockedin.routes.overview import get_now
 from lockedin.timeoff import Restriction, TimeOffIn
@@ -25,6 +26,16 @@ def at(request):
 def make(conn, reason="injury", label="Knee operation", start=date(2026, 10, 1), **until):
     return timeoff.create(conn, TimeOffIn(reason=reason, label=label, start=start, restrictions=[
         Restriction(category=c, until=u) for c, u in until.items()]))
+
+
+def test_protected_weeks_stop_at_today(conn, monkeypatch):
+    seen = []
+    real = consistency.week_start
+    monkeypatch.setattr(consistency, "week_start", lambda t: seen.append(t) or real(t))
+    make(conn, "vacation", None, start=date(2026, 10, 12), all=date(2027, 10, 11))
+    two_in_week(conn, 3)
+    assert week_streak(conn, NOW) == 1
+    assert len(seen) < 20  # the days from 12 Oct to today, not a year of them
 
 
 def two_in_week(conn, weeks_back):
@@ -70,6 +81,20 @@ def test_vacation_titles_the_comeback(conn):
     assert comeback(conn, NOW).title == "Back from vacation"
 
 
+def test_no_comeback_card_while_away(conn):
+    add_session(conn, "bike", NOW - timedelta(days=9), 3600)
+    make(conn, "vacation", None, start=date(2026, 10, 18), all=date(2026, 10, 27))  # day 9 of 10
+    assert comeback(conn, NOW) is None
+    assert comeback(conn, NOW + timedelta(days=2)).title == "Back from vacation"
+
+
+def test_comeback_during_injury_suggests_nothing_restricted(conn):
+    add_session(conn, "gym", NOW - timedelta(days=9), 3600)
+    make(conn, start=date(2026, 10, 18), upper=date(2026, 11, 20), run=date(2026, 11, 5))
+    back = comeback(conn, NOW)
+    assert back.title == "Welcome back" and back.suggestion == "Ease back in with something easy your time off allows."
+
+
 def test_comeback_without_vacation_keeps_generic_title(conn):
     add_session(conn, "bike", NOW - timedelta(days=12), 3600)
     make(conn, start=date(2026, 10, 15), run=date(2026, 10, 22))
@@ -96,7 +121,7 @@ def test_time_off_today_for_injury_with_all(client, clean_db, at):
     at(NOW)
     with clean_db.begin() as c:
         make(c, start=date(2026, 10, 20), all=date(2026, 10, 30))
-    assert client.get("/api/overview", headers=H).json()["time_off_today"] == "Time off until 30 Oct"
+    assert client.get("/api/overview", headers=H).json()["time_off_today"] == "Everything off until 30 Oct"
 
 
 def test_back_from_card_for_fourteen_days(client, clean_db, at):

@@ -3,6 +3,7 @@ from datetime import UTC, date, datetime, timedelta
 import pytest
 from conftest import owner_headers
 from focus_helpers import add_gym, add_session
+from sqlalchemy import text
 
 from lockedin import timeoff
 from lockedin.agenda.store import ItemIn, create
@@ -158,3 +159,24 @@ def test_session_page_plans_a_future_gym_day_with_that_days_time_off(client, cle
     assert bench(inside)["skipped"] is True and bench(inside)["off_until"] == "2026-10-31"
     app.dependency_overrides[get_now] = lambda: NOW + timedelta(days=4)  # 30 Oct: upper body is off today
     assert bench(after)["skipped"] is False and bench(after)["off_until"] is None
+
+
+def test_focus_tips_keep_the_first_two_weeks_back_easy(conn):
+    conn.execute(text("update profile set max_hr_override = 190"))
+    for d in (2, 6, 11, 16):
+        add_session(conn, "run", NOW - timedelta(days=d), 2700, avg_hr=160, distance_m=7000)
+    assert any(s.kind == "hard" for s in session_suggestions(conn, NOW))
+    off(conn, start=TODAY - timedelta(days=20), run=TODAY - timedelta(days=1))
+    assert [s.kind for s in session_suggestions(conn, NOW)] == ["long"]
+    conn.execute(text("delete from time_off"))
+    off(conn, start=TODAY - timedelta(days=20), run=TODAY - timedelta(days=15))  # back 15 days ago
+    assert any(s.kind == "hard" for s in session_suggestions(conn, NOW))
+
+
+def test_a_goal_brings_an_easy_session_in_the_first_two_weeks_back(conn):
+    conn.execute(text("insert into goals (text, area, status) values ('FTP 250 W', 'bike', 'active')"))
+    assert session_suggestions(conn, NOW)[0].title == "Intervals"
+    off(conn, start=TODAY - timedelta(days=20), bike=TODAY - timedelta(days=1))
+    ride = session_suggestions(conn, NOW)[0]
+    assert (ride.sport, ride.kind) == ("bike", "easy")
+    assert ride.reason == "First two weeks back: keep it easy · toward: FTP 250 W"

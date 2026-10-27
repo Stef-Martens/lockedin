@@ -22,7 +22,7 @@ export interface Overview {
   weekly: WeekRow[];
   streak: number;
   comeback: { days_since: number | null; suggestion: string; title: string } | null;
-  /** "Vacation until 27 Dec", or "no running until 17 Dec, no upper body until 2 Jan"; null when nothing is off today. */
+  /** "Vacation until 27 Dec", "Everything off until 30 Oct", or "no running until 17 Dec, no upper body until 2 Jan"; null when nothing is off. */
   time_off_today: string | null;
   /** Shown for two weeks after an injury restriction ends. */
   back_from: { title: string; label: string | null } | null;

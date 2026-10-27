@@ -90,6 +90,14 @@ describe("Overview", () => {
     overview = OVERVIEW;
   });
 
+  it("doesn't prefix a time-off line that already names itself", async () => {
+    overview = { ...OVERVIEW, time_off_today: "Vacation until 27 Dec" };
+    render(<MemoryRouter><Overview /></MemoryRouter>);
+    expect(await screen.findByText("Vacation until 27 Dec")).toBeTruthy();
+    expect(screen.queryByText(/Time off:/)).toBeNull();
+    overview = OVERVIEW;
+  });
+
   it("shows the back-from card after an injury", async () => {
     overview = { ...OVERVIEW, back_from: { title: "Back from: Knee", label: "Knee" } };
     render(<MemoryRouter><Overview /></MemoryRouter>);

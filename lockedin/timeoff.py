@@ -14,6 +14,7 @@ CATEGORIES = ("run", "bike", "swim", "upper", "core", "lower", "all")
 REGIONS = {"upper": ("arms", "back", "chest", "shoulders"), "core": ("core",), "lower": ("legs",)}
 WORDS = {"run": "running", "bike": "cycling", "swim": "swimming", "upper": "upper body", "core": "core",
          "lower": "lower body"}
+MAX_DAYS = 366  # a restriction ends at most this many days after the start
 Category = Literal["run", "bike", "swim", "upper", "core", "lower", "all"]
 
 
@@ -39,6 +40,8 @@ class TimeOffIn(BaseModel):
             raise ValueError("Each activity can only be listed once.")
         if any(r.until < self.start for r in self.restrictions):
             raise ValueError("Every restriction must end on or after the start.")
+        if any(r.until > self.start + timedelta(days=MAX_DAYS) for r in self.restrictions):
+            raise ValueError("Time off can last at most a year.")
         return self
 
 
@@ -158,6 +161,12 @@ def set_regions(conn: Connection, routine: str) -> list[set[str]]:
         f"where w.title = :t and {counted('a')} order by a.start_at desc limit 1) and s.set_type <> 'warmup' "
         "group by s.id"), {"t": routine}).all()
     return [set(r.regions) for r in rows]
+
+
+def describe_entry(e: dict) -> str:
+    """Each restriction of an entry: "everything off until 5 Dec, no running until 17 Dec"."""
+    return ", ".join(f"everything off until {_fmt(r['until'])}" if r["category"] == "all"
+                     else f"no {WORDS[r['category']]} until {_fmt(r['until'])}" for r in e["restrictions"])
 
 
 def item_clash(conn: Connection, off: dict[str, date], item: dict, sets: dict[str, list] | None = None) -> str | None:

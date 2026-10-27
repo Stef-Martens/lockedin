@@ -172,7 +172,8 @@ export default function Overview() {
         right={<Segmented label="Period" value={period} onChange={setPeriod}
           options={[{ value: "week", label: "Week" }, { value: "month", label: "Month" }]} />} />
 
-      {data.time_off_today && <div className="note rise">Time off: {data.time_off_today}</div>}
+      {data.time_off_today && <div className="note rise">
+        {/^[A-Z]/.test(data.time_off_today) ? data.time_off_today : `Time off: ${data.time_off_today}`}</div>}
       {data.back_from && (
         <Card variant="accent" i={0}>
           <p style={{ margin: 0 }}><strong>{data.back_from.title}</strong> What was off starts easier now.</p>

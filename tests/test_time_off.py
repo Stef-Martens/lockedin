@@ -110,6 +110,10 @@ def test_api_crud_and_validation(client, clock):
     r = client.post("/api/time-off", json=body(restrictions=[{"category": "run", "until": "2026-12-01"}]), headers=H)
     assert r.status_code == 422 and "Every restriction must end on or after the start." in r.text
     assert client.post("/api/time-off", json=body(restrictions=[]), headers=H).status_code == 422
+    r = client.post("/api/time-off", json=body(restrictions=[{"category": "run", "until": "9999-12-31"}]), headers=H)
+    assert r.status_code == 422 and "Time off can last at most a year." in r.text
+    year = body(restrictions=[{"category": "run", "until": "2027-12-04"}])  # start + 366 days
+    assert client.post("/api/time-off", json=year, headers=H).status_code == 201
     dup = [{"category": "run", "until": "2026-12-10"}, {"category": "run", "until": "2026-12-11"}]
     assert client.post("/api/time-off", json=body(restrictions=dup), headers=H).status_code == 422
     assert client.post("/api/time-off", json=body()).status_code in (401, 403)

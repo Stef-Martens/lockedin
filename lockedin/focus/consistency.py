@@ -7,7 +7,7 @@ from datetime import date, datetime, time, timedelta
 from sqlalchemy import Connection
 
 from lockedin.focus.sessions import Session, counted_sessions
-from lockedin.timeoff import entries
+from lockedin.timeoff import away_on, entries, off_on
 from lockedin.timeutil import TZ, week_start
 
 SPORTS = ("bike", "run", "swim", "gym", "other")
@@ -63,10 +63,11 @@ def weekly_volume(conn: Connection, now: datetime, weeks: int) -> list[dict]:
     return [{k: (round(v) if k != "week_start" else v) for k, v in r.items()} for r in rows.values()]
 
 
-def _protected_weeks(conn: Connection) -> set[date]:
-    """Mondays of the weeks with PROTECTED_DAYS or more days inside any time off."""
+def _protected_weeks(conn: Connection, today: date) -> set[date]:
+    """Mondays of the weeks up to today with PROTECTED_DAYS or more days inside any time off."""
     days = Counter()
-    for d in {e["start"] + timedelta(days=i) for e in entries(conn) for i in range((e["end"] - e["start"]).days + 1)}:
+    for d in {e["start"] + timedelta(days=i) for e in entries(conn)
+              for i in range((min(e["end"], today) - e["start"]).days + 1)}:
         days[week_start(_local_midnight(d))] += 1
     return {wk for wk, n in days.items() if n >= PROTECTED_DAYS}
 
@@ -74,7 +75,7 @@ def _protected_weeks(conn: Connection) -> set[date]:
 def week_streak(conn: Connection, now: datetime) -> int:
     """Consecutive weeks with enough sessions; a protected week with too few is skipped, not counted."""
     per_week = Counter(week_start(s.start_at) for s in counted_sessions(conn, EPOCH, now))
-    protected = _protected_weeks(conn)
+    protected = _protected_weeks(conn, now.astimezone(TZ).date())
     this_week = week_start(now)
     streak, wk = 0, this_week - timedelta(weeks=1)
     while per_week[wk] >= STREAK_MIN_SESSIONS or wk in protected:
@@ -90,6 +91,10 @@ def in_comeback(conn: Connection, now: datetime) -> bool:
 
 
 def comeback(conn: Connection, now: datetime) -> Comeback | None:
+    """None while away: there's nothing to come back to yet. While something is off, the suggestion stays neutral."""
+    today = now.astimezone(TZ).date()
+    if away_on(conn, today):
+        return None
     recent = counted_sessions(conn, now - timedelta(days=90), now)
     last = recent[-1] if recent else (counted_sessions(conn, EPOCH, now) or [None])[-1]
     days = (now - last.start_at).days if last else None
@@ -103,9 +108,10 @@ def comeback(conn: Connection, now: datetime) -> Comeback | None:
         text_ = "Ease back in: a short full-body session, 3 exercises × 3 sets, nothing heavy."
     else:
         text_ = "Ease back in: 30 minutes of something easy you enjoy."
+    if off_on(conn, today):
+        text_ = "Ease back in with something easy your time off allows."
     title = "Welcome back"
-    today = now.astimezone(TZ).date()
-    if last and any(e["reason"] == "vacation" and e["start"] <= today
+    if last and any(e["reason"] == "vacation" and e["end"] < today
                     for e in entries(conn, last.start_at.astimezone(TZ).date())):
         title = "Back from vacation"
     return Comeback(days, last, text_, title)

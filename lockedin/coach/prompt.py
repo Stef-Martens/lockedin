@@ -106,8 +106,8 @@ def turn_context(conn: Connection, now: datetime) -> str:
                     for i in planned if i["day"] == d.isoformat()]
             lines.append(f"Agenda {label}: " + ("; ".join(todo) if todo else "nothing planned") + ".")
     for e in timeoff.entries(conn, today):
-        what = timeoff.describe({r["category"]: r["until"] for r in e["restrictions"]})
-        lines.append(f"Time off: {e['label'] or e['reason'].capitalize()} from {timeoff._fmt(e['start'])}: {what} (id {e['id']}).")
+        lines.append(f"Time off: {e['label'] or e['reason'].capitalize()} from {timeoff._fmt(e['start'])}: "
+                     f"{timeoff.describe_entry(e)} (id {e['id']}).")
     off_today = timeoff.off_on(conn, today)
     for cat in ("run", "bike", "swim"):
         back = timeoff.back_from(conn, today, cat, BACK_EASY_DAYS)

@@ -13,7 +13,7 @@ from lockedin.focus.mix import session_suggestions
 from lockedin.focus.suggest import gym_suggestions
 from lockedin.focus.wins import plateaus, recent_wins
 from lockedin.reminders import checkin_due, hevy_due, next_checkin_due
-from lockedin.timeoff import _fmt, describe, entries, entry_on, off_on
+from lockedin.timeoff import _fmt, away_on, describe, entries, entry_on, off_on
 from lockedin.timeutil import TZ
 
 router = APIRouter(prefix="/api", dependencies=[Depends(require_owner)])
@@ -26,7 +26,7 @@ def _time_off_today(conn: Connection, today: date) -> str | None:
     off = off_on(conn, today)
     if "all" in off:
         entry = entry_on(conn, today)
-        return f"{'Vacation' if entry and entry['reason'] == 'vacation' else 'Time off'} until {_fmt(off['all'])}"
+        return f"{'Vacation' if entry and entry['reason'] == 'vacation' else 'Everything off'} until {_fmt(off['all'])}"
     return describe(off) if off else None
 
 
@@ -73,7 +73,7 @@ def overview(weeks: int = 12, conn: Connection = Depends(get_conn), now: datetim
         "time_off_today": _time_off_today(conn, today),
         "back_from": _back_from_card(conn, today),
         "wins": recent_wins(conn, now),
-        "plateaus": [] if back else plateaus(conn, now),
+        "plateaus": [] if back or away_on(conn, today) else plateaus(conn, now),
         "focus": focus,
         "measure_due": due,
         "checkin_due": due,

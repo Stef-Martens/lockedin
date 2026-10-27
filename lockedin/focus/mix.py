@@ -10,7 +10,7 @@ from lockedin.focus.effort import Effort, effort_for_window
 from lockedin.focus.sessions import counted_sessions
 from lockedin.focus.zones import hr_zone_bounds, max_hr_at, power_zone_bounds
 from lockedin.goals.steer import sport_goals
-from lockedin.timeoff import away_on, off_on
+from lockedin.timeoff import away_on, back_from, off_on
 from lockedin.timeutil import TZ
 
 ACTIVE_DAYS = 42
@@ -18,6 +18,7 @@ LOOKBACK_DAYS = 21
 MAX_SUGGESTIONS = 2
 # Easy and long runs, % of max HR: Daniels' E pace is ~65–79%; 78 keeps them inside the effort classifier's easy band.
 EASY_RUN_HR = (65, 78)
+EASY_BACK_DAYS = 14  # after a sport's time off ends, nothing hard for this long
 
 
 @dataclass
@@ -72,6 +73,7 @@ def session_suggestions(conn: Connection, now: datetime) -> list[SessionSuggesti
     off = off_on(conn, day)
     max_hr = max_hr_at(conn, now)
     ftp = ftp_at(conn, now)
+    back = {s for s in ("run", "bike", "swim") if s not in off and back_from(conn, day, s, EASY_BACK_DAYS)}
     out: list[SessionSuggestion] = []
     for sport in ("run", "bike"):
         if sport in off:
@@ -86,7 +88,7 @@ def session_suggestions(conn: Connection, now: datetime) -> list[SessionSuggesti
             out.append(SessionSuggestion(sport, "long", f"Long easy {noun}", detail,
                                          f"No long {noun} in the last 3 weeks"))
         classified = [e for _, e in recent if e]
-        if len(classified) >= 3 and "hard" not in classified:
+        if len(classified) >= 3 and "hard" not in classified and sport not in back:
             out.append(SessionSuggestion(sport, "hard", "Intervals", _intervals(sport, max_hr, ftp),
                                          f"No hard {noun} in the last 3 weeks"))
         if month and sum(e == "hard" for e in month) / len(month) > 0.5:
@@ -99,7 +101,11 @@ def session_suggestions(conn: Connection, now: datetime) -> list[SessionSuggesti
             continue
         mine = next((s for s in out if s.sport == sport), None)
         if mine is None:
-            if sport == "run":
+            if sport in back:
+                noun = {"run": "run", "bike": "ride", "swim": "swim"}[sport]
+                detail = "30 min, relaxed" if sport == "swim" else f"45 min{_easy(sport, max_hr, ftp)}"
+                mine = SessionSuggestion(sport, "easy", f"Easy {noun}", detail, "First two weeks back: keep it easy")
+            elif sport == "run":
                 mine = SessionSuggestion("run", "steady", "Steady run 40′", f"40 min{_easy('run', max_hr, ftp)}",
                                          "A regular steady run builds toward it")
             elif sport == "bike":
