@@ -41,6 +41,7 @@ def test_week_boundary_across_dst(conn):
 
 
 def test_coverage_unchanged(conn):
+    add_gym(conn, at(10, month=9), [(LEGS, 100, 10, "normal")])  # gym history before the 4 weeks: averaged over all 4
     add_gym(conn, at(20), [(BENCH, 60, 8, "normal")] * 4)
     cov = {c.key: c for c in muscle_coverage(conn, NOW)}
     assert cov["mid_lower_chest"].sets_per_week == 1.0 and cov["triceps"].sets_per_week == 0.5

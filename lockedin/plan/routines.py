@@ -64,5 +64,13 @@ def latest_sets(conn: Connection, now: datetime, exercise: str) -> list[tuple[fl
     ), {"a": aid, "n": exercise})]
 
 
+def last_logged(conn: Connection, now: datetime, exercise: str) -> datetime | None:
+    """When this exercise last had a working set, in any counted workout."""
+    return conn.execute(text(
+        "select max(a.start_at) from gym_sets s join exercises e on e.id = s.exercise_id join activities a on a.id = s.workout_id "
+        f"where e.name = :n and s.set_type <> 'warmup' and {counted('a')} and a.start_at <= :now"
+    ), {"n": exercise, "now": now}).scalar()
+
+
 def routine(conn: Connection, now: datetime, title: str) -> Routine | None:
     return next((r for r in routines(conn, now) if r.title == title), None)

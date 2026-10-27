@@ -14,6 +14,8 @@ from lockedin.focus.zones import hr_zone_bounds, max_hr_at, power_zone_bounds
 ACTIVE_DAYS = 42
 LOOKBACK_DAYS = 21
 MAX_SUGGESTIONS = 2
+# Easy and long runs, % of max HR: Daniels' E pace is ~65–79%; 78 keeps them inside the effort classifier's easy band.
+EASY_RUN_HR = (65, 78)
 
 
 @dataclass
@@ -44,14 +46,13 @@ def effort_mix(conn: Connection, now: datetime, sport: str, days: int = 28) -> E
     return EffortMix(sport, counts, unclassified)
 
 
-def _zone2(sport: str, max_hr: int | None, ftp: float | None) -> str:
-    if sport == "bike" and ftp:
-        lo, hi = power_zone_bounds(ftp)[2]
-        return f" ({lo}–{hi} W)"
-    if sport == "run" and max_hr:
-        lo, hi = hr_zone_bounds(max_hr)[2]
-        return f" (HR {lo}–{hi} bpm)"
-    return ""
+def _easy(sport: str, max_hr: int | None, ftp: float | None) -> str:
+    """How to ride or run easy: zone 2 power on the bike; on foot a heart-rate band, else the talk test."""
+    if sport == "bike":
+        return " in zone 2 ({}–{} W)".format(*power_zone_bounds(ftp)[2]) if ftp else " in zone 2"
+    if max_hr:
+        return f" easy (HR {round(max_hr * EASY_RUN_HR[0] / 100)}–{round(max_hr * EASY_RUN_HR[1] / 100)} bpm)"
+    return " easy, at a pace you can talk at"
 
 
 def _intervals(sport: str, max_hr: int | None, ftp: float | None) -> str:
@@ -73,7 +74,7 @@ def session_suggestions(conn: Connection, now: datetime) -> list[SessionSuggesti
         recent = effort_for_window(conn, now, LOOKBACK_DAYS, sport)
         month = [e for _, e in effort_for_window(conn, now, 28, sport) if e]
         if not any(e == "long" for _, e in recent):
-            detail = ("60–75 min" if sport == "run" else "90 min") + f" in zone 2{_zone2(sport, max_hr, ftp)}"
+            detail = ("60–75 min" if sport == "run" else "90 min") + _easy(sport, max_hr, ftp)
             out.append(SessionSuggestion(sport, "long", f"Long easy {noun}", detail,
                                          f"No long {noun} in the last 3 weeks"))
         classified = [e for _, e in recent if e]
@@ -81,7 +82,7 @@ def session_suggestions(conn: Connection, now: datetime) -> list[SessionSuggesti
             out.append(SessionSuggestion(sport, "hard", "Intervals", _intervals(sport, max_hr, ftp),
                                          f"No hard {noun} in the last 3 weeks"))
         if month and sum(e == "hard" for e in month) / len(month) > 0.5:
-            out.append(SessionSuggestion(sport, "easy", f"Easy {noun}", f"45 min in zone 2{_zone2(sport, max_hr, ftp)}",
+            out.append(SessionSuggestion(sport, "easy", f"Easy {noun}", f"45 min{_easy(sport, max_hr, ftp)}",
                                          f"Most of your {noun}s this month were hard"))
     # Goals of a sport always bring a session of that sport, first in line.
     goals = sport_goals(conn)
@@ -89,7 +90,7 @@ def session_suggestions(conn: Connection, now: datetime) -> list[SessionSuggesti
         mine = next((s for s in out if s.sport == sport), None)
         if mine is None:
             if sport == "run":
-                mine = SessionSuggestion("run", "steady", "Steady run 40′", f"40 min in zone 2{_zone2('run', max_hr, ftp)}",
+                mine = SessionSuggestion("run", "steady", "Steady run 40′", f"40 min{_easy('run', max_hr, ftp)}",
                                          "A regular steady run builds toward it")
             elif sport == "bike":
                 mine = SessionSuggestion("bike", "hard", "Intervals", _intervals("bike", max_hr, ftp),

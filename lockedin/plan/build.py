@@ -1,5 +1,6 @@
 """Today's plan: the owner's routine with targets, at most one variety swap and up to two extras."""
 
+import math
 import uuid
 from datetime import datetime
 
@@ -11,7 +12,8 @@ from lockedin.focus.suggest import goal_first, gym_suggestions, low_muscles, low
 from lockedin.goals.steer import goal_muscles
 from lockedin.focus.wins import stalled_exercises
 from lockedin.plan.goals import active_goals, goal_for, goal_label, known_exercises
-from lockedin.plan.routines import Routine, latest_sets, routine
+from lockedin.plan.routines import Routine, last_logged, latest_sets, routine
+from lockedin.plan.steps import eased, gap_cut, step_up
 from lockedin.timeutil import TZ
 
 MAX_SWAPS = 1
@@ -19,8 +21,6 @@ MAX_ADDS = 2
 MAX_MISSED = 5
 TOP_REPS = 12  # the top of 8–12: every set there means it's time to go up
 GOAL_READY_ON = 3  # a goal lift moves up once its best 3 top-weight sets reach TOP_REPS
-STEP_KG = 2.5
-DUMBBELL_STEP_KG = 2.0  # per dumbbell
 
 
 class NoRoutine(LookupError):
@@ -62,11 +62,12 @@ def _item(**fields) -> dict:
 
 
 def progression(last_sets: list[tuple[float | None, int | None]], equipment: str, dumbbell_logging: str,
-                welcome_back: bool, ready_on: int | None = None) -> dict:
+                welcome_back: bool, ready_on: int | None = None, days_away: int | None = None) -> dict:
     """Target for the sets at last session's top weight: up a step once every one of them hit 12 reps
     (only the best `ready_on` of them, for a goal lift whose extra set shouldn't hold it back).
     Lighter sets before them (ramping up) are counted separately, so the plan never asks for more heavy sets.
-    Sets logged with no reps (left empty in Hevy) don't count."""
+    Sets logged with no reps (left empty in Hevy) don't count. A lift last done `days_away` days ago (over 3 weeks)
+    doesn't go up: it starts lighter, whether or not the owner trained other things meanwhile."""
     last_sets = [(kg, reps) for kg, reps in last_sets if reps]
     weights = [kg for kg, _ in last_sets if kg]
     top = max(weights) if weights else None
@@ -76,6 +77,17 @@ def progression(last_sets: list[tuple[float | None, int | None]], equipment: str
     dumbbell = dumbbell_logging if equipment == "dumbbell" else None
     sets = max(len(at_top), 1)
     lighter = len(last_sets) - len(at_top) if top is not None else 0
+    if (cut := gap_cut(days_away)) and at_top:
+        # During a comeback the change stays "welcome_back": that's how a stored plan remembers it was built for one.
+        eased_in = {"change": "welcome_back" if welcome_back else "eased", "sets": sets,
+                    "reason": f"Back after {days_away // 7} weeks: lighter to ease in"}
+        if top is None:
+            best = max(at_top)
+            return {**eased_in, "weight_kg": None, "reps": str(max(1, math.floor(best * (1 - cut)))) if best else "8–12",
+                    "dumbbell": None, "lighter_sets": 0}
+        low = min(at_top)
+        return {**eased_in, "weight_kg": eased(top, equipment, dumbbell_logging, cut),
+                "reps": "8–12" if low >= 8 else str(low), "dumbbell": dumbbell, "lighter_sets": lighter}
     if top is None:  # bodyweight with nothing added: progress by a rep
         best = max(at_top, default=0)
         if welcome_back:
@@ -89,8 +101,7 @@ def progression(last_sets: list[tuple[float | None, int | None]], equipment: str
         reps = "8–12" if low >= 8 else str(low if welcome_back else low + 1)
         return {"weight_kg": top, "reps": reps, "change": "welcome_back" if welcome_back else "same",
                 "dumbbell": dumbbell, "sets": sets, "lighter_sets": lighter}
-    step = (2 * DUMBBELL_STEP_KG if dumbbell_logging == "pair" else DUMBBELL_STEP_KG) if equipment == "dumbbell" else STEP_KG
-    return {"weight_kg": round(top + step, 2), "reps": "8–12", "change": "up", "dumbbell": dumbbell,
+    return {"weight_kg": round(top + step_up(top, equipment, dumbbell_logging), 2), "reps": "8–12", "change": "up", "dumbbell": dumbbell,
             "sets": sets, "lighter_sets": lighter}
 
 
@@ -98,6 +109,7 @@ def _routine_item(conn: Connection, now: datetime, name: str, routine_sets: list
                   logging: str, back: bool, goals: list[dict], item_id: str | None = None,
                   known: list[str] | None = None) -> dict:
     last_sets = latest_sets(conn, now, name) or routine_sets
+    last = last_logged(conn, now, name)
     tag = equipment.get(name, "other")
     # A bodyweight move done with added weight (dip belt, dumbbell) progresses like any weighted lift.
     load = "other" if tag == "bodyweight" and any(kg for kg, _ in last_sets) else tag
@@ -105,7 +117,8 @@ def _routine_item(conn: Connection, now: datetime, name: str, routine_sets: list
     goal = goal_label(goal_for(name, goals, known))
     return _item(exercise=name, equipment=tag, muscle=(primary.get(name) or [None])[0],
                  last=[{"kg": kg, "reps": reps} for kg, reps in last_sets], goal=goal,
-                 **progression(last_sets, load, logging, back, ready_on=GOAL_READY_ON if goal else None), **fields)
+                 **progression(last_sets, load, logging, back, ready_on=GOAL_READY_ON if goal else None,
+                               days_away=(now - last).days if last else None), **fields)
 
 
 def _suggested(p: dict, kind: str, muscle: str, reason: str, replaces: str | None = None) -> dict:

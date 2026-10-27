@@ -52,7 +52,11 @@ def muscle_coverage(conn: Connection, now: datetime, days: int = 28) -> list[Mus
     if not trained:
         return []
     credit = set_credit(conn, params["since"], now)
-    weeks = days / 7
+    # A new starter is averaged over the weeks they've had (first gym session ever), not the whole window.
+    first = conn.execute(text(
+        f"select min(start_at) from activities where sport = 'gym' and {COUNTED_SQL} and start_at <= :now"
+    ), params).scalar()
+    weeks = min(days / 7, (now - first).days // 7 + 1)
     out = []
     for m in conn.execute(text("select * from muscles order by sort")):
         per_week = round(float(credit.get(m.key, 0)) / weeks, 2)

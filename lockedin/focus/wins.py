@@ -5,13 +5,16 @@ from datetime import date, datetime, timedelta
 
 from sqlalchemy import Connection, text
 
-from lockedin.focus.sessions import counted, counted_sessions
+from lockedin.focus.sessions import Session, counted, counted_sessions
 from lockedin.timeutil import TZ
 
 EPOCH = datetime(2000, 1, 1, tzinfo=TZ)
 MAX_WINS = 6
 MIN_RUN_M = 3000
 MIN_SWIM_M = 400
+SAME_DISTANCE = 0.10  # a pace best only counts against runs/swims within 10% of its distance (a 3k isn't a 10k)
+CONSISTENCY_WEEKS = 8
+YEAR = timedelta(days=365)
 
 
 @dataclass
@@ -52,6 +55,17 @@ def _gym_prs(conn: Connection, since: datetime, now: datetime) -> list[Win]:
             for r in rows if r.prior and r.best > r.prior]
 
 
+def _faster(window: list[Session], before: list[Session], pace) -> tuple[Session, float, float] | None:
+    """(session, its pace, the best earlier pace) for the window session that beat earlier ones of about the same
+    distance by the most."""
+    out = None
+    for s in window:
+        near = [pace(o) for o in before if pace(o) and abs(o.distance_m - s.distance_m) <= SAME_DISTANCE * s.distance_m]
+        if pace(s) and near and pace(s) < min(near) and (out is None or pace(s) / min(near) < out[1] / out[2]):
+            out = (s, pace(s), min(near))
+    return out
+
+
 def recent_wins(conn: Connection, now: datetime, days: int = 14) -> list[Win]:
     since = now - timedelta(days=days)
     before = counted_sessions(conn, EPOCH, since)
@@ -76,25 +90,27 @@ def recent_wins(conn: Connection, now: datetime, days: int = 14) -> list[Win]:
             wins.append(Win("longest", f"Longest {noun}", f"{cur[0] / 1000:.1f} km {noun} (was {old[0] / 1000:.1f})",
                             _local(cur[1].start_at), cur[1].id))
 
-    def runs(items):
-        return [s for s in items if s.sport == "run" and (s.distance_m or 0) >= MIN_RUN_M]
+    def of(sport, least):
+        return lambda items: [s for s in items if s.sport == sport and (s.distance_m or 0) >= least]
 
-    cur, old = best(runs(window), lambda s: s.avg_pace_s_per_km, min), best(runs(before), lambda s: s.avg_pace_s_per_km, min)
-    if cur and old and cur[0] < old[0]:
-        wins.append(Win("fastest_run", "Fastest run", f"{_pace(cur[0])} /km (was {_pace(old[0])})", _local(cur[1].start_at), cur[1].id))
+    runs, swims = of("run", MIN_RUN_M), of("swim", MIN_SWIM_M)
+    if found := _faster(runs(window), runs(before), lambda s: s.avg_pace_s_per_km):
+        s, pace, was = found
+        wins.append(Win("fastest_run", "Fastest run", f"{_pace(pace)} /km over {s.distance_m / 1000:.1f} km (was {_pace(was)})",
+                        _local(s.start_at), s.id))
+    if found := _faster(swims(window), swims(before), lambda s: s.swim_pace_s_per_100m):
+        s, pace, was = found
+        wins.append(Win("swim_pace", "Fastest swim", f"{_pace(pace)} /100m over {s.distance_m:.0f} m (was {_pace(was)})",
+                        _local(s.start_at), s.id))
 
-    def swims(items):
-        return [s for s in items if s.sport == "swim" and (s.distance_m or 0) >= MIN_SWIM_M]
-
-    cur, old = best(swims(window), lambda s: s.swim_pace_s_per_100m, min), best(swims(before), lambda s: s.swim_pace_s_per_100m, min)
-    if cur and old and cur[0] < old[0]:
-        wins.append(Win("swim_pace", "Fastest swim", f"{_pace(cur[0])} /100m (was {_pace(old[0])})", _local(cur[1].start_at), cur[1].id))
-
-    month = len(counted_sessions(conn, now - timedelta(days=28), now))
-    last_year = len(counted_sessions(conn, now - timedelta(days=365 + 28), now - timedelta(days=365)))
-    if last_year and month > last_year:
+    # Sessions a week over 8 weeks against the same 8 weeks a year ago, so one busy (or holiday) month doesn't decide it.
+    span = timedelta(weeks=CONSISTENCY_WEEKS)
+    recent = len(counted_sessions(conn, now - span, now)) / CONSISTENCY_WEEKS
+    last_year = len(counted_sessions(conn, now - YEAR - span, now - YEAR)) / CONSISTENCY_WEEKS
+    if last_year and round(recent, 1) > round(last_year, 1):
         wins.append(Win("consistency", "More consistent than last year",
-                        f"{month} sessions in the last 4 weeks (was {last_year})", _local(now), None))
+                        f"{recent:.1f} sessions a week over the last {CONSISTENCY_WEEKS} weeks (was {last_year:.1f})",
+                        _local(now), None))
 
     return sorted(wins, key=lambda w: w.date, reverse=True)[:MAX_WINS]
 

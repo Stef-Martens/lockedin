@@ -41,7 +41,7 @@ def test_progression_up_and_same(conn):
     add_gym(conn, day(23), [("Lat Pulldown (Cable)", 60, 12, "normal"), ("Lat Pulldown (Cable)", 60, 10, "normal")], title="B")
     add_gym(conn, day(22), [("Pull Up", None, 12, "normal")] * 3 + [("Triceps Dip", 10, 12, "normal")] * 3, title="C")
     a = items_by(build_plan(conn, NOW, "A"))
-    assert (a[BENCH]["change"], a[BENCH]["weight_kg"]) == ("up", 82.5)
+    assert (a[BENCH]["change"], a[BENCH]["weight_kg"]) == ("up", 85)  # ~5% of 80 on the 2.5 kg grid
     assert (a[INCLINE]["weight_kg"], a[INCLINE]["dumbbell"]) == (64, "pair")
     assert a[BENCH]["last"] == [{"kg": 80, "reps": 12}] * 3
     b = items_by(build_plan(conn, NOW, "B"))
