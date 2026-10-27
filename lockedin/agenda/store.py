@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from sqlalchemy import Connection, text
 
 from lockedin.agenda.actual import result_line
+from lockedin.agenda.steps import RunSteps, derive
 from lockedin.agenda.zwo import ZwiftWorkout, duration_s, filename, render, strip_control, summary
 from lockedin.fitness import ftp_at
 from lockedin.focus.sessions import counted
@@ -29,6 +30,15 @@ class Targets(BaseModel):
     pace_low: int | None = Field(None, ge=50, le=720)
     pace_high: int | None = Field(None, ge=50, le=720)
     hr_zone: int | None = Field(None, ge=1, le=5)
+    steps: RunSteps | None = None
+
+    @model_validator(mode="after")
+    def _from_steps(self):
+        """With steps, the summary fields are always recomputed from them; whatever was sent is ignored."""
+        if self.steps:
+            for key, value in derive(self.steps).items():
+                setattr(self, key, value)
+        return self
 
     @model_validator(mode="after")
     def _paces(self):
@@ -74,6 +84,8 @@ class ItemIn(BaseModel):
         if self.targets:
             if self.sport not in PACE:
                 raise ValueError("Only runs and swims have targets.")
+            if self.targets.steps and self.sport != "run":
+                raise ValueError("Steps are for runs only.")
             lo, hi = PACE[self.sport]
             for p in (self.targets.pace_low, self.targets.pace_high):
                 if p is not None and not lo <= p <= hi:
