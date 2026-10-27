@@ -1,5 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { parseSSE } from "./sse";
+
+vi.mock("./supabase", () => ({ supabase: {} }));  // no Supabase project needed to parse a stream
 
 describe("parseSSE", () => {
   it("parses complete events and keeps the unfinished tail", () => {

@@ -122,7 +122,7 @@ describe("Plan page", () => {
     fireEvent.click(screen.getByRole("button", { name: "Preferences" }));
     fireEvent.click(await screen.findByRole("button", { name: "‹ Back" }));
     await screen.findByText("Face Pull");
-    expect(apiFetch).toHaveBeenLastCalledWith("/api/plan", undefined);
+    expect(apiFetch).toHaveBeenLastCalledWith("/api/plan", { signal: expect.any(AbortSignal) });
   });
 
   it("reloads the plan when an item is gone", async () => {
@@ -130,8 +130,17 @@ describe("Plan page", () => {
     await screen.findByText("Face Pull");
     apiFetch.mockImplementationOnce(() => Promise.reject(new ApiError(404, "Not found")));
     fireEvent.click(screen.getByRole("button", { name: "Swap Face Pull" }));
-    await waitFor(() => expect(apiFetch).toHaveBeenLastCalledWith("/api/plan?day=Chest%20-%20Schouders%20-%20Triceps", undefined));
+    await waitFor(() => expect(apiFetch).toHaveBeenLastCalledWith("/api/plan?day=Chest%20-%20Schouders%20-%20Triceps", { signal: expect.any(AbortSignal) }));
     expect(await screen.findByText("Face Pull")).toBeTruthy();
+  });
+
+  it("marks a lift that starts lighter after a break, and says so in the comeback banner", async () => {
+    apiFetch.mockImplementationOnce(() => Promise.resolve({ ...PLAN, comeback: true,
+      items: [item({ change: "eased", weight_kg: 72.5, last: [{ kg: 80, reps: 8 }] })] }));
+    await open("/plan?day=Chest%20-%20Schouders%20-%20Triceps");
+    expect(await screen.findByText("Back after a break: lighter")).toBeTruthy();
+    expect(screen.getByText(/lighter for lifts you haven't done in a while/)).toBeTruthy();
+    expect(screen.queryByText(/same weights as last time/)).toBeNull();
   });
 
   it("says when the muscle list couldn't load in Preferences", async () => {

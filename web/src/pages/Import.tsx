@@ -2,6 +2,7 @@ import { type DragEvent, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { Card, PageHeader, SectionHead } from "../components/ui";
 import { apiFetch, uploadFile } from "../lib/api";
+import { ago, recent } from "../lib/format";
 import { stagger } from "../lib/motion";
 import type { FitResult, HevyResult, Status } from "../lib/types";
 
@@ -11,19 +12,6 @@ interface FileRow {
   result?: FitResult;
   error?: string;
 }
-
-function ago(iso: string | null): string {
-  if (!iso) return "never";
-  const mins = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins} min ago`;
-  const h = Math.round(mins / 60);
-  if (h < 24) return `${h} h ago`;
-  const d = Math.round(h / 24);
-  return d === 1 ? "yesterday" : `${d} days ago`;
-}
-
-const recent = (iso: string | null) => !!iso && Date.now() - new Date(iso).getTime() < 24 * 3600 * 1000;
 
 function StatusTile({ label, when, sub, dot, i }: { label: string; when: string; sub: string; dot: "live" | "idle" | "gym"; i: number }) {
   return (
@@ -42,8 +30,8 @@ function FitUpload({ onDone }: { onDone: () => void }) {
   const [over, setOver] = useState(false);
   const input = useRef<HTMLInputElement>(null);
 
-  async function handle(files: FileList | null) {
-    const list = Array.from(files ?? []).filter((f) => f.name.toLowerCase().endsWith(".fit"));
+  async function handle(files: File[]) {
+    const list = files.filter((f) => f.name.toLowerCase().endsWith(".fit"));
     if (!list.length) return;
     setRows(list.map((f) => ({ name: f.name, state: "waiting" })));
     for (let i = 0; i < list.length; i++) {
@@ -75,12 +63,15 @@ function FitUpload({ onDone }: { onDone: () => void }) {
       <SectionHead title="Ride and workout files" />
       <p className="secondary" style={{ marginTop: -6, fontSize: 14 }}>.fit files from Zwift or HealthFit. These normally sync from your Mac by themselves.</p>
       <div className={`drop${over ? " over" : ""}`} onClick={() => input.current?.click()} role="button" tabIndex={0}
-        onKeyDown={(e) => e.key === "Enter" && input.current?.click()}
+        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); input.current?.click(); } }}
         onDragOver={(e) => { e.preventDefault(); setOver(true); }} onDragLeave={() => setOver(false)}
-        onDrop={(e: DragEvent) => { e.preventDefault(); setOver(false); handle(e.dataTransfer.files); }}>
+        onDrop={(e: DragEvent) => { e.preventDefault(); setOver(false); handle(Array.from(e.dataTransfer.files)); }}>
         Drop .fit files here or <span style={{ color: "var(--accent)", fontWeight: 600 }}>choose files</span>
-        <input ref={input} type="file" accept=".fit,.FIT" multiple onChange={(e) => handle(e.target.files)} />
       </div>
+      {/* Outside the drop zone, so its click doesn't bubble back into it. Cleared after each pick, so picking the
+          same file again (e.g. after a failed upload) still uploads it. */}
+      <input ref={input} type="file" accept=".fit,.FIT" multiple hidden data-testid="fit-input"
+        onChange={(e) => { const files = Array.from(e.target.files ?? []); e.target.value = ""; handle(files); }} />
       {rows.map((r, i) => {
         const [text, color] = label(r);
         const pct = r.state === "waiting" ? 0 : r.state === "uploading" ? 60 : 100;
@@ -104,6 +95,7 @@ function FitUpload({ onDone }: { onDone: () => void }) {
 
 function HevyUpload({ onDone }: { onDone: () => void }) {
   const [busy, setBusy] = useState(false);
+  const input = useRef<HTMLInputElement>(null);
   const [result, setResult] = useState<HevyResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -132,10 +124,11 @@ function HevyUpload({ onDone }: { onDone: () => void }) {
       <p className="secondary" style={{ marginTop: -6, fontSize: 14, lineHeight: 1.5 }}>
         In Hevy: Profile → Settings → Export &amp; Import Data → Export Workouts. Upload the whole file every time; nothing gets duplicated.
       </p>
-      <label className="btn primary" style={{ display: "inline-block" }}>
+      <button type="button" className="btn primary" disabled={busy} onClick={() => input.current?.click()}>
         {busy ? "Importing…" : "Choose CSV"}
-        <input type="file" accept=".csv,text/csv" hidden disabled={busy} onChange={(e) => handle(e.target.files?.[0])} />
-      </label>
+      </button>
+      <input ref={input} type="file" accept=".csv,text/csv" hidden data-testid="hevy-input"
+        onChange={(e) => { const file = e.target.files?.[0]; e.target.value = ""; handle(file); }} />
       {error && <p className="error">{error}</p>}
       {result && (
         <div className="row pop" style={{ marginTop: 16, gap: 8 }}>

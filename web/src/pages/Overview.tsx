@@ -7,32 +7,17 @@ import WinsStrip from "../components/WinsStrip";
 import type { AgendaItem, AgendaWeek } from "../lib/agenda";
 import { apiFetch } from "../lib/api";
 import { formatMinutes, type Overview as OverviewData } from "../lib/focus";
-import { formatDistance, SPORT_LABEL, type Sport } from "../lib/format";
+import { ago, dayMonth, formatDay, formatDistance, isoWeek, SPORT_LABEL, todayLocal, type Sport } from "../lib/format";
 import { shiftWeek } from "../lib/musclemap";
 import { stagger, useCountUp } from "../lib/motion";
 
 const SPORTS: Sport[] = ["bike", "run", "swim", "gym", "other"];
 const TREND: Partial<Record<Sport, string>> = { bike: "/trends/bike", run: "/trends/run", swim: "/trends/swim", gym: "/trends/gym" };
 
-function isoWeek(d: Date): number {
-  const t = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
-  const day = t.getUTCDay() || 7;
-  t.setUTCDate(t.getUTCDate() + 4 - day);
-  return Math.ceil(((t.getTime() - Date.UTC(t.getUTCFullYear(), 0, 1)) / 864e5 + 1) / 7);
-}
-
-function ago(iso: string): string {
-  const days = Math.floor((Date.now() - new Date(iso).getTime()) / 864e5);
-  return days <= 0 ? "today" : days === 1 ? "yesterday" : `${days} days ago`;
-}
-
-const dayMonth = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" });
-
 function checkinText(d: OverviewData): string {
   if (!d.last_checkin_on) return "No measurements yet; two minutes with a tape measure.";
   if (!d.checkin_due) return `Next one on ${dayMonth(d.next_checkin_on)}.`;
-  const today = new Date().toLocaleDateString("en-CA", { timeZone: "Europe/Brussels" });
-  return d.next_checkin_on === today ? "Due today." : `Was due on ${dayMonth(d.next_checkin_on)}.`;
+  return d.next_checkin_on === todayLocal() ? "Due today." : `Was due on ${dayMonth(d.next_checkin_on)}.`;
 }
 
 function TotalTile({ minutes, sessions, label }: { minutes: number; sessions: number; label: string }) {
@@ -48,7 +33,14 @@ function TotalTile({ minutes, sessions, label }: { minutes: number; sessions: nu
 
 type Goal = { id: number; text: string; target: string | null; progress?: GoalProgress };
 
-type GoalProgress = { label: string; fraction: number } | null;
+/**
+ * The server does the maths and the words: `fraction` is how far along (for a time goal, where lower is better,
+ * target ÷ best), `label` is shown as given ("96 / 100 kg est. 1RM", "27:00 / 25:00 for 5 km").
+ */
+type GoalProgress = { label: string; fraction: number; unit?: string } | null;
+
+/** Bar width in %: past the target (a time faster than the goal gives > 1) stays a full bar. */
+const goalBar = (fraction: number) => Math.round(Math.min(1, Math.max(0, fraction)) * 100);
 
 // Rest days and notes can't be ticked off, so they don't count as to-dos.
 const trackable = (i: AgendaItem) => !["rest", "other"].includes(i.sport);
@@ -65,7 +57,7 @@ function TodayBlock({ items, upcoming }: { items: AgendaItem[] | "failed"; upcom
   const todo = items.filter(trackable);
   const done = todo.filter((i) => i.done).length;
   const next = upcoming.length
-    ? `${new Date(`${upcoming[0].day}T12:00`).toLocaleDateString("en-GB", { weekday: "long" })}: ${upcoming.map((u) => u.title + (u.optional ? " (optional)" : "")).join(", ")}`
+    ? `${formatDay(upcoming[0].day, { weekday: "long" })}: ${upcoming.map((u) => u.title + (u.optional ? " (optional)" : "")).join(", ")}`
     : null;
   return (
     <Card variant="accent" i={0}>
@@ -79,9 +71,9 @@ function TodayBlock({ items, upcoming }: { items: AgendaItem[] | "failed"; upcom
             <div className="today-title">{it.title}{it.goal && <span className="goal-tag">for: {it.goal}</span>}{it.optional && <span className="muted"> · optional</span>}</div>
             <div className="secondary" style={{ fontSize: 13 }}>{it.done ? it.result : it.zwift?.summary ?? it.note ?? (it.routine ? "Your routine" : "")}</div>
           </div>
-          {it.done ? <Link className="btn small" style={{ textDecoration: "none" }} to={`/agenda/${it.id}`}>See how it went</Link>
-            : it.sport === "gym" && it.routine ? <Link className="btn primary small" style={{ textDecoration: "none" }} to={`/plan?day=${encodeURIComponent(it.routine)}`}>Plan it</Link>
-            : <Link className="btn small" style={{ textDecoration: "none" }} to={`/agenda/${it.id}`}>Open</Link>}
+          {it.done ? <Link className="btn small" to={`/agenda/${it.id}`}>See how it went</Link>
+            : it.sport === "gym" && it.routine ? <Link className="btn primary small" to={`/plan?day=${encodeURIComponent(it.routine)}`}>Plan it</Link>
+            : <Link className="btn small" to={`/agenda/${it.id}`}>Open</Link>}
         </div>
       ))}
       {next && <div className="secondary" style={{ fontSize: 13, marginTop: 10 }}>Next · {next}</div>}
@@ -114,7 +106,7 @@ function GymCards({ goals, goalsFailed }: { goals: Goal[] | null; goalsFailed: b
                   <span>{g.text}</span>
                   {g.progress && <span className="secondary num" style={{ fontSize: 13, whiteSpace: "nowrap" }}>{g.progress.label}</span>}
                 </div>
-                {g.progress && <div className="goal-bar"><span className="grow-x" style={{ width: `${Math.round(g.progress.fraction * 100)}%` }} /></div>}
+                {g.progress && <div className="goal-bar"><span className="grow-x" style={{ width: `${goalBar(g.progress.fraction)}%` }} /></div>}
                 {g.target && <div className="muted" style={{ fontSize: 12 }}>{g.target}</div>}
               </div>
             ))}
@@ -166,9 +158,10 @@ export default function Overview() {
   const total = SPORTS.reduce((m, s) => m + t[s].time_s / 60, 0);
   const sessions = SPORTS.reduce((n, s) => n + t[s].sessions, 0);
   const c = data.comeback;
-  const now = new Date();
-  const eyebrow = `${now.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", timeZone: "Europe/Brussels" })} · week ${isoWeek(now)}`;
-  const monthName = now.toLocaleDateString("en-GB", { month: "long", timeZone: "Europe/Brussels" });
+  // Day, week number and month all from Brussels' today, so they agree just after midnight too.
+  const day = todayLocal();
+  const eyebrow = `${formatDay(day, { weekday: "long", day: "numeric", month: "long" })} · week ${isoWeek(day)}`;
+  const monthName = formatDay(day, { month: "long" });
 
   return (
     <>

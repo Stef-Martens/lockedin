@@ -1,5 +1,4 @@
-import { ApiError, authHeader, errorFrom } from "./api";
-import { supabase } from "./supabase";
+import { ApiError, authedFetch, errorFrom } from "./api";
 
 /** Split a chunk of a server-sent-event stream into JSON `data:` events, carrying any unfinished event over. */
 export function parseSSE(chunk: string, carry: string): { events: unknown[]; carry: string } {
@@ -10,26 +9,31 @@ export function parseSSE(chunk: string, carry: string): { events: unknown[]; car
   return { events, carry: rest };
 }
 
-/** POST JSON and hand each streamed event to `onEvent` until the server closes the stream. */
+/**
+ * POST JSON and hand each streamed event to `onEvent` until the server closes the stream.
+ * Aborting `signal` stops reading; the promise then rejects with an AbortError.
+ */
 export async function postStream(path: string, body: unknown, onEvent: (event: unknown) => void, signal?: AbortSignal) {
-  const res = await fetch(path, {
-    method: "POST", signal, body: JSON.stringify(body),
-    headers: { ...(await authHeader()), "Content-Type": "application/json" },
+  // Same session handling as apiFetch: a 401 refreshes the token and retries once before signing out.
+  const res = await authedFetch(path, {
+    method: "POST", signal, body: JSON.stringify(body), headers: { "Content-Type": "application/json" },
   });
-  if (res.status === 401) {  // same as apiFetch: the session expired, so sign in again
-    await supabase.auth.signOut();
-    window.location.assign("/login");
-    throw new ApiError(401, "Not signed in.");
-  }
   if (!res.ok) throw await errorFrom(res);
   if (!res.body) throw new ApiError(0, "No response stream.");
   const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
-  let carry = "";
-  for (;;) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    const parsed = parseSSE(value, carry);
-    carry = parsed.carry;
-    parsed.events.forEach(onEvent);
+  const stop = () => { reader.cancel().catch(() => undefined); };
+  signal?.addEventListener("abort", stop, { once: true });
+  try {
+    let carry = "";
+    for (;;) {
+      const { value, done } = await reader.read();
+      signal?.throwIfAborted();
+      if (done) break;
+      const parsed = parseSSE(value, carry);
+      carry = parsed.carry;
+      parsed.events.forEach(onEvent);
+    }
+  } finally {
+    signal?.removeEventListener("abort", stop);
   }
 }

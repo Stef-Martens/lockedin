@@ -146,6 +146,24 @@ export interface MapMuscle {
   goals?: string[];
 }
 
+/** One day of GET /api/load: the day's training load and the running averages built from it. */
+export interface LoadDay {
+  day: string;
+  load: number;
+  /** 42-day average load (CTL). */
+  fitness: number;
+  /** 7-day average load (ATL). */
+  fatigue: number;
+  /** fitness − fatigue (TSB). */
+  form: number;
+}
+
+/** GET /api/load: 180 days, oldest first; `today` is null before there's any training to go on. */
+export interface TrainingLoad {
+  days: LoadDay[];
+  today: { fitness: number; fatigue: number; form: number } | null;
+}
+
 export interface MuscleMap {
   week_start: string;
   is_current: boolean;

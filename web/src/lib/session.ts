@@ -26,17 +26,6 @@ export interface SessionActual {
 
 export interface SessionDetail { item: AgendaItem; plan: SessionPlan; actual: SessionActual | null }
 
-export function mmss(seconds: number): string {
-  const s = Math.round(seconds);
-  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), r = s % 60;
-  return h ? `${h}:${String(m).padStart(2, "0")}:${String(r).padStart(2, "0")}` : `${m}:${String(r).padStart(2, "0")}`;
-}
-
-export function paceText(seconds: number | null | undefined, sport: "run" | "swim"): string {
-  if (seconds == null) return "–";
-  return `${mmss(seconds)}${sport === "run" ? "/km" : "/100 m"}`;
-}
-
 const LABELS: Record<string, { text: string; tone: "good" | "near" | "muted" }> = {
   on_target: { text: "On target", tone: "good" },
   done: { text: "Done", tone: "good" },

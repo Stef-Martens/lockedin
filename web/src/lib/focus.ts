@@ -39,6 +39,22 @@ export interface Coverage {
   status: "low" | "ok" | "high";
 }
 
+/** A zone's [low, high] in W or bpm; the top power zone is open-ended ([lo, null]). */
+export type ZoneBounds = [number, number | null];
+
+/** `zones` in GET /api/focus, keyed by zone number ("1"–"5"). */
+export interface FocusZones {
+  max_hr: number | null;
+  ftp: number | null;
+  hr_zones: Record<string, ZoneBounds> | null;
+  power_zones: Record<string, ZoneBounds> | null;
+}
+
+/** "151–176 W", or "≥ 252 W" for an open-ended top zone. */
+export function zoneRange([lo, hi]: ZoneBounds, unit: string): string {
+  return hi == null ? `≥ ${lo} ${unit}` : `${lo}–${hi} ${unit}`;
+}
+
 export interface EffortMix { sport: string; counts: Record<Effort, number>; unclassified: number }
 
 /** One line for the "Focus this week" card. */

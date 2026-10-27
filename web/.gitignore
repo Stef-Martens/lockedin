@@ -1,0 +1,3 @@
+*.tsbuildinfo
+# also a symlinked node_modules (the root rule only matches a directory)
+node_modules

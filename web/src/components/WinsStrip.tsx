@@ -1,9 +1,7 @@
 import { Link } from "react-router-dom";
 import { type Win, winParts } from "../lib/focus";
+import { shortDay } from "../lib/format";
 import { Card, SectionHead } from "./ui";
-
-const shortDate = (iso: string) =>
-  new Date(`${iso}T12:00:00Z`).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" });
 
 export default function WinsStrip({ wins, i }: { wins: Win[]; i?: number }) {
   if (!wins.length) return null;
@@ -16,7 +14,7 @@ export default function WinsStrip({ wins, i }: { wins: Win[]; i?: number }) {
           <>
             <div>
               <div style={{ fontSize: 15 }}>{w.title.replace(/^New best: /, "")}</div>
-              <div className="muted" style={{ fontSize: 13 }}>{shortDate(w.date)} · {note}</div>
+              <div className="muted" style={{ fontSize: 13 }}>{shortDay(w.date)} · {note}</div>
             </div>
             {value && <div className="win-value num">{value}</div>}
           </>

@@ -1,5 +1,6 @@
 export type PlanKind = "routine" | "swap" | "add" | "missed";
-export type PlanChange = "up" | "same" | "welcome_back" | "new" | null;
+/** "eased": a lift not done for 3+ weeks starts 10% lighter (20% after 8+ weeks). */
+export type PlanChange = "up" | "same" | "welcome_back" | "eased" | "new" | null;
 
 export interface PlanItem {
   id: string;
@@ -45,7 +46,13 @@ export function changeLabel(item: PlanItem): string | null {
       return item.dumbbell === "pair" ? `Up ${kg(diff)} kg (${kg(diff / 2)} kg each)` : `Up ${kg(diff)} kg`;
     }
     case "same": return "Same weight, aim for one more rep";
-    case "welcome_back": return "Welcome back: same as last time";
+    case "welcome_back": {
+      // In a comeback a lift you skipped for a while is eased too, but keeps this label: say which it is.
+      const before = Math.max(0, ...item.last.map((s) => s.kg ?? 0));
+      return item.weight_kg != null && before > 0 && item.weight_kg < before
+        ? "Welcome back: lighter than last time" : "Welcome back: same as last time";
+    }
+    case "eased": return "Back after a break: lighter";
     case "new": return "New · start light";
     default: return null;
   }

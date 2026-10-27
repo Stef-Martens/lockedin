@@ -111,6 +111,16 @@ describe("Session page", () => {
     expect(screen.getByText("1 of 2 on target")).toBeTruthy();
   });
 
+  it("doesn't count intervals on target when there's no FTP to judge them by", async () => {
+    open({ ...AFTER, plan: { ...BEFORE.plan, kind: "zwift", ftp: null, ftp_is_set: false, parts, duration_s: 3900, sweet_spot_min: 30, tss_est: 58 },
+      actual: { ...AFTER.actual!, intervals_on_target: null, parts: [
+        { label: "Interval 1", target_w: 151, avg_w: 150, avg_hr: 152, avg_cadence: 88, status: "no_target" },
+        { label: "Interval 2", target_w: 151, avg_w: 140, avg_hr: 155, avg_cadence: 86, status: "no_target" }] } });
+    await screen.findByRole("heading", { name: "Sweet Spot 3x10" });
+    expect(screen.queryByText(/of 2 on target/)).toBeNull();
+    expect(screen.getByText("Set your FTP to judge intervals")).toBeTruthy();
+  });
+
   it("labels the pace axis with the target band", async () => {
     open({ item: { ...base, sport: "run", title: "Steady run", zwift: null, zwift_status: null, done: true, activity_id: 31,
         targets: { pace_low: 335, pace_high: 350 } },

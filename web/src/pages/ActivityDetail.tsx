@@ -1,15 +1,12 @@
-import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import SeriesChart, { type Point } from "../components/SeriesChart";
-import { Card, PageHeader } from "../components/ui";
+import { Card, PageHeader, Tile } from "../components/ui";
 import { activityTitle } from "../lib/activity";
-import { apiFetch } from "../lib/api";
-import { formatDuration, formatPace, formatSwimPace, formatDistance, SPORT_LABEL } from "../lib/format";
+import { formatDateLong, formatDistance, formatDuration, formatMin, formatPace, formatSwimPace, SPORT_LABEL } from "../lib/format";
 import { stagger } from "../lib/motion";
 import { smooth } from "../lib/smooth";
 import type { ActivityDetail as Detail, GymSet, Profile } from "../lib/types";
-
-const minutes = (s: number) => `${Math.round(s / 60)}′`;
+import { useApi } from "../lib/useApi";
 // Hevy's own markers: warm-up, failure, drop set.
 const SET_MARK: Record<string, string> = { warmup: "W", failure: "F", dropset: "D" };
 const SOURCE: Record<string, string> = { zwift: "Zwift", healthfit: "Apple Watch", hevy: "Hevy" };
@@ -64,17 +61,11 @@ function GymCards({ sets }: { sets: GymSet[] }) {
 
 export default function ActivityDetail() {
   const { id } = useParams();
-  const [a, setA] = useState<Detail | null>(null);
-  const [profile, setProfile] = useState<Profile | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  // Keyed on the id: following a link to the duplicate drops the old activity (and its error) at once.
+  const { data: a, error } = useApi<Detail>(`/api/activities/${id}`);
+  const { data: profile } = useApi<Profile>("/api/profile");
 
-  useEffect(() => {
-    setA(null);
-    apiFetch<Detail>(`/api/activities/${id}`).then(setA).catch((e) => setError(e.message));
-    apiFetch<Profile>("/api/profile").then(setProfile).catch(() => undefined);
-  }, [id]);
-
-  if (error) return <p className="error">{error}</p>;
+  if (error) return <p className="error">{error.message}</p>;
   if (!a) return <p className="muted">Loading…</p>;
 
   const s = a.streams;
@@ -87,7 +78,7 @@ export default function ActivityDetail() {
   const hr = series(t, s?.hr ?? null);
   const cadence = a.sport === "bike" ? smoothed(series(t, s?.cadence ?? null)) : null;
   const pace = a.sport === "run" ? smoothed(series(t, s?.speed ?? null, (v) => (v > 0.5 ? 1000 / v : null))) : null;
-  const when = new Date(a.start_at).toLocaleString("en-GB", { weekday: "long", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit", timeZone: "Europe/Brussels" });
+  const when = formatDateLong(a.start_at);
   const tiles: [string, string | null][] = [
     ["Time", formatDuration(a.moving_s ?? a.duration_s)],
     ["Distance", a.distance_m ? formatDistance(a.distance_m, a.sport) : null],
@@ -112,7 +103,7 @@ export default function ActivityDetail() {
 
   return (
     <>
-      <Link to="/activities" className="secondary" style={{ fontSize: 14, textDecoration: "none" }}>Back to activities</Link>
+      <Link to="/activities" className="back-link">‹ Activities</Link>
       <PageHeader
         eyebrow={<span className="row" style={{ gap: 8 }}><span className="dot" style={{ background: `var(--sport-${a.sport})` }} />{SPORT_LABEL[a.sport]} · {SOURCE[a.source]}</span>}
         title={activityTitle(a)} sub={when} />
@@ -130,25 +121,20 @@ export default function ActivityDetail() {
       )}
 
       <div className="tiles">
-        {shown.map(([label, value], n) => (
-          <div key={label + n} className="tile rise" style={stagger(n, 0.05, 0.03)}>
-            <div className="label">{label}</div>
-            <div className="value num">{value}</div>
-          </div>
-        ))}
+        {shown.map(([label, value], n) => <Tile key={label + n} label={label} value={value} i={n} />)}
       </div>
 
       {(power || hr || pace || cadence) && (
         <Card i={3}>
           {power && <SeriesChart bare syncId="act" title="Power" summary={a.avg_power ? `avg ${a.avg_power} W · 30 s smoothed` : undefined} points={power}
-            colorVar="--series-power" formatX={minutes} formatY={(y) => `${Math.round(y)} W`} formatTick={(y) => `${Math.round(y)}`} i={0} />}
-          {pace && <SeriesChart bare syncId="act" title="Pace" points={pace} colorVar="--series-pace" reversed formatX={minutes}
+            colorVar="--series-power" formatX={formatMin} formatY={(y) => `${Math.round(y)} W`} formatTick={(y) => `${Math.round(y)}`} i={0} />}
+          {pace && <SeriesChart bare syncId="act" title="Pace" points={pace} colorVar="--series-pace" reversed formatX={formatMin}
             formatY={(y) => formatPace(y)} formatTick={(y) => formatPace(y).replace(" /km", "")}
             summary={a.avg_pace_s_per_km ? `avg ${formatPace(a.avg_pace_s_per_km)}` : undefined} i={0} />}
           {hr && <SeriesChart bare syncId="act" title="Heart rate" summary={a.avg_hr ? `avg ${a.avg_hr} bpm` : undefined} points={hr}
-            colorVar="--series-hr" formatX={minutes} formatY={(y) => `${Math.round(y)} bpm`} formatTick={(y) => `${Math.round(y)}`} height={170} i={1} />}
+            colorVar="--series-hr" formatX={formatMin} formatY={(y) => `${Math.round(y)} bpm`} formatTick={(y) => `${Math.round(y)}`} height={170} i={1} />}
           {cadence && <SeriesChart bare syncId="act" title="Cadence" summary={a.avg_cadence ? `avg ${a.avg_cadence} rpm` : undefined}
-            points={cadence} colorVar="--series-cadence" formatX={minutes} formatY={(y) => `${Math.round(y)} rpm`}
+            points={cadence} colorVar="--series-cadence" formatX={formatMin} formatY={(y) => `${Math.round(y)} rpm`}
             formatTick={(y) => `${Math.round(y)}`} height={130} i={2} />}
         </Card>
       )}
