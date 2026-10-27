@@ -11,6 +11,7 @@ from lockedin.focus.coverage import muscle_coverage
 from lockedin.focus.preferences import load_preferences
 from lockedin.goals.steer import goal_muscles
 from lockedin.focus.sessions import counted
+from lockedin.plan.steps import gap_cut
 
 TARGET_REPS = 12          # 12 reps at full effort ≈ 10 reps at RPE 8, so "3 × 8–12" stays honest
 NEW_EXERCISE_FACTOR = 0.8  # never-done exercises start light
@@ -87,7 +88,8 @@ def pick(conn: Connection, muscle: str, now: datetime, never: frozenset[str] = f
     ), {"m": muscle, "since": now - timedelta(days=RECENT_DAYS), "now": now, "excluded": list(excluded)}).first()
     if own:
         best = _best_e1rm(conn, own.name, now)
-        weight = _load(best) if best and own.equipment != "bodyweight" else None
+        # Left for weeks: start lighter (see plan.steps).
+        weight = _load(best) * (1 - gap_cut((now - own.last).days)) if best and own.equipment != "bodyweight" else None
         return own.name, own.equipment, weight, False, _best_reps(conn, own.name, now)
 
     library = conn.execute(text(

@@ -61,7 +61,7 @@ def test_known_exercise_uses_own_history(conn):
     add_gym(conn, ago(42), [("Triceps Extension (Cable)", 30, 10, "normal")])  # e1RM 40, not in the last 4 weeks
     add_gym(conn, ago(3), [("Leg Extension (Machine)", 50, 12, "normal")])
     tri = by_key(gym_suggestions(conn, NOW, limit=20), "muscle_key")["triceps"]
-    assert (tri.exercise, tri.estimate, tri.weight_kg) == ("Triceps Extension (Cable)", False, 27.5)
+    assert (tri.exercise, tri.estimate, tri.weight_kg) == ("Triceps Extension (Cable)", False, 25)  # 6 weeks ago: 10% off 28.6
 
 
 def test_dumbbell_weights_follow_how_the_owner_logs_them(conn):
