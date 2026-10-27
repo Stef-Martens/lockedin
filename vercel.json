@@ -9,7 +9,7 @@
       "functions": {
         "lockedin/app.py": {
           "maxDuration": 300,
-          "excludeFiles": "{web/**,tests/**,samples/**,supabase/**,sync/**,docs/**,scripts/**,.venv/**,**/node_modules/**}"
+          "excludeFiles": "{web/**,tests/**,samples/**,supabase/**,sync/**,ios/**,docs/**,scripts/**,.venv/**,**/node_modules/**}"
         }
       }
     },

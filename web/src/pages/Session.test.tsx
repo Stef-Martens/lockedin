@@ -114,6 +114,18 @@ describe("Session page", () => {
     expect(screen.getByText(STEPPED.plan_line)).toBeTruthy();
   });
 
+  it("says no targets are set only when the run has no plan line either", async () => {
+    const plain = { ...STEPPED, plan_line: null, targets: null };
+    open({ item: plain, plan: { kind: "targets", hr_bpm: null }, actual: null });
+    await screen.findByRole("heading", { name: "Intervals" });
+    expect(screen.getByText("No targets set. Use Edit to add some.")).toBeTruthy();
+    cleanup();
+    open({ item: { ...STEPPED, targets: null }, plan: { kind: "targets", hr_bpm: null }, actual: null });
+    await screen.findByRole("heading", { name: "Intervals" });
+    expect(screen.getByText(STEPPED.plan_line)).toBeTruthy();
+    expect(screen.queryByText("No targets set. Use Edit to add some.")).toBeNull();
+  });
+
   it("edits a stepped run without target fields, and sends no targets", async () => {
     open({ item: STEPPED, plan: { kind: "targets", duration_s: 2700, hr_bpm: null }, actual: null });
     await screen.findByRole("heading", { name: "Intervals" });

@@ -110,8 +110,8 @@ def derive(steps: RunSteps) -> dict:
 def _time(s: int) -> str:
     m, sec = divmod(s, 60)
     if not m:
-        return f'{sec}"'
-    return f"{m}'" if not sec else f"{m}'{sec:02d}\""
+        return f"{sec}″"
+    return f"{m}′" if not sec else f"{m}′{sec:02d}″"
 
 
 def _distance(m: int, metres_only: bool = False) -> str:
@@ -139,7 +139,8 @@ def _target_words(target: dict | None) -> str:
 
 
 def _step_words(step: dict, label: str = "") -> str:
-    return " ".join(p for p in (_goal_words(step["goal"]), label, _target_words(step.get("target"))) if p)
+    words = [_goal_words(step["goal"]), label, _target_words(step.get("target"))]
+    return " ".join(p for p in words if p) or "open"
 
 
 def summary_line(sport: str, targets: dict | None) -> str | None:

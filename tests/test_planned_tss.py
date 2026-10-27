@@ -2,7 +2,7 @@ import pytest
 
 from lockedin.agenda.parts import parts, target_series, tss_estimate
 from lockedin.agenda.zwo import ZwiftWorkout
-from lockedin.forecast.ahead import UNMEASURED_IF, ZONE_IF, planned_load
+from lockedin.forecast.ahead import PLANNED_MIN, UNMEASURED_IF, ZONE_IF, planned_load
 
 
 def plan(*blocks):
@@ -79,9 +79,12 @@ def test_distance_step_without_pace_uses_the_run_summary_pace():
     assert planned_load(run(targets)) == pytest.approx(load(2 * 310, UNMEASURED_IF))
 
 
-def test_distance_step_without_any_pace_is_skipped():
-    steps = {"blocks": [{"repeat": 1, "steps": [{"kind": "work", "goal": {"distance_m": 2000}}]}]}
-    assert planned_load(run({"steps": steps})) == 0
+def test_steps_adding_up_to_no_time_count_as_a_plain_run():
+    distance_only = {"blocks": [{"repeat": 1, "steps": [{"kind": "work", "goal": {"distance_m": 2000}}]}]}
+    all_open = {"blocks": [{"repeat": 6, "steps": [{"kind": "work", "goal": {"open": True}}]}]}
+    plain = load(PLANNED_MIN["run"] * 60, UNMEASURED_IF)
+    assert planned_load(run({"steps": distance_only})) == pytest.approx(plain)
+    assert planned_load(run({"steps": all_open})) == pytest.approx(plain)
 
 
 def test_open_steps_are_skipped():

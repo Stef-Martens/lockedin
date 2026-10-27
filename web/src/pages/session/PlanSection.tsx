@@ -57,7 +57,7 @@ export default function PlanSection({ plan, item }: { plan: SessionPlan; item: A
           {plan.hr_zone && <Tile label="Heart rate" value={`Zone ${plan.hr_zone}`} hint={plan.hr_bpm ? `${plan.hr_bpm[0]}–${plan.hr_bpm[1]} bpm` : undefined} i={3} />}
         </div>
         {item.note && <p className="secondary" style={{ marginBottom: 0 }}>{item.note}</p>}
-        {!plan.distance_m && !plan.duration_s && !plan.pace_low && !item.note && <p className="muted flush">No targets set. Use Edit to add some.</p>}
+        {!plan.distance_m && !plan.duration_s && !plan.pace_low && !item.note && !item.plan_line && <p className="muted flush">No targets set. Use Edit to add some.</p>}
       </Card>
     );
   }

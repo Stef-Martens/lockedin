@@ -14,41 +14,54 @@ func workoutPlan(for item: FeedItem) throws -> WorkoutPlan {
     switch workout.kind {
     case "run":
         guard let blocks = workout.blocks, !blocks.isEmpty else { throw PlanError(reason: "it has no steps") }
+        let location: HKWorkoutSessionLocationType = workout.location == "indoor" ? .indoor : .outdoor
         let run = CustomWorkout(
             activity: .running,
-            location: workout.location == "indoor" ? .indoor : .outdoor,
+            location: location,
             displayName: workout.displayName,
-            warmup: try workout.warmup.map(workoutStep),
-            blocks: try blocks.map(intervalBlock),
-            cooldown: try workout.cooldown.map(workoutStep)
+            warmup: try workout.warmup.map { try workoutStep($0, location: location) },
+            blocks: try blocks.map { try intervalBlock($0, location: location) },
+            cooldown: try workout.cooldown.map { try workoutStep($0, location: location) }
         )
         return WorkoutPlan(.custom(run))
     case "swim":
         guard let goal = workout.goal else { throw PlanError(reason: "it has no goal") }
-        return WorkoutPlan(.goal(SingleGoalWorkout(activity: .swimming, swimmingLocation: .pool,
-                                                   goal: try workoutGoal(goal))))
+        let swimGoal = try workoutGoal(goal)
+        guard SingleGoalWorkout.supportsGoal(swimGoal, activity: .swimming) else {
+            throw PlanError(reason: "the watch can't take this swim's goal")
+        }
+        return WorkoutPlan(.goal(SingleGoalWorkout(activity: .swimming, swimmingLocation: .pool, goal: swimGoal)))
     default:
         throw PlanError(reason: "this app doesn't know \"\(workout.kind)\" workouts")
     }
 }
 
-private func intervalBlock(_ block: FeedBlock) throws -> IntervalBlock {
+private func intervalBlock(_ block: FeedBlock, location: HKWorkoutSessionLocationType) throws -> IntervalBlock {
     guard block.iterations >= 1, !block.steps.isEmpty else { throw PlanError(reason: "a repeat block is empty") }
-    return IntervalBlock(steps: try block.steps.map(intervalStep), iterations: block.iterations)
+    return IntervalBlock(steps: try block.steps.map { try intervalStep($0, location: location) }, iterations: block.iterations)
 }
 
-private func intervalStep(_ step: FeedStep) throws -> IntervalStep {
+private func intervalStep(_ step: FeedStep, location: HKWorkoutSessionLocationType) throws -> IntervalStep {
     let purpose: IntervalStep.Purpose
     switch step.purpose {
     case "work": purpose = .work
     case "recovery": purpose = .recovery
     default: throw PlanError(reason: "a step is neither work nor recovery")
     }
-    return IntervalStep(purpose, step: try workoutStep(step))
+    return IntervalStep(purpose, step: try workoutStep(step, location: location))
 }
 
-private func workoutStep(_ step: FeedStep) throws -> WorkoutStep {
-    WorkoutStep(goal: try workoutGoal(step.goal), alert: try step.alert.map(workoutAlert))
+/// A step the watch can run: WorkoutKit says whether this goal and alert work for outdoor or indoor running.
+private func workoutStep(_ step: FeedStep, location: HKWorkoutSessionLocationType) throws -> WorkoutStep {
+    let goal = try workoutGoal(step.goal)
+    guard CustomWorkout.supportsGoal(goal, activity: .running, location: location) else {
+        throw PlanError(reason: "the watch can't end a running step that way")
+    }
+    let alert = try step.alert.map(workoutAlert)
+    if let alert, !CustomWorkout.supportsAlert(alert, activity: .running, location: location) {
+        throw PlanError(reason: "the watch can't warn about this pace or heart rate while running")
+    }
+    return WorkoutStep(goal: goal, alert: alert)
 }
 
 private func workoutGoal(_ goal: FeedGoal) throws -> WorkoutGoal {

@@ -11,7 +11,7 @@ from lockedin.routes.overview import get_now
 
 NOW = datetime(2026, 10, 26, 12, 0, tzinfo=UTC)  # Monday
 H = owner_headers()
-LINE = "10' warm-up Z2 · 4 × (5' @ 5:30–5:50, 2' jog) · cool-down"
+LINE = "10′ warm-up Z2 · 4 × (5′ @ 5:30–5:50, 2′ jog) · cool-down"
 
 
 @pytest.fixture

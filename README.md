@@ -333,7 +333,7 @@ Tell LockedIn when you're away or can't do everything, and the whole app works a
 
 A small iPhone app, **LockedIn**, lists your planned runs and swims for today and the next 7 days, grouped by day. Tap one and Apple's workout sheet opens; tap **Add to Watch** and it's in the watch's **Workout** app, ready to start.
 
-- **Runs** go over with all their steps: warm-up, the repeat blocks of work and recovery, cool-down. Each step keeps its pace range or heart-rate range, and the watch alerts you when you're outside it. Heart rate uses LockedIn's own zones in beats per minute (zone 1 starts at 60 % of max HR), not the watch's zones; with no max HR known, heart-rate targets are left off.
+- **Runs** go over with all their steps: warm-up, the repeat blocks of work and recovery, cool-down. Each step keeps its pace range or heart-rate range, and the watch alerts you when you're outside it. Heart rate uses LockedIn's own zones in beats per minute (zone 1 starts at 60 % of max HR), not the watch's zones; with no max HR known, heart-rate targets are left off. A step has one warning, so a plain run with both a pace and a heart-rate zone sends only the pace warning.
 - **Swims** go over as a pool swim with the planned distance (or time) as the goal. The set itself is shown under the swim in the app, to read at the pool.
 - **Optional** sessions are marked. Sessions that are done, or that clash with time off, aren't listed.
 - **The list** refreshes when you open the app and when you pull down. Problems show in words above the list: no connection, a wrong watch key, or LockedIn being down. A run the app can't build says so on its own row; the others still work.

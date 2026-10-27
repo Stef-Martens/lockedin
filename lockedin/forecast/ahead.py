@@ -50,7 +50,7 @@ def stepped_load(targets: dict) -> float:
 def planned_load(item: dict) -> float:
     """The load a planned session would add: the workout's own TSS for Zwift, a stepped run's from its steps,
     else time × intensity² by its heart-rate zone (moderate when it has none); gym at the same flat rate as
-    logged gym sessions."""
+    logged gym sessions. A stepped run whose steps add up to no time counts as a plain run."""
     sport, targets = item["sport"], item["targets"] or {}
     if item["zwift"]:
         return float(tss_estimate(parts(ZwiftWorkout(blocks=item["zwift"]["blocks"]), None)))
@@ -58,8 +58,8 @@ def planned_load(item: dict) -> float:
         return GYM_TSS_PER_HOUR * PLANNED_MIN["gym"] / 60
     if sport not in ("bike", "run", "swim"):
         return 0.0
-    if sport == "run" and targets.get("steps"):
-        return stepped_load(targets)
+    if sport == "run" and targets.get("steps") and (stepped := stepped_load(targets)):
+        return stepped
     seconds = targets.get("duration_s")
     paces = [p for p in (targets.get("pace_low"), targets.get("pace_high")) if p]
     if not seconds and targets.get("distance_m") and paces:

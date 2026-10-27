@@ -82,7 +82,7 @@ They mirror how WorkoutKit's `CustomWorkout` is shaped, so the iPhone app maps t
 
 **One-line summary** (server-side, shown on the web and in the app):
 
-> 10' warm-up Z2 · 4 × (5' @ 5:30–5:50, 2' jog) · cool-down
+> 10′ warm-up Z2 · 4 × (5′ @ 5:30–5:50, 2′ jog) · cool-down
 
 The format, the rounding and the units are the builder's to choose. It stays short; minutes and km are the units the owner reads.
 

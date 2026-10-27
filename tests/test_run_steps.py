@@ -14,12 +14,12 @@ TEMPO = {"warmup": {"goal": {"time_s": 600}, "target": {"hr_zone": 2}},
 
 
 def test_summary_line_of_steps():
-    assert summary_line("run", {"steps": TEMPO}) == "10' warm-up Z2 · 4 × (5' @ 5:30–5:50, 2' jog) · cool-down"
+    assert summary_line("run", {"steps": TEMPO}) == "10′ warm-up Z2 · 4 × (5′ @ 5:30–5:50, 2′ jog) · cool-down"
 
 
 def test_summary_line_without_steps():
     assert summary_line("run", {"distance_m": 8000, "pace_low": 330, "pace_high": 350, "hr_zone": 2}) == "8 km @ 5:30–5:50 Z2"
-    assert summary_line("run", {"duration_s": 2700, "hr_zone": 2}) == "45' Z2"
+    assert summary_line("run", {"duration_s": 2700, "hr_zone": 2}) == "45′ Z2"
     assert summary_line("swim", {"distance_m": 1500, "pace_low": 120, "pace_high": 120}) == "1500 m @ 2:00/100 m"
     assert summary_line("swim", {"distance_m": 1500, "pace_low": 115, "pace_high": 125}) == "1500 m @ 1:55–2:05/100 m"
     assert summary_line("run", None) is None and summary_line("run", {}) is None
@@ -29,11 +29,18 @@ def test_time_and_distance_words():
     def one(goal):
         return {"blocks": [{"repeat": 1, "steps": [{"kind": "work", "goal": goal}]}]}
 
-    assert summary_line("run", {"steps": one({"time_s": 90})}) == "1'30\""
-    assert summary_line("run", {"steps": one({"time_s": 45})}) == "45\""
+    assert summary_line("run", {"steps": one({"time_s": 90})}) == "1′30″"
+    assert summary_line("run", {"steps": one({"time_s": 45})}) == "45″"
     assert summary_line("run", {"steps": one({"distance_m": 400})}) == "400 m"
     assert summary_line("run", {"steps": one({"distance_m": 1500})}) == "1.5 km"
     assert summary_line("run", {"steps": one({"distance_m": 1000})}) == "1 km"
+
+
+def test_open_step_without_target_reads_open():
+    steps = {"blocks": [{"repeat": 6, "steps": [
+        {"kind": "work", "goal": {"open": True}},
+        {"kind": "recovery", "goal": {"time_s": 60}}]}]}
+    assert summary_line("run", {"steps": steps}) == "6 × (open, 1′ jog)"
 
 
 def test_derive_tempo():

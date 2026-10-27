@@ -66,7 +66,7 @@ def test_feed_contract(client, clock, max_hr):
         SAMPLE.write_text(json.dumps(got, indent=2, ensure_ascii=False) + "\n")
     assert got == json.loads(SAMPLE.read_text())
     run = got["items"][0]
-    assert run["summary"] == "10' warm-up Z2 · 4 × (5' @ 5:30–5:50, 2' jog) · cool-down"
+    assert run["summary"] == "10′ warm-up Z2 · 4 × (5′ @ 5:30–5:50, 2′ jog) · cool-down"
     assert run["workout"]["warmup"]["alert"] == {"type": "heart_rate", "min_bpm": 137, "max_bpm": 156}
     assert run["workout"]["blocks"][0]["steps"][0]["alert"] == {"type": "speed", "min_mps": 2.857, "max_mps": 3.03}
     assert run["workout"]["blocks"][0]["iterations"] == 4

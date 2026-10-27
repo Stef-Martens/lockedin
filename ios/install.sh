@@ -27,7 +27,7 @@ if [[ -z "$DEVICE" ]]; then
   DEVICE="$(xcrun devicectl list devices 2>/dev/null | awk '
     /physical/ && /\(iPhone[0-9]+,[0-9]+\)/ && (/ connected / || /available \(paired\)/) {
       if (match($0, /[0-9A-Fa-f]{8}-[0-9A-Fa-f-]{12,}/)) { print substr($0, RSTART, RLENGTH); exit }
-    }')"
+    }' || true)"
 fi
 if [[ -z "$DEVICE" ]]; then
   echo "No iPhone found. Plug it in (or put it on the same Wi-Fi), unlock it, and check: xcrun devicectl list devices" >&2

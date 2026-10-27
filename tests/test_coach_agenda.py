@@ -105,7 +105,7 @@ def test_coach_saves_run_with_steps(clean_db):
         {"op": "add", "day": "2026-10-28", "sport": "run", "title": "Tempo 4x5", "targets": {"steps": TEMPO}}]})
     assert not err, out
     added = json.loads(out)[0]
-    assert added["plan_line"] == "10' warm-up Z2 · 4 × (5' @ 5:30–5:50, 2' jog) · cool-down"
+    assert added["plan_line"] == "10′ warm-up Z2 · 4 × (5′ @ 5:30–5:50, 2′ jog) · cool-down"
     item = json.loads(run(clean_db, "get_agenda", {})[0])[0]
     assert item["targets"]["steps"]["blocks"][0]["repeat"] == 4 and item["plan_line"] == added["plan_line"]
 
