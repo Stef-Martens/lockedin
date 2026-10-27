@@ -141,8 +141,8 @@ def muscle_map(conn: Connection, now: datetime, week: date | None) -> dict:
         "week_start": start_day.isoformat(),
         "is_current": is_current,
         "first_week": week_start(first).isoformat() if first else None,
-        "trained_count": sum(1 for m in muscles if m["sets"] > 0 and not m["left_out"]),
-        "total": sum(1 for m in muscles if not m["left_out"]),
+        "trained_count": sum(1 for m in muscles if m["sets"] > 0 and not m["left_out"] and not m["off_until"]),
+        "total": sum(1 for m in muscles if not m["left_out"] and not m["off_until"]),
         "cardio": cardio,
         "muscles": muscles,
     }

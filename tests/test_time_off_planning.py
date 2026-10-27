@@ -121,3 +121,15 @@ def test_muscle_map_says_off_until(conn):
     assert after["mid_lower_chest"]["off_until"] == "2027-01-02" and after["mid_lower_chest"]["suggestion"] is None
     assert after["quads"]["off_until"] is None
     assert not any(g.muscle_key == "mid_lower_chest" for g in gym_suggestions(conn, NOW, limit=20))
+
+
+def test_off_muscles_leave_the_muscle_counts(conn):
+    add_gym(conn, NOW - timedelta(hours=1), [(BENCH, 60, 8, "normal")] * 3)
+    before = muscle_map(conn, NOW, None)
+    off(conn, upper=date(2027, 1, 2))
+    after = muscle_map(conn, NOW, None)
+    upper = [m for m in after["muscles"] if m["off_until"]]
+    trained_upper = [m for m in upper if m["sets"] > 0]
+    assert upper and trained_upper and any(m["sets"] == 0 for m in upper)
+    assert after["total"] == before["total"] - len(upper)
+    assert after["trained_count"] == before["trained_count"] - len(trained_upper)
