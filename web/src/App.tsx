@@ -1,21 +1,24 @@
 import type { Session } from "@supabase/supabase-js";
-import { useEffect, useState } from "react";
+import { lazy, useEffect, useState } from "react";
 import { Navigate, Route, Routes, useNavigate } from "react-router-dom";
 import Layout from "./components/Layout";
 import { handleSessionExpired, loginPath } from "./lib/api";
 import { supabase } from "./lib/supabase";
-import Activities from "./pages/Activities";
-import Agenda from "./pages/Agenda";
-import ActivityDetail from "./pages/ActivityDetail";
-import Body from "./pages/Body";
-import Coach from "./pages/Coach";
-import Import from "./pages/Import";
 import Login, { AfterLogin } from "./pages/Login";
-import Muscles from "./pages/Muscles";
-import Overview from "./pages/Overview";
-import Plan from "./pages/Plan";
-import SessionPage from "./pages/Session";
-import Trends from "./pages/Trends";
+
+// Each page is its own chunk, loaded on first visit (Layout shows "Loading…" meanwhile), so recharts only
+// downloads with a page that draws a chart.
+const Activities = lazy(() => import("./pages/Activities"));
+const Agenda = lazy(() => import("./pages/Agenda"));
+const ActivityDetail = lazy(() => import("./pages/ActivityDetail"));
+const Body = lazy(() => import("./pages/Body"));
+const Coach = lazy(() => import("./pages/Coach"));
+const Import = lazy(() => import("./pages/Import"));
+const Muscles = lazy(() => import("./pages/Muscles"));
+const Overview = lazy(() => import("./pages/Overview"));
+const Plan = lazy(() => import("./pages/Plan"));
+const SessionPage = lazy(() => import("./pages/Session"));
+const Trends = lazy(() => import("./pages/Trends"));
 
 export default function App() {
   const [session, setSession] = useState<Session | null | undefined>(undefined);

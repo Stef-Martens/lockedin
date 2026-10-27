@@ -10,7 +10,9 @@ export default defineConfig({
   },
   build: {
     rollupOptions: {
-      output: { manualChunks: { charts: ["recharts"], supabase: ["@supabase/supabase-js"] } },
+      // React gets its own chunk: otherwise rollup folds it into `charts` (recharts depends on it), and the
+      // app shell would have to download recharts before the first paint.
+      output: { manualChunks: { react: ["react", "react-dom", "react-router-dom"], charts: ["recharts"], supabase: ["@supabase/supabase-js"] } },
     },
   },
   test: { environment: "node" },
