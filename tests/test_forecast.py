@@ -128,4 +128,4 @@ def test_ftp_from_zwift(conn):
 def test_endpoint(client, clean_db):
     app.dependency_overrides[get_now] = lambda: NOW
     r = client.get("/api/forecast", headers=owner_headers())
-    assert r.status_code == 200 and set(r.json()) == {"goals", "race", "fitness", "ftp"}
+    assert r.status_code == 200 and set(r.json()) == {"goals", "race", "fitness", "ftp", "time_off"}

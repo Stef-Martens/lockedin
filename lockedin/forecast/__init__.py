@@ -1,15 +1,16 @@
 """The Forecast page: goals, fitness ahead, race times and FTP, each projected from the owner's own data."""
 
 import calendar
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from sqlalchemy import Connection, text
 
 from lockedin.fitness import _day_start, ftp_at, known_ftp, known_ftp_at
 from lockedin.forecast.ahead import fitness_ahead
-from lockedin.forecast.goals import goal_forecasts
+from lockedin.forecast.goals import WEEKS_BACK, goal_forecasts
 from lockedin.forecast.race import race_forecast
 from lockedin.forecast.trend import fit, month_part, project
+from lockedin.timeoff import entries
 from lockedin.timeutil import TZ
 
 FTP_AHEAD_WEEKS = 12
@@ -49,6 +50,13 @@ def ftp_forecast(conn: Connection, now: datetime) -> dict | None:
     return {"now": k.w, "source": k.source, "history": history, "projection": projection, "summary": summary}
 
 
+def time_off(conn: Connection, now: datetime) -> list[dict]:
+    """Time off since the charts' first week, for shading."""
+    since = now.astimezone(TZ).date() - timedelta(weeks=WEEKS_BACK)
+    return [{"start": e["start"].isoformat(), "end": e["end"].isoformat(), "reason": e["reason"], "label": e["label"]}
+            for e in entries(conn, since)]
+
+
 def forecast(conn: Connection, now: datetime) -> dict:
     return {"goals": goal_forecasts(conn, now), "race": race_forecast(conn, now),
-            "fitness": fitness_ahead(conn, now), "ftp": ftp_forecast(conn, now)}
+            "fitness": fitness_ahead(conn, now), "ftp": ftp_forecast(conn, now), "time_off": time_off(conn, now)}

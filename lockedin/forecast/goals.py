@@ -1,13 +1,15 @@
 """Each measurable goal: its weekly history, the trend ahead, and when it gets there."""
 
 import calendar
+from collections.abc import Collection
 from datetime import date, datetime, timedelta
 
-from sqlalchemy import Connection
+from sqlalchemy import Connection, text
 
 from lockedin.forecast.trend import HORIZON_WEEKS, crossing, deadline, fit, month_part, project
-from lockedin.goals.progress import progress
+from lockedin.goals.progress import goal_lift, progress
 from lockedin.plan.goals import active_goals
+from lockedin.timeoff import REGIONS, entries
 from lockedin.timeutil import TZ
 
 WEEKS_BACK = 26
@@ -20,12 +22,42 @@ def _kind(p: dict, goal: dict) -> str:
     return "body" if goal.get("area") == "body" else KIND[p["unit"]]
 
 
-def _history(conn: Connection, now: datetime, goal: dict, kind: str) -> list[tuple[date, float]]:
+def goal_category(conn: Connection, now: datetime, goal: dict, kind: str) -> str | None:
+    """What time off pauses a goal: a lift by its primary muscle's region (upper/core/lower), FTP bike, a distance
+    or time by its sport; body goals none (only being away pauses them)."""
+    if kind == "ftp":
+        return "bike"
+    if kind in ("distance", "time"):
+        return goal.get("area") if goal.get("area") in ("run", "bike", "swim") else None
+    if kind != "lift" or not (lift := goal_lift(conn, now, goal)):
+        return None
+    region = conn.execute(text(
+        "select m.region from library_muscles lm join muscles m on m.key = lm.muscle_key "
+        "where lm.exercise_name = :n and lm.role = 'primary' order by m.sort, m.key limit 1"), {"n": lift}).scalar()
+    return next((c for c, regions in REGIONS.items() if region in regions), None)
+
+
+def off_days(conn: Connection, category: str | None, first: date, last: date) -> set[date]:
+    """Days from `first` to `last` when `category` was or will be off, or the owner away."""
+    out: set[date] = set()
+    for e in entries(conn, first):
+        for r in e["restrictions"]:
+            if r["category"] in (category, "all"):
+                d, end = max(e["start"], first), min(r["until"], last)
+                out.update(d + timedelta(days=i) for i in range((end - d).days + 1))
+    return out
+
+
+def _history(conn: Connection, now: datetime, goal: dict, kind: str,
+             off: Collection[date] = frozenset()) -> list[tuple[date, float]]:
     """One value per week: that week's best for lifts, runs and swims; for FTP and body measurements (the latest
-    known value), only the weeks it changed, so a single check-in doesn't count as many weeks of data."""
+    known value), only the weeks it changed, so a single check-in doesn't count as many weeks of data. Weeks
+    ending on a day in `off` are left out."""
     out: list[tuple[date, float]] = []
     for k in range(WEEKS_BACK - 1, -1, -1):
         at = now - k * WEEK
+        if at.astimezone(TZ).date() in off:
+            continue
         p = progress(conn, at, goal, window=WEEK)
         if p is None or p["current"] is None:
             continue
@@ -65,7 +97,8 @@ def goal_forecast(conn: Connection, now: datetime, goal: dict) -> dict | None:
     today = now.astimezone(TZ).date()
     kind = _kind(p, goal)
     target, current = float(p["target"]), float(p["current"])
-    history = _history(conn, now, goal, kind)
+    off = off_days(conn, goal_category(conn, now, goal, kind), today - WEEKS_BACK * WEEK, today + HORIZON_WEEKS * WEEK)
+    history = _history(conn, now, goal, kind, off)
     lower = p["unit"] == "min" or (kind == "body" and target < (history[0][1] if history else current))
     created = (goal.get("created_at") or now).astimezone(TZ).date()
     due = deadline(goal.get("text") or "", created, today)
@@ -75,13 +108,13 @@ def goal_forecast(conn: Connection, now: datetime, goal: dict) -> dict | None:
 
     if (current <= target) if lower else (current >= target):
         return {**out, "status": "reached", "summary": f"Reached: {p['label']}."}
-    trend = fit(history, today)
+    trend = fit(history, today, off)
     if trend is None:
         return {**out, "status": "too_little_data",
                 "summary": "A forecast needs about 4 weeks of data with at least 4 sessions or check-ins."}
 
     flatten = kind != "body"
-    proj = project(trend, HORIZON_WEEKS, flatten)
+    proj = project(trend, HORIZON_WEEKS, flatten, off)
     likely, early, late = crossing(proj, target, lower)
     show_until = max(filter(None, [likely and likely + 4 * WEEK, due and due + 2 * WEEK, today + 12 * WEEK]))
     out["projection"] = [[d.isoformat(), round(m, 2), round(lo, 2), round(hi, 2)] for d, m, lo, hi in proj

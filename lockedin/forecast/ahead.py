@@ -37,7 +37,8 @@ def planned_load(item: dict) -> float:
 
 
 def fitness_ahead(conn: Connection, now: datetime) -> dict | None:
-    """The last 28 days as trained, then 14 days as planned (optional sessions left out); None with no training."""
+    """The last 28 days as trained, then 14 days as planned (optional sessions and ones that clash with time off
+    left out); None with no training."""
     if not conn.execute(text(f"select exists (select 1 from activities where {COUNTED_SQL})")).scalar():
         return None
     today = now.astimezone(TZ).date()
@@ -45,7 +46,7 @@ def fitness_ahead(conn: Connection, now: datetime) -> dict | None:
     seed = first - timedelta(days=SEED_DAYS)
     loads: dict[date, float] = dict(activity_loads(conn, _day_start(seed), now))
     for item in items_between(conn, now, today, last):
-        if not item["done"] and not item["optional"]:
+        if not item["done"] and not item["optional"] and not item["clash"]:  # nothing from what time off rules out
             day = date.fromisoformat(item["day"])
             loads[day] = loads.get(day, 0.0) + planned_load(item)
     rows = [r for r in pmc(loads, seed, last) if r["day"] >= first]

@@ -3,6 +3,7 @@
 import calendar
 import math
 import re
+from collections.abc import Collection
 from dataclasses import dataclass
 from datetime import date, timedelta
 
@@ -12,6 +13,7 @@ MIN_POINTS = 4
 MIN_SPAN = timedelta(days=28)
 HALF_LIFE_DAYS = 182  # gains slow down: the weekly gain halves every 6 months (strength, FTP, run times)
 HORIZON_WEEKS = 52
+SETTLE_DAYS = 14  # after time off, two weeks of settling back in before the trend gains again
 
 
 @dataclass
@@ -27,15 +29,24 @@ class Trend:
         return self.per_day * 7
 
 
-def fit(points: list[tuple[date, float]], today: date) -> Trend | None:
-    """Least squares over the last 12 weeks (26 when that's thin); None with under 4 points or 4 weeks."""
+def _training_days(d: date, today: date, off_days: Collection[date] = frozenset()) -> int:
+    """Days from today to `d` that aren't time off: negative for the past, so a month off closes up."""
+    lo, hi = sorted((d, today))
+    n = (hi - lo).days - sum(1 for o in off_days if lo < o <= hi)
+    return n if d >= today else -n
+
+
+def fit(points: list[tuple[date, float]], today: date, off_days: Collection[date] = frozenset()) -> Trend | None:
+    """Least squares over the last 12 weeks (26 when that's thin); None with under 4 points or 4 weeks. Time runs
+    on training days: days in `off_days` are cut out of the axis."""
+    xs_all = [(_training_days(d, today, off_days), v) for d, v in points if d <= today]
     for window in (WINDOW, WIDE_WINDOW):
-        pts = [(d, v) for d, v in points if today - window <= d <= today]
-        if len(pts) >= MIN_POINTS and max(d for d, _ in pts) - min(d for d, _ in pts) >= MIN_SPAN:
+        pts = [(x, v) for x, v in xs_all if x >= -window.days]
+        if len(pts) >= MIN_POINTS and max(x for x, _ in pts) - min(x for x, _ in pts) >= MIN_SPAN.days:
             break
     else:
         return None
-    xs = [(d - today).days for d, _ in pts]
+    xs = [x for x, _ in pts]
     ys = [v for _, v in pts]
     n, mx, my = len(xs), sum(xs) / len(xs), sum(ys) / len(ys)
     sxx = sum((x - mx) ** 2 for x in xs)
@@ -52,12 +63,19 @@ def _days_of_gain(days: float, flatten: bool) -> float:
     return HALF_LIFE_DAYS / math.log(2) * (1 - 0.5 ** (days / HALF_LIFE_DAYS))
 
 
-def project(t: Trend, weeks: int, flatten: bool) -> list[tuple[date, float, float, float]]:
+def project(t: Trend, weeks: int, flatten: bool, off_days: Collection[date] = frozenset(),
+            settle_days: int = SETTLE_DAYS) -> list[tuple[date, float, float, float]]:
     """(day, likely, low, high) weekly from next week. The band is one standard error either side: the line's own
-    uncertainty grows with time, plus the usual week-to-week scatter."""
-    out = []
+    uncertainty grows with time, plus the usual week-to-week scatter. The trend gains only on training days: not
+    in `off_days`, nor in the `settle_days` after each stretch of them."""
+    paused = set(off_days)
+    for o in off_days:
+        if o + timedelta(days=1) not in off_days:
+            paused.update(o + timedelta(days=i) for i in range(1, settle_days + 1))
+    out, gaining = [], 0
     for k in range(1, weeks + 1):
-        g = _days_of_gain(7 * k, flatten)
+        gaining += sum(1 for i in range(7 * k - 6, 7 * k + 1) if t.today + timedelta(days=i) not in paused)
+        g = _days_of_gain(gaining, flatten)
         mid = t.at_today + t.per_day * g
         spread = math.hypot(t.se_slope * g, t.sd)
         out.append((t.today + timedelta(weeks=k), mid, mid - spread, mid + spread))
