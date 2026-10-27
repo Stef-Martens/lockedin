@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Response
@@ -8,7 +8,8 @@ from sqlalchemy.exc import IntegrityError
 
 from lockedin.auth import require_owner
 from lockedin.db import get_conn
-from lockedin.fitness import recompute_training_load
+from lockedin.fitness import set_ftp
+from lockedin.routes.overview import get_now
 
 router = APIRouter(prefix="/api", dependencies=[Depends(require_owner)])
 
@@ -52,24 +53,24 @@ def get_profile(conn: Connection = Depends(get_conn)) -> dict:
 
 
 @router.put("/profile")
-def put_profile(body: Profile, conn: Connection = Depends(get_conn)) -> dict:
+def put_profile(body: Profile, conn: Connection = Depends(get_conn), now: datetime = Depends(get_now)) -> dict:
     sets = ", ".join(f"{f} = :{f}" for f in PROFILE_FIELDS)
     before = conn.execute(text("select ftp_override from profile where id = 1")).scalar()
-    conn.execute(text(f"update profile set {sets}, updated_at = now() where id = 1"), body.model_dump())
     if body.ftp_override != before:
-        recompute_training_load(conn)
+        set_ftp(conn, body.ftp_override, now)  # from today on: past rides keep the FTP they were scored with
+    conn.execute(text(f"update profile set {sets}, updated_at = now() where id = 1"), body.model_dump())
     return get_profile(conn)
 
 
 @router.patch("/profile")
-def patch_profile(body: ProfilePatch, conn: Connection = Depends(get_conn)) -> dict:
+def patch_profile(body: ProfilePatch, conn: Connection = Depends(get_conn), now: datetime = Depends(get_now)) -> dict:
     changes = body.model_dump(exclude_unset=True)
     if changes:
         before = conn.execute(text("select ftp_override from profile where id = 1")).scalar()
+        if "ftp_override" in changes and changes["ftp_override"] != before:
+            set_ftp(conn, changes["ftp_override"], now)
         sets = ", ".join(f"{f} = :{f}" for f in changes)
         conn.execute(text(f"update profile set {sets}, updated_at = now() where id = 1"), changes)
-        if "ftp_override" in changes and changes["ftp_override"] != before:
-            recompute_training_load(conn)
     return get_profile(conn)
 
 

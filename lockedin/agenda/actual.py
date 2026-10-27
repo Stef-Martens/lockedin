@@ -6,7 +6,7 @@ from sqlalchemy import Connection, text
 
 from lockedin.agenda.parts import parts
 from lockedin.agenda.zwo import ZwiftWorkout
-from lockedin.fitness import ftp_at
+from lockedin.fitness import EstimatedFtp, ftp_at
 from lockedin.focus.zones import hr_zone, max_hr_at
 from lockedin.routes.activities import downsample
 
@@ -54,7 +54,12 @@ def series(t: list[int], ys: list | None, smooth: bool = True, transform=None) -
 
 
 def zwift_parts(plan_parts: list[dict], s, ftp: float | None) -> tuple[list[dict], bool | None]:
-    """Each work part: target vs what was held. A part the ride didn't cover gets no numbers."""
+    """Each work part: target vs what was held. A part the ride didn't cover gets no numbers.
+
+    Only an FTP the owner entered is judged against: the estimate (95% of a best 20 min) usually sits below
+    Zwift's FTP, so every interval would read "above".
+    """
+    judge = bool(ftp) and not isinstance(ftp, EstimatedFtp)
     rows = []
     t = list(s.t_offset) if s and s.t_offset else []
     for p in (x for x in plan_parts if x["work"]):
@@ -69,8 +74,8 @@ def zwift_parts(plan_parts: list[dict], s, ftp: float | None) -> tuple[list[dict
             "avg_w": round(avg_w) if avg_w is not None else None,
             "avg_hr": round(h) if avg_w is not None and s.hr and (h := _mean(s.hr[i] for i in idx)) else None,
             "avg_cadence": round(c) if avg_w is not None and s.cadence and (c := _mean(s.cadence[i] for i in idx)) else None,
-            # Ridden but no FTP to compare with: say nothing rather than "not ridden".
-            "status": None if avg_w is None else status(avg_w, target) if target else "no_target",
+            # Ridden but no owner FTP to compare with: say nothing rather than "not ridden".
+            "status": None if avg_w is None else status(avg_w, target) if target and judge else "no_target",
         })
     if not rows or any(r["status"] in (None, "no_target") for r in rows):
         return rows, None

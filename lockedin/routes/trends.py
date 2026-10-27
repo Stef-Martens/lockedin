@@ -9,6 +9,7 @@ from sqlalchemy import Connection, text
 from lockedin.auth import require_owner
 from lockedin.db import get_conn
 from lockedin.focus.coverage import muscle_coverage, unmapped_exercises
+from lockedin.focus.load import training_load
 from lockedin.focus.musclemap import muscle_map
 from lockedin.focus.sessions import counted
 from lockedin.focus.suggest import gym_suggestions
@@ -31,6 +32,12 @@ def trends(sport: str, weeks: int = 26, conn: Connection = Depends(get_conn), no
     if sport not in TRENDS:
         raise HTTPException(404, "No trends for that sport.")
     return jsonable_encoder(TRENDS[sport](conn, now, max(4, min(weeks, 104))))
+
+
+@router.get("/load")
+def load(days: int = 180, conn: Connection = Depends(get_conn), now: datetime = Depends(get_now)) -> dict:
+    """Daily load with fitness (CTL), fatigue (ATL) and form (TSB) for the last `days` days (30–365)."""
+    return jsonable_encoder(training_load(conn, now, max(30, min(days, 365))))
 
 
 @router.get("/muscles")

@@ -62,7 +62,7 @@ def test_zwift_plan_breakdown(client, clean_db, clock):
                                                     "Interval 3", "Recovery", "Cool-down"]
     assert plan["parts"][1] == {"label": "Interval 1", "start_s": 600, "end_s": 1200, "from_w": 151, "to_w": 151,
                                 "from_frac": 0.9, "to_frac": 0.9, "work": True}
-    assert plan["sweet_spot_min"] == 30 and plan["tss_est"] == pytest.approx(58, abs=2)
+    assert plan["sweet_spot_min"] == 30 and plan["tss_est"] == pytest.approx(65, abs=2)  # NP of the plan, IF ≈ 0.78
 
 
 def test_zwift_done_on_target(client, clean_db, clock):

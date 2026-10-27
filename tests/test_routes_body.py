@@ -54,11 +54,20 @@ def test_requires_auth(client):
         assert client.get(path).status_code == 401
 
 
-def test_setting_ftp_recomputes_existing_rides(client):
+def test_setting_ftp_recomputes_rides_from_that_day(client):
+    from datetime import UTC, datetime
+
     from conftest import SYNC_HEADERS, read
+
+    from lockedin.app import app
+    from lockedin.routes.overview import get_now
     rid = client.post("/api/fit/upload", files={"file": ("z.fit", read("zwift_ride.fit"))}, headers=SYNC_HEADERS).json()["activity_id"]
     assert client.get(f"/api/activities/{rid}", headers=H).json()["tss"] is None
+    app.dependency_overrides[get_now] = lambda: datetime(2026, 10, 20, 8, tzinfo=UTC)  # the ride is that evening
     client.put("/api/profile", json={"ftp_override": 250}, headers=H)
+    assert client.get(f"/api/activities/{rid}", headers=H).json()["tss"] == pytest.approx(75.2, abs=2.5)
+    app.dependency_overrides[get_now] = lambda: datetime(2026, 10, 27, 8, tzinfo=UTC)
+    client.put("/api/profile", json={"ftp_override": 300}, headers=H)  # a later FTP leaves that ride alone
     assert client.get(f"/api/activities/{rid}", headers=H).json()["tss"] == pytest.approx(75.2, abs=2.5)
 
 
