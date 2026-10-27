@@ -47,7 +47,8 @@ profile (single row): avoid_muscles (left-out muscle keys), never_exercises, coa
   last_goal_review_at.
 agenda_items: id, day, sport ('gym'|'bike'|'run'|'swim'|'rest'|'other'), title, note, optional, routine (Hevy
   routine name for gym), zwift (jsonb workout blocks), targets (jsonb: distance_m, duration_s, pace_low/pace_high in
-  s/km or s/100 m, hr_zone), goal_id (the goal it serves), source ('coach'|'manual'). Use get_agenda for done state.
+  s/km or s/100 m, hr_zone; a run may also carry steps: warmup, blocks of work/recovery steps with a repeat count,
+  cooldown; the summary numbers then come from the steps), goal_id (the goal it serves), source ('coach'|'manual'). Use get_agenda for done state.
 goals: id, text, area ('gym'|'bike'|'run'|'swim'|'body'|'general'), target, exercise (exact lift name, if about one), status ('active'|'achieved'|'dropped'),
   source, created_at, updated_at.
 time_off: id, reason ('vacation'|'injury'), label, start_day, restrictions (jsonb list of {category, until}; category 'run'|'bike'|'swim'|
@@ -68,6 +69,29 @@ def _tool(name: str, description: str, properties: dict | None = None, required:
     }
 
 
+_STEP_GOAL = {"type": "object", "description": "How the step ends: exactly one of time_s, distance_m or open.",
+              "properties": {
+                  "time_s": {"type": "integer", "description": "30-10800 seconds"},
+                  "distance_m": {"type": "integer", "description": "50-50000 metres"},
+                  "open": {"type": "boolean", "description": "true: runs until the owner presses next"}}}
+_STEP_TARGET = {"type": "object", "description": "Pace range or heart-rate zone, not both. Leave it out for none.",
+                "properties": {
+                    "pace_low": {"type": "integer", "description": "Faster end, s/km (150-720); needs pace_high"},
+                    "pace_high": {"type": "integer", "description": "Slower end, s/km (150-720); needs pace_low"},
+                    "hr_zone": {"type": "integer", "description": "1-5"}}}
+_STEP = {"type": "object", "required": ["goal"], "properties": {"goal": _STEP_GOAL, "target": _STEP_TARGET}}
+_STEPS = {"type": ["object", "null"], "required": ["blocks"], "description": (
+    "Runs only: the run as steps in order: optional warmup, blocks (each repeated 'repeat' times, 1-20), optional "
+    "cooldown. null removes the steps and leaves a plain run."), "properties": {
+    "warmup": _STEP,
+    "blocks": {"type": "array", "minItems": 1, "maxItems": 10, "items": {
+        "type": "object", "required": ["repeat", "steps"], "properties": {
+            "repeat": {"type": "integer", "description": "1-20; 1 for a single pass"},
+            "steps": {"type": "array", "minItems": 1, "maxItems": 10, "items": {
+                "type": "object", "required": ["kind", "goal"], "properties": {
+                    "kind": {"type": "string", "enum": ["work", "recovery"]},
+                    "goal": _STEP_GOAL, "target": _STEP_TARGET}}}}}},
+    "cooldown": _STEP}}
 _BLOCK = {"type": "object", "required": ["type"], "properties": {
     "type": {"type": "string", "enum": ["warmup", "cooldown", "steady", "intervals", "free"]},
     "duration_s": {"type": "integer", "description": "warmup/cooldown/steady/free"},
@@ -88,11 +112,16 @@ AGENDA_CHANGE = {"type": "object", "required": ["op"], "properties": {
     "routine": {"type": "string", "description": "Gym only: one of the owner's Hevy routine names, exactly."},
     "zwift": {"type": "object", "properties": {"blocks": {"type": "array", "maxItems": 30, "items": _BLOCK}},
               "required": ["blocks"]},
-    "targets": {"type": "object", "description": "Runs and swims: what to aim for.", "properties": {
+    "targets": {"type": "object", "description": (
+        "Runs and swims: what to aim for. A run with structure (intervals, tempo blocks, a progression) gets steps; "
+        "an easy run with one target does not. With steps the server works out distance_m, duration_s, pace and "
+        "hr_zone from them and ignores what you send for those. To change a stepped run's pace, change its steps; "
+        "steps: null makes it a plain run. Swims get no steps."), "properties": {
         "distance_m": {"type": "integer"}, "duration_s": {"type": "integer"},
         "pace_low": {"type": "integer", "description": "Faster end: s/km for runs, s/100 m for swims"},
         "pace_high": {"type": "integer", "description": "Slower end, same unit"},
-        "hr_zone": {"type": "integer", "description": "Runs only, 1-5"}}},
+        "hr_zone": {"type": "integer", "description": "Runs only, 1-5"},
+        "steps": _STEPS}},
     "goal_id": {"type": "integer", "description": "The active goal this session serves (from get_goals)."}}}
 
 TIME_OFF_ENTRY = {"type": "object", "required": ["reason", "start", "restrictions"], "properties": {
