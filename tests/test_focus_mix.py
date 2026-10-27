@@ -11,13 +11,13 @@ NOW = datetime(2026, 10, 26, 9, 0, tzinfo=UTC)
 def test_steady_runs_get_intervals_and_a_long_run(conn):
     conn.execute(text("update profile set max_hr_override = 190"))
     for d in (2, 6, 11, 16):
-        add_session(conn, "run", NOW - timedelta(days=d), 2700, avg_hr=148, distance_m=7000)  # 78 % → steady
+        add_session(conn, "run", NOW - timedelta(days=d), 2700, avg_hr=160, distance_m=7000)  # 84 % → steady
     mix = effort_mix(conn, NOW, "run")
     assert mix.counts["steady"] == 4 and mix.counts["hard"] == 0
     sugg = session_suggestions(conn, NOW)
     assert [s.title for s in sugg] == ["Long easy run", "Intervals"]
-    assert sugg[0].detail == "60–75 min in zone 2 (HR 114–133 bpm)"
-    assert sugg[1].detail == "6 × 3 min hard (zone 4, HR 152–171 bpm) with 2 min easy jogs"
+    assert sugg[0].detail == "60–75 min in zone 2 (HR 137–156 bpm)"
+    assert sugg[1].detail == "6 × 3 min hard (zone 4, HR 165–175 bpm) with 2 min easy jogs"
 
 
 def test_too_few_runs_no_suggestion(conn):

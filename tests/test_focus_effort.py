@@ -23,9 +23,9 @@ def classify(s, **kw):
 
 
 def test_hr_zones():
-    assert hr_zone(130, 190) == 2 and hr_zone(171, 190) == 5
-    assert hr_zone(133, 190) == 3  # exactly 70 % is the start of zone 3
-    assert hr_zone_bounds(190)[2] == (114, 133)
+    assert hr_zone(140, 190) == 2 and hr_zone(175, 190) == 5
+    assert hr_zone(164, 200) == 3  # exactly 82 % is the start of zone 3
+    assert hr_zone_bounds(190)[2] == (137, 156)
 
 
 def test_power_zones():
@@ -45,7 +45,7 @@ def test_max_hr_from_observed(conn):
 def test_implausible_observed_falls_back_to_age(conn):
     add_session(conn, "run", NOW - timedelta(days=30), 1800, max_hr=250)
     conn.execute(text("update profile set date_of_birth = '1995-04-12'"))
-    assert max_hr_at(conn, NOW) == 189
+    assert max_hr_at(conn, NOW) == 186  # Tanaka: 208 − 0.7 × 31
 
 
 def test_no_max_hr_at_all(conn):
