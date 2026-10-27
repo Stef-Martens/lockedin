@@ -8,6 +8,7 @@ Config: ~/.config/lockedin/sync.env (KEY=VALUE lines), overridable by environmen
   ZWIFT_ACTIVITIES_DIR  default ~/Documents/Zwift/Activities
   HEALTHFIT_DIR         HealthFit's iCloud Drive export folder (optional)
   ZWIFT_WORKOUTS_DIR    default ~/Documents/Zwift/Workouts (its one numeric subfolder, your Zwift ID)
+  ZWIFT_LOGS_DIR        default: Logs next to ZWIFT_ACTIVITIES_DIR
 
 After uploading, it also puts the Zwift workouts planned in the LockedIn agenda into that folder. It keeps a
 manifest of the files it wrote and never touches any other file.
@@ -15,6 +16,8 @@ manifest of the files it wrote and never touches any other file.
 It remembers which files are already on the server in ~/Library/Application Support/lockedin/fit-sync-state.json
 (LOCKEDIN_SYNC_STATE overrides the path), so those are never read or fetched from iCloud again, and files the
 server couldn't read are only retried once a day. Delete that file to have everything checked again.
+
+It also sends the FTP readings Zwift leaves in its logs now and then, so LockedIn uses Zwift's FTP.
 """
 
 from __future__ import annotations
@@ -23,6 +26,7 @@ import errno
 import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -46,6 +50,9 @@ MANIFEST = ".lockedin-workouts.json"
 RELEASED = "released"  # manifest value for a file of ours the owner edited: theirs now, left alone quietly
 TMP_SUFFIX = ".lockedin-tmp"  # ".<name>.lockedin-tmp" while a file is being written; never a .zwo to Zwift
 RETRY_UNREADABLE_S = 24 * 3600  # a file the server couldn't read is tried again a day later (maybe it's fixed)
+FTP_LINE = re.compile(r"\bprofile_ftp:\s*(\d{2,3})\b")
+STAMP_LINE = re.compile(r'\btimestamp:\s*"(\d{4})/(\d\d)/(\d\d) (\d\d:\d\d:\d\d) UTC"')
+STAMP_REACH = 20  # log lines: a profile_ftp belongs to the timestamp just above it in the same block
 
 Http = Callable[[str, str, bytes, dict], tuple[int, bytes]]
 
@@ -162,26 +169,34 @@ def state_file() -> Path:
 
 
 def _load_state(path: Path) -> dict:
-    """{"files": {path: [size, mtime_ns, sha256, on server]}, "failed": {sha256: retry after}}. Only a cache:
-    missing or damaged just means every file is hashed and checked with the server again."""
+    """{"files": {path: [size, mtime_ns, sha256, on server]}, "failed": {sha256: retry after},
+    "zwift_logs": {path: [size, mtime_ns]}, "zwift_ftp": ["time|ftp" sent]}. Only a cache: missing or damaged
+    just means every file is hashed and checked with the server again, and Zwift's logs are read again."""
+    state: dict = {"files": {}, "failed": {}, "zwift_logs": {}, "zwift_ftp": []}
     try:
         data = json.loads(path.read_text())
         files, failed = data.get("files"), data.get("failed")
         if isinstance(files, dict) and isinstance(failed, dict):
-            return {"files": {k: v for k, v in files.items() if isinstance(v, list) and len(v) == 4
-                              and isinstance(v[2], str)},
-                    "failed": {h: t for h, t in failed.items() if isinstance(t, (int, float))}}
+            state["files"] = {k: v for k, v in files.items() if isinstance(v, list) and len(v) == 4
+                              and isinstance(v[2], str)}
+            state["failed"] = {h: t for h, t in failed.items() if isinstance(t, (int, float))}
+        logs, sent = data.get("zwift_logs"), data.get("zwift_ftp")
+        if isinstance(logs, dict) and isinstance(sent, list):
+            state["zwift_logs"] = {k: v for k, v in logs.items() if isinstance(v, list) and len(v) == 2}
+            state["zwift_ftp"] = [x for x in sent if isinstance(x, str)]
     except (OSError, ValueError, AttributeError):
         pass
-    return {"files": {}, "failed": {}}
+    return state
 
 
 def _save_state(path: Path, state: dict) -> None:
     files = {k: v for k, v in state["files"].items() if os.path.lexists(k)}  # forget deleted files
     shas = {v[2] for v in files.values()}
     failed = {h: t for h, t in state["failed"].items() if h in shas}
+    logs = {k: v for k, v in state["zwift_logs"].items() if os.path.lexists(k)}
     path.parent.mkdir(parents=True, exist_ok=True)
-    _write_atomic(path, json.dumps({"files": files, "failed": failed}, indent=1, sort_keys=True).encode())
+    _write_atomic(path, json.dumps({"files": files, "failed": failed, "zwift_logs": logs,
+                                    "zwift_ftp": state["zwift_ftp"]}, indent=1, sort_keys=True).encode())
 
 
 def _unchanged(entry, st: os.stat_result) -> bool:
@@ -444,6 +459,68 @@ def sync_workouts(cfg: dict, http: Http = urllib_http) -> tuple[int, int, list[s
     return written, removed, warnings
 
 
+def zwift_logs_dir(cfg: dict) -> Path:
+    if cfg.get("ZWIFT_LOGS_DIR"):
+        return Path(cfg["ZWIFT_LOGS_DIR"]).expanduser()
+    return Path(cfg.get("ZWIFT_ACTIVITIES_DIR") or "~/Documents/Zwift/Activities").expanduser().parent / "Logs"
+
+
+def zwift_ftp_readings(folder: Path, seen: dict | None = None) -> list[tuple[str, int]]:
+    """(UTC time, FTP) from Zwift's logs, oldest first. Zwift writes its FTP there only now and then, under a
+    timestamp line; a reading with no timestamp just above it can't be dated and is skipped. With `seen`
+    ({path: [size, mtime_ns]}, updated here), logs unchanged since last time aren't read again."""
+    out = set()
+    try:
+        logs = sorted(p for p in folder.glob("Log*.txt") if p.is_file())
+    except OSError:
+        return []
+    for log in logs:
+        try:
+            st = log.stat()
+            if seen is not None and seen.get(str(log)) == [st.st_size, st.st_mtime_ns]:
+                continue
+            stamp, stamp_at = None, -STAMP_REACH - 1
+            with open(log, encoding="utf-8", errors="replace") as fh:
+                for n, line in enumerate(fh):
+                    m = STAMP_LINE.search(line)
+                    if m:
+                        stamp, stamp_at = f"{m[1]}-{m[2]}-{m[3]}T{m[4]}Z", n
+                        continue
+                    m = FTP_LINE.search(line)
+                    if m and stamp and n - stamp_at <= STAMP_REACH:
+                        out.add((stamp, int(m[1])))
+        except OSError:
+            continue
+        if seen is not None:
+            seen[str(log)] = [st.st_size, st.st_mtime_ns]
+    return sorted(out)
+
+
+def sync_zwift_ftp(cfg: dict, http: Http = urllib_http) -> list[str]:
+    """Send Zwift's FTP readings the server hasn't had yet; warnings for the log."""
+    folder = zwift_logs_dir(cfg)
+    if not folder.is_dir():
+        return []
+    where = state_file()
+    state = _load_state(where)
+    seen = dict(state["zwift_logs"])
+    sent = set(state["zwift_ftp"])
+    new = [(at, ftp) for at, ftp in zwift_ftp_readings(folder, seen) if f"{at}|{ftp}" not in sent]
+    if new:
+        api, token = cfg.get("LOCKEDIN_API", "").rstrip("/"), cfg.get("SYNC_TOKEN", "")
+        body = json.dumps({"readings": [{"at": at, "ftp": ftp} for at, ftp in new]}).encode()
+        try:
+            status, _ = http(f"{api}/api/fit/zwift-ftp", token, body, {"Content-Type": "application/json"})
+        except OSError as e:
+            return [f"Zwift FTP: will retry next run: {e}"]
+        if status != 200:
+            return [f"Zwift FTP: server said {status}; will retry next run."]
+        state["zwift_ftp"] = sorted(sent | {f"{at}|{ftp}" for at, ftp in new})
+    state["zwift_logs"] = seen  # only once the readings in them are on the server
+    _save_state(where, state)
+    return []
+
+
 def run(cfg: dict, now: Callable[[], float] = time.time, sleep: Callable[[float], None] = time.sleep,
         http: Http = urllib_http) -> list[SyncReport]:
     """Sync, then keep waiting a bit while files are still being written (launchd fires on the first write)."""
@@ -457,6 +534,10 @@ def run(cfg: dict, now: Callable[[], float] = time.time, sleep: Callable[[float]
         last.warnings += notes
     except Exception as e:  # never let workouts get in the way of uploads or the log line
         last.warnings.append(f"Zwift workouts: will retry next run: {e!r}")
+    try:
+        last.warnings += sync_zwift_ftp(cfg, http)
+    except Exception as e:
+        last.warnings.append(f"Zwift FTP: will retry next run: {e!r}")
     return reports
 
 

@@ -1,7 +1,15 @@
 import { type FormEvent, useEffect, useState } from "react";
 import { SectionHead } from "../../components/ui";
 import { stagger } from "../../lib/motion";
-import type { Profile } from "../../lib/types";
+import { dayMonth } from "../../lib/format";
+import type { FtpNow, Profile } from "../../lib/types";
+
+const FROM: Record<FtpNow["source"], string> = { zwift: "from Zwift", owner: "entered by you", estimate: "estimated from your rides" };
+
+/** "157 W from Zwift (since 17 Oct)" */
+export function ftpLine(f: FtpNow): string {
+  return `${f.w} W ${FROM[f.source]}${f.since && f.source !== "estimate" ? ` (since ${dayMonth(f.since)})` : ""}`;
+}
 
 const toNum = (v: string) => (v === "" ? null : Number(v));
 
@@ -46,7 +54,7 @@ export default function ProfileCard({ profile, ready, onSave }: { profile: Profi
             <input type="date" value={p.date_of_birth ?? ""} onChange={(e) => edit({ ...p, date_of_birth: e.target.value || null })} />
           </label>
           {num("height_cm", "Height (cm)", "cm")}
-          {num("ftp_override", "FTP (W)", "estimated from rides", !p.ftp_override)}
+          {num("ftp_override", "FTP (W)", profile.ftp_now?.source === "zwift" ? `${profile.ftp_now.w} from Zwift` : "from Zwift")}
           {num("max_hr_override", "Max heart rate", "from your rides")}
           {num("resting_hr_override", "Resting heart rate", "optional")}
           <label className="field">Dumbbell weights in Hevy
@@ -56,7 +64,10 @@ export default function ProfileCard({ profile, ready, onSave }: { profile: Profi
             </select>
           </label>
         </div>
-        <p className="muted" style={{ fontSize: 13, lineHeight: 1.5 }}>Zwift shows your FTP in your profile. Entering it makes effort labels and ride suggestions accurate; every ride's TSS is recalculated.</p>
+        <p className="muted" style={{ fontSize: 13, lineHeight: 1.5 }}>
+          Your FTP follows Zwift by itself: LockedIn reads it from the agenda's workouts you ride in ERG mode, and from Zwift's logs on your Mac.
+          {profile.ftp_now && <> Now: <strong>{ftpLine(profile.ftp_now)}</strong>.</>} Fill in FTP only to override it; clear it to go back to Zwift's.
+        </p>
         <div className="row">
           <button className="btn primary">Save profile</button>
           {msg && <span className="ok">{msg}</span>}

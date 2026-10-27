@@ -7,6 +7,7 @@ from sqlalchemy import Connection
 
 from lockedin.agenda import store
 from lockedin.agenda.detail import detail
+from lockedin.agenda.zwift_ftp import learn_recent
 from lockedin.auth import require_owner, require_sync
 from lockedin.db import get_conn
 from lockedin.routes.overview import get_now
@@ -64,6 +65,7 @@ def remove(item_id: int, conn: Connection = Depends(get_conn)) -> Response:
 
 @sync_router.post("/zwift/sync")
 def zwift_sync(conn: Connection = Depends(get_conn), now: datetime = Depends(get_now)) -> list[dict]:
+    learn_recent(conn, now)  # the Mac calls every 15 minutes: a good moment to pick up Zwift's FTP
     return store.zwift_feed(conn, now)
 
 

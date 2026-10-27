@@ -38,7 +38,7 @@ export default function PlanSection({ plan, item }: { plan: SessionPlan; item: A
             <Tile label="Est. TSS" value={String(plan.tss_est)} i={2} />
             <Tile label="FTP used" value={plan.ftp ? `${plan.ftp} W` : "–"} i={3} />
           </div>
-          {!plan.ftp_is_set && <div className="note">Set your Zwift FTP on the <Link to="/body">Body page</Link> so these watts match Zwift.</div>}
+          {!plan.ftp_is_set && <div className="note">These watts use an FTP estimated from your rides. Once you ride one of these workouts in ERG mode, LockedIn picks up Zwift's FTP and they match.</div>}
           {item.note && <Card i={3}><SectionHead title="Note" /><p className="secondary flush">{item.note}</p></Card>}
         </div>
       </div>

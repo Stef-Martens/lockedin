@@ -616,3 +616,51 @@ def test_a_file_the_server_cant_read_doesnt_stop_waiting_for_a_ride_being_writte
 def test_comments_match_the_15_minute_schedule():
     for f in (p for p in (ROOT / "sync").iterdir() if p.is_file()):
         assert "hourly" not in f.read_text().lower(), f.name
+
+
+ZWIFT_LOG = """[14:38:31] PacePartnerAnalytics:    timestamp: "2026/10/17 12:38:10 UTC"
+[14:38:31] PacePartnerAnalytics:    profile_weight_in_grams: 89000
+[14:38:31] PacePartnerAnalytics:    profile_ftp: 157
+[14:40:02] INFO LEVEL: [ZwiftProtocol] Set ERG (80w)
+"""
+
+
+def zwift_logs(tmp_path, text=ZWIFT_LOG, name="Log (old 4).txt"):
+    logs = tmp_path / "Zwift" / "Logs"
+    logs.mkdir(parents=True, exist_ok=True)
+    (logs / name).write_text(text)
+    (tmp_path / "Zwift" / "Activities").mkdir(exist_ok=True)
+    return {**cfg(tmp_path / "Zwift" / "Activities")}
+
+
+def test_zwift_ftp_read_from_its_logs(tmp_path):
+    zwift_logs(tmp_path)
+    zwift_logs(tmp_path, "[09:00:00] profile_ftp: 150\n", name="Log.txt")  # no timestamp to date it: skipped
+    assert fit_sync.zwift_ftp_readings(tmp_path / "Zwift" / "Logs") == [("2026-10-17T12:38:10Z", 157)]
+
+
+def test_zwift_ftp_readings_sent_once(tmp_path, monkeypatch):
+    monkeypatch.setenv("LOCKEDIN_SYNC_STATE", str(tmp_path / "state.json"))
+    c = zwift_logs(tmp_path)
+    http = FakeHttp()
+    assert fit_sync.sync_zwift_ftp(c, http) == []
+    sent = [json.loads(b) for u, _, b, _ in http.calls if u.endswith("/api/fit/zwift-ftp")]
+    assert sent == [{"readings": [{"at": "2026-10-17T12:38:10Z", "ftp": 157}]}]
+    http.calls.clear()
+    fit_sync.sync_zwift_ftp(c, http)
+    assert http.calls == []
+
+
+def test_zwift_ftp_resent_after_a_failure(tmp_path, monkeypatch):
+    monkeypatch.setenv("LOCKEDIN_SYNC_STATE", str(tmp_path / "state.json"))
+    c = zwift_logs(tmp_path)
+    assert fit_sync.sync_zwift_ftp(c, FakeHttp(fail_on="zwift-ftp"))  # a warning, nothing remembered
+    http = FakeHttp()
+    fit_sync.sync_zwift_ftp(c, http)
+    assert any(u.endswith("/api/fit/zwift-ftp") for u, *_ in http.calls)
+
+
+def test_no_zwift_logs_no_calls(tmp_path, monkeypatch):
+    monkeypatch.setenv("LOCKEDIN_SYNC_STATE", str(tmp_path / "state.json"))
+    http = FakeHttp()
+    assert fit_sync.sync_zwift_ftp(cfg(tmp_path / "nowhere" / "Activities"), http) == [] and http.calls == []

@@ -169,9 +169,12 @@ The **Overview** page answers two questions: am I improving, and what should I f
 - The **Overview** shows "Body check-in due" when it's time, and when you last uploaded your Hevy export. Hevy counts as due after 7 days.
 
 **Better numbers:**
-- Enter your **FTP** on the Body page. Zwift shows it in your profile. Estimating it from regular rides underestimates it, which makes rides look harder than they were.
-  - **It's kept per date:** a new FTP applies from today on, and rides before it keep the FTP that was true then. Before your first entry, 95% of your best 20 minutes is used.
-  - **Zwift intervals** are only marked on target, above or below against an FTP you entered for that day. With only the estimate, they show without a verdict.
+- **FTP follows Zwift by itself.** Zwift doesn't put its FTP in ride files, so LockedIn works it out:
+  - **From your agenda's Zwift workouts:** ridden in ERG mode, Zwift holds each step at its share of *its* FTP, so the watts give that FTP back (e.g. 141 W on a 90% step = 157). Free rides and workouts ridden without ERG teach it nothing.
+  - **From Zwift's logs:** Zwift sometimes writes your FTP there (around pace partner rides); the Mac sync passes those readings on.
+  - **Kept per date:** each new value applies from that day on, and older rides keep the FTP of their day. Zwift's first known value also covers the rides before it. Until Zwift's FTP is known, 95% of your best 20 minutes is used, which usually runs low.
+  - The **Body page** shows where today's FTP comes from. Typing one there overrides Zwift until Zwift's next reading; clearing it goes back to Zwift's.
+  - **Zwift intervals** are marked on target, above or below only against Zwift's FTP (or yours). With only the estimate, they show without a verdict.
 - Set **max heart rate** if you know it. Otherwise it's your best 30-second heart rate of the last year, so one sensor spike doesn't skew every zone. Without heart-rate streams it's your second-highest session maximum, and without any data it's estimated as 208 − 0.7 × age.
 
 **Training load** (top of Trends): every session gets a load score.

@@ -98,7 +98,7 @@ export default function ActivityDetail() {
     ["Sets", a.set_count ? `${a.set_count}` : null],
   ];
   const shown = tiles.filter(([, v]) => v);
-  const ftpEstimated = a.sport === "bike" && a.if_ && a.np && profile && !profile.ftp_override;
+  const ftpEstimated = a.sport === "bike" && a.if_ && a.np && profile?.ftp_now?.source === "estimate";
   const effort = a.if_ ? (a.if_ < 0.75 ? "easy" : a.if_ <= 0.88 ? "steady" : "hard") : null;
 
   return (
@@ -142,8 +142,7 @@ export default function ActivityDetail() {
       {effort && a.np && a.if_ && (
         <div className="note rise row spread" style={stagger(4)}>
           <span>Effort: <strong style={{ color: "var(--ink)" }}>{effort}</strong> · intensity {a.if_.toFixed(2)}
-            {ftpEstimated ? ` against an estimated FTP of ${Math.round(a.np / a.if_)} W. Enter your Zwift FTP for accurate numbers.` : "."}</span>
-          {ftpEstimated && <Link to="/body" style={{ fontWeight: 600, textDecoration: "none" }}>Set FTP</Link>}
+            {ftpEstimated ? ` against an estimated FTP of ${Math.round(a.np / a.if_)} W, until LockedIn learns Zwift's from a workout you ride in ERG mode.` : "."}</span>
         </div>
       )}
 

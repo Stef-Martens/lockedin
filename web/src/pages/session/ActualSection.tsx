@@ -19,7 +19,7 @@ export default function ActualSection({ d }: { d: SessionDetail }) {
     const onTarget = all.filter((p) => p.status === "on_target").length;
     // No FTP for that day: nothing can be judged, so don't say "0 of 3 on target".
     const unjudged = a.intervals_on_target === null || (all.length > 0 && all.every((p) => p.status === "no_target"));
-    const intervalsHint = unjudged ? "Set your FTP to judge intervals"
+    const intervalsHint = unjudged ? "Judged once Zwift's FTP is known"
       : all.some((p) => p.target_w) ? `${onTarget} of ${all.length} on target` : undefined;
     return (
       <>

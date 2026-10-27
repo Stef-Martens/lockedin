@@ -1,4 +1,3 @@
-import { Link } from "react-router-dom";
 import SeriesChart from "../../components/SeriesChart";
 import type { EffortMix } from "../../lib/focus";
 import { dayMonth } from "../../lib/format";
@@ -11,7 +10,7 @@ interface BikeData { rides: { date: string; np: number | null; efficiency: numbe
 
 export default function Bike() {
   const { data: d, error, reload } = useApi<BikeData>("/api/trends/bike");
-  const { data: profile } = useApi<Profile>("/api/profile");
+  const ftp = useApi<Profile>("/api/profile").data?.ftp_now;
   const sugg = useFocusSessions();
   if (error) return <Failed retry={reload} />;
   if (!d) return <p className="muted">Loading…</p>;
@@ -23,9 +22,9 @@ export default function Bike() {
     <>
       <div className="grid-auto" style={{ ["--min" as string]: "240px" }}>
         <div className="card rise" style={stagger(1)}>
-          <div className="eyebrow">FTP · {profile?.ftp_override ? "yours" : "estimated"}</div>
-          <div className="display num big-stat">{profile?.ftp_override ?? (d.ftp ? Math.round(d.ftp) : "–")} W</div>
-          {!profile?.ftp_override && <div className="secondary" style={{ fontSize: 13, marginTop: 6 }}>95% of your best 20 min. <Link to="/body" style={{ textDecoration: "none" }}>Set your Zwift FTP</Link></div>}
+          <div className="eyebrow">FTP · {ftp?.source === "zwift" ? "from Zwift" : ftp?.source === "owner" ? "yours" : "estimated"}</div>
+          <div className="display num big-stat">{ftp?.w ?? (d.ftp ? Math.round(d.ftp) : "–")} W</div>
+          {(!ftp || ftp.source === "estimate") && <div className="secondary" style={{ fontSize: 13, marginTop: 6 }}>95% of your best 20 min, until a workout from your agenda ridden in ERG mode shows Zwift's.</div>}
         </div>
         <div className="card rise" style={stagger(2)}>
           <div className="eyebrow">Best 20-min power</div>

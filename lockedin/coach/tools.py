@@ -38,8 +38,9 @@ library_muscles: exercise_name, muscle_key, role ('primary'|'secondary'). Join e
 muscles: key, name, region, target_low, target_high (weekly effective sets: primary = 1, secondary = 0.5).
 measurement_types: id, name (Weight, Chest, Left arm, ...), unit ('kg' | 'cm'), kind ('weight'|'tape'|'other').
 measurements: type_id, measured_on (date), value, note. One body check-in = all rows on one measured_on.
-ftp_history: effective_from (date), ftp (W; null = estimated from rides from that day on). The FTP for a day is the
-  latest row on or before it; profile.ftp_override mirrors the current one.
+ftp_history: effective_from (date), source ('zwift' = read from an ERG workout or Zwift's logs, 'owner' = typed in),
+  ftp (W; an owner row without one hands back to Zwift), activity_id (the ride a Zwift value came from). A day's FTP
+  is the newer of the latest Zwift and owner rows on or before it; Zwift's earliest value also covers older rides.
 profile (single row): avoid_muscles (left-out muscle keys), never_exercises, coach_notes, date_of_birth, height_cm, sex, max_hr_override, ftp_override, resting_hr_override,
   dumbbell_weights ('pair' = logged weight is both dumbbells together, 'each' = per hand), reminder_weeks,
   last_goal_review_at.

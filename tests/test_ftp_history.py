@@ -6,7 +6,7 @@ from focus_helpers import add_session
 from sqlalchemy import text
 
 from lockedin.app import app
-from lockedin.fitness import EstimatedFtp, ftp_at, owner_ftp_at
+from lockedin.fitness import EstimatedFtp, ftp_at, known_ftp_at
 from lockedin.routes.overview import get_now
 
 H = owner_headers()
@@ -34,7 +34,7 @@ def test_before_the_first_entry_the_estimate_applies(conn):
     add_session(conn, "bike", datetime(2026, 8, 1, 8, tzinfo=UTC), 3600, source="zwift", best_20m_power=200)
     got = ftp_at(conn, datetime(2026, 9, 1, 8, tzinfo=UTC))
     assert got == pytest.approx(190) and isinstance(got, EstimatedFtp)
-    assert owner_ftp_at(conn, datetime(2026, 9, 1, 8, tzinfo=UTC)) is None
+    assert known_ftp_at(conn, datetime(2026, 9, 1, 8, tzinfo=UTC)) is None
 
 
 def test_a_cleared_ftp_means_estimate_from_then_on(conn):
@@ -45,7 +45,7 @@ def test_a_cleared_ftp_means_estimate_from_then_on(conn):
 
 def test_bare_override_without_history_still_counts(conn):
     conn.execute(text("update profile set ftp_override = 168"))
-    assert owner_ftp_at(conn, datetime(2020, 1, 1, tzinfo=UTC)) == 168
+    assert known_ftp_at(conn, datetime(2020, 1, 1, tzinfo=UTC)) == 168
 
 
 def test_setting_ftp_starts_today_and_leaves_past_rides_alone(client, clean_db, clock):

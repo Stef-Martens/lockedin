@@ -96,6 +96,13 @@ export interface HevyResult {
   skipped: [number, string][];
 }
 
+/** Today's FTP and where it comes from: Zwift (its ERG workouts or logs), the owner, or an estimate from rides. */
+export interface FtpNow {
+  w: number;
+  source: "zwift" | "owner" | "estimate";
+  since: string | null;
+}
+
 export interface Profile {
   date_of_birth: string | null;
   height_cm: number | null;
@@ -106,6 +113,7 @@ export interface Profile {
   dumbbell_weights: "pair" | "each";
   reminder_weeks: 1 | 2 | 4;
   reminder_hevy: boolean;
+  ftp_now?: FtpNow | null;
 }
 
 export interface MeasurementType {

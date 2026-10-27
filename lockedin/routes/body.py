@@ -8,7 +8,7 @@ from sqlalchemy.exc import IntegrityError
 
 from lockedin.auth import require_owner
 from lockedin.db import get_conn
-from lockedin.fitness import set_ftp
+from lockedin.fitness import ftp_at, known_ftp, set_ftp
 from lockedin.routes.overview import get_now
 
 router = APIRouter(prefix="/api", dependencies=[Depends(require_owner)])
@@ -47,9 +47,17 @@ class Measurement(BaseModel):
 
 
 @router.get("/profile")
-def get_profile(conn: Connection = Depends(get_conn)) -> dict:
+def get_profile(conn: Connection = Depends(get_conn), now: datetime = Depends(get_now)) -> dict:
     row = conn.execute(text(f"select {', '.join(PROFILE_FIELDS)} from profile where id = 1")).one()
-    return dict(row._mapping)
+    return {**row._mapping, "ftp_now": _ftp_now(conn, now)}
+
+
+def _ftp_now(conn: Connection, now: datetime) -> dict | None:
+    """Today's FTP and where it comes from: Zwift, the owner, or an estimate from rides."""
+    if k := known_ftp(conn, now):
+        return {"w": k.w, "source": k.source, "since": k.since.isoformat() if k.since else None}
+    est = ftp_at(conn, now)
+    return {"w": round(est), "source": "estimate", "since": None} if est else None
 
 
 @router.put("/profile")
@@ -59,7 +67,7 @@ def put_profile(body: Profile, conn: Connection = Depends(get_conn), now: dateti
     if body.ftp_override != before:
         set_ftp(conn, body.ftp_override, now)  # from today on: past rides keep the FTP they were scored with
     conn.execute(text(f"update profile set {sets}, updated_at = now() where id = 1"), body.model_dump())
-    return get_profile(conn)
+    return get_profile(conn, now)
 
 
 @router.patch("/profile")
@@ -71,7 +79,7 @@ def patch_profile(body: ProfilePatch, conn: Connection = Depends(get_conn), now:
             set_ftp(conn, changes["ftp_override"], now)
         sets = ", ".join(f"{f} = :{f}" for f in changes)
         conn.execute(text(f"update profile set {sets}, updated_at = now() where id = 1"), changes)
-    return get_profile(conn)
+    return get_profile(conn, now)
 
 
 @router.get("/measurement-types")

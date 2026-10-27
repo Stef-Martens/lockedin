@@ -118,7 +118,7 @@ describe("Session page", () => {
         { label: "Interval 2", target_w: 151, avg_w: 140, avg_hr: 155, avg_cadence: 86, status: "no_target" }] } });
     await screen.findByRole("heading", { name: "Sweet Spot 3x10" });
     expect(screen.queryByText(/of 2 on target/)).toBeNull();
-    expect(screen.getByText("Set your FTP to judge intervals")).toBeTruthy();
+    expect(screen.getByText("Judged once Zwift's FTP is known")).toBeTruthy();
   });
 
   it("labels the pace axis with the target band", async () => {

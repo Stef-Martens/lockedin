@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Profile } from "../lib/types";
 import Body from "./Body";
+import { ftpLine } from "./body/ProfileCard";
 
 let profile: Profile = { date_of_birth: null, height_cm: 182, sex: null, max_hr_override: null, ftp_override: null,
   resting_hr_override: null, dumbbell_weights: "pair", reminder_weeks: 2, reminder_hevy: true };
@@ -42,5 +43,17 @@ describe("Body", () => {
     expect(await screen.findByText("Server's down")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Every week" }).getAttribute("aria-pressed")).toBe("false");
     expect(screen.queryByText(/A check-in every week\./)).toBeNull();
+  });
+
+  it("says where today's FTP comes from, with nothing to fill in", async () => {
+    profile = { ...profile, ftp_now: { w: 157, source: "zwift", since: "2026-10-17" } };
+    render(<Body />);
+    expect(await screen.findByText("157 W from Zwift (since 17 Oct)")).toBeTruthy();
+    expect((screen.getByLabelText("FTP (W)") as HTMLInputElement).placeholder).toBe("157 from Zwift");
+  });
+
+  it("names an estimate without a date", () => {
+    expect(ftpLine({ w: 150, source: "estimate", since: null })).toBe("150 W estimated from your rides");
+    expect(ftpLine({ w: 170, source: "owner", since: "2026-10-20" })).toBe("170 W entered by you (since 20 Oct)");
   });
 });

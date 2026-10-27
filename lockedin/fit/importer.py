@@ -5,6 +5,7 @@ from typing import Literal
 
 from sqlalchemy import Connection, text
 
+from lockedin.agenda.zwift_ftp import learn_from_ride
 from lockedin.dedupe import resolve_overlaps
 from lockedin.fit.metrics import best_avg_power, normalized_power
 from lockedin.fit.parse import EmptyActivity, FitParseError, ParsedFit, parse_fit_activities
@@ -92,6 +93,9 @@ def import_fit(conn: Connection, data: bytes, filename: str, source_hint: Source
         rides = [f.start_at for f in legs if f.sport == "bike"]
         if new and rides:
             recompute_training_load(conn, since=min(rides))  # these rides and later ones whose FTP they may raise
+        for (activity_id, is_new), f in zip(stored, legs):
+            if is_new and source == "zwift" and f.sport == "bike":
+                learn_from_ride(conn, activity_id)  # one of the app's workouts in ERG tells Zwift's FTP
     except Exception as e:  # odd real-world files must come back as an error, never a 500
         savepoint.rollback()
         msg = f"Could not import this file: {e}"
