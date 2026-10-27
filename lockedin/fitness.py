@@ -65,9 +65,12 @@ def _day_start(d: date) -> datetime:
 
 
 def recompute_training_load(conn: Connection, since: datetime | None = None) -> None:
-    """Refresh IF/TSS for rides from `since` on (all when None), oldest first, since each ride feeds later FTPs."""
+    """Refresh IF/TSS for rides from `since` on (all when None), oldest first, since each ride feeds later FTPs.
+
+    TSS is over moving (timer) time: a paused stretch is no training.
+    """
     rides = conn.execute(text(
-        "select id, start_at, duration_s as seconds, np from activities "
+        "select id, start_at, coalesce(moving_s, duration_s) as seconds, np from activities "
         "where sport = 'bike' and np is not null and (cast(:since as timestamptz) is null or start_at >= :since) "
         "order by start_at"
     ), {"since": since}).all()

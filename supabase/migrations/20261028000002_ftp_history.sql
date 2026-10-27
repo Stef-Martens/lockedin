@@ -19,3 +19,8 @@ revoke all on ftp_history from anon, authenticated;
 grant select on ftp_history to coach_ro;
 drop policy if exists coach_read on ftp_history;
 create policy coach_read on ftp_history for select to coach_ro using (true);
+
+-- TSS is now over moving (timer) time, not elapsed. TSS = seconds × IF² / 36, so stored rides are
+-- rescored in place (re-runnable; NP and IF are unchanged).
+update activities set tss = coalesce(moving_s, duration_s) * if_ * if_ / 36
+where sport = 'bike' and if_ is not null;
