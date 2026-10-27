@@ -10,7 +10,7 @@ It also stores **body measurements** like weight, chest and arms. Everything is 
 
 It runs on **Vercel** (the web app plus a Python API) and **Supabase** (Postgres plus login). A small script on your Mac uploads new ride and workout files automatically.
 
-Coming next: an overview dashboard with "what to focus on" suggestions (plan 2) and an AI coach (plan 3). See `docs/superpowers/`.
+On top of that it has an overview with focus tips, a workout planner, an agenda that sends rides to Zwift, training load, and an AI coach. The design notes and plans are in `docs/superpowers/`.
 
 ---
 
@@ -20,15 +20,18 @@ You need Docker Desktop (running), the [Supabase CLI](https://supabase.com/docs/
 
 ```bash
 make install                      # Python venv + web dependencies
-cp .env.example .env              # then fill in the two keys below
+cp .env.example .env              # then fill in the three keys below
 supabase start                    # first run downloads the Docker images (a few minutes)
-supabase status                   # copy "anon key" → VITE_SUPABASE_ANON_KEY, "service_role key" → SUPABASE_SERVICE_ROLE_KEY
+supabase status                   # copy "anon key" → VITE_SUPABASE_ANON_KEY, "service_role key" → SUPABASE_SERVICE_ROLE_KEY,
+                                  # "JWT secret" → SUPABASE_JWT_SECRET (local only; it's a public default)
 supabase db reset                 # creates the tables
-make owner EMAIL=you@example.com PASSWORD='choose-one'   # the only account; must match OWNER_EMAIL in .env
+make owner EMAIL=you@example.com  # the only account; asks for a password; must match OWNER_EMAIL in .env
 make dev                          # API on :8000, web app on http://127.0.0.1:5173
 ```
 
-Run the tests with `make test`. It creates a separate `lockedin_test` database, so your local data is safe.
+Run the tests with `make test`. It creates a separate `lockedin_test` database, so your local data is safe. `make lint` runs ruff and ESLint. GitHub Actions runs both, plus the web tests and build, on every push.
+
+**Dependencies:** `pyproject.toml` is the one list. Vercel installs the exact versions in `uv.lock`, and `requirements.txt` mirrors it. After changing a dependency, run `make lock` and commit both files. `make lock UPGRADE=--upgrade` moves everything to the newest allowed version.
 
 To try it without real data, sign in, open **Import**, and upload the files in `samples/`.
 
@@ -47,8 +50,9 @@ To try it without real data, sign in, open **Import**, and upload the files in `
 4. Create your account. This uses the hosted keys from **Project Settings → API Keys**:
    ```bash
    SUPABASE_URL=https://<ref>.supabase.co SUPABASE_SERVICE_ROLE_KEY=<service_role / secret key> \
-     OWNER_EMAIL=you@example.com .venv/bin/python scripts/create_owner.py --email you@example.com --password '...'
+     OWNER_EMAIL=you@example.com .venv/bin/python scripts/create_owner.py --email you@example.com
    ```
+   It asks for the password, so it doesn't end up in your shell history.
 5. Get the database URL: click **Connect** and copy the **Transaction pooler** string (port **6543**). Change `postgresql://` to `postgresql+psycopg://`.
 
 Free projects **pause after about a week with no activity**. Your regular syncs should keep it awake. If it ever pauses, open the Supabase dashboard and click **Restore project**.
@@ -66,19 +70,21 @@ Free projects **pause after about a week with no activity**. Your regular syncs 
    |---|---|
    | `DATABASE_URL` | the transaction pooler URL from above (`postgresql+psycopg://…:6543/postgres`) |
    | `SUPABASE_URL` | `https://<ref>.supabase.co` |
-   | `SUPABASE_JWT_SECRET` | the legacy JWT secret if your project shows one; otherwise leave it out (signing keys are fetched automatically) |
+   | `SUPABASE_JWT_SECRET` | the legacy JWT secret if your project shows one; otherwise leave it out (signing keys are fetched automatically). Never the local stack's default: outside localhost that, or any secret under 32 characters, is refused |
    | `OWNER_EMAIL` | your login email |
+   | `OWNER_ID` | optional: your Supabase user id (**Authentication → Users**). When set, a login must match it as well as the email |
    | `SYNC_TOKEN` | a long random string: `python3 -c "import secrets; print(secrets.token_urlsafe(32))"` |
    | `VITE_SUPABASE_URL` | same as `SUPABASE_URL` |
    | `VITE_SUPABASE_ANON_KEY` | the **anon / publishable** key (safe for the browser) |
-   | `ANTHROPIC_API_KEY` | for the AI coach (section 7); from [console.anthropic.com](https://console.anthropic.com) → API keys. Optional: without it, the Coach page shows a setup message |
+   | `ANTHROPIC_API_KEY` | for the AI coach (section 10); from [console.anthropic.com](https://console.anthropic.com) → API keys. Optional: without it, the Coach page shows a setup message |
+   | `COACH_DAILY_BUDGET_USD` | optional: the most the coach may spend per day (default 5) |
 
    The service-role key does **not** go into Vercel.
 3. Deploy. Open `https://<your-app>.vercel.app` on your phone and sign in. To make it feel like an app, use Safari's **Share → Add to Home Screen**.
 
 ## 3. Mac sync (Zwift + HealthFit)
 
-`sync/fit_sync.py` uploads any `.fit` file it hasn't uploaded before. It runs whenever the Zwift or HealthFit folder changes, and once an hour as a fallback. It only uses macOS's built-in Python.
+`sync/fit_sync.py` uploads any `.fit` file it hasn't uploaded before. It runs whenever the Zwift or HealthFit folder changes, and every 15 minutes as a fallback. It only uses macOS's built-in Python.
 
 1. Create `~/.config/lockedin/sync.env`:
    ```
@@ -99,7 +105,9 @@ Free projects **pause after about a week with no activity**. Your regular syncs 
    ```
    A healthy run looks like `uploaded 1, already there 42, still being written 0, errors 0`. A line saying it *can't read* a folder means step 3 isn't done yet.
 
-Uninstall with `sync/uninstall.sh`. A file the server can't read is listed in the log and skipped, and newer files still upload. Files that are still being written (like Zwift's ride in progress) are skipped and picked up a few minutes later. Files over 4 MB are skipped with a warning; upload those on the **Import** page.
+Uninstall with `sync/uninstall.sh`. A file the server can't read is listed in the log once and tried again a day later, and newer files still upload. Files that are still being written (like Zwift's ride in progress) are skipped and picked up a few minutes later. Files over 4 MB are skipped with a warning; upload those on the **Import** page.
+
+The sync remembers what it already uploaded in `~/Library/Application Support/lockedin/fit-sync-state.json`, so it doesn't re-read every file or pull old HealthFit files back from iCloud. **If you ever reset the server's database, delete that file** so everything is uploaded again.
 
 ## 4. Apple Watch workouts via HealthFit (iPhone)
 
@@ -112,23 +120,33 @@ HealthFit is a third-party app (about €8, one-time). It turns your Apple Healt
 3. On your Mac, find the folder in Finder: **iCloud Drive → HealthFit**. Put its path in `HEALTHFIT_DIR` (section 3), then run `sync/install.sh` again so it watches that folder too.
 4. To bring in older workouts, select them in HealthFit's workout list and export them to the same iCloud folder. The sync uploads them, and duplicates are skipped.
 
-If your Watch also recorded a Zwift ride (as "Indoor Cycle"), only the Zwift ride counts. If the Zwift file has no heart rate, the Watch's heart rate is copied onto it. A Watch strength workout during a Hevy session is merged the same way. Walks are kept but don't count toward your training totals.
+If your Watch also recorded a Zwift ride (as "Indoor Cycle"), only the Zwift ride counts; the same goes for a Zwift run and the Watch's indoor run. If the Zwift file has no heart rate, the heart rate of the Watch file covering most of the ride is copied onto it. A Watch strength workout during a Hevy session is merged the same way, and shows up again if you later move that Hevy workout. Walks are kept but don't count toward your training totals.
+
+A multisport workout (e.g. bike → run) comes in as one session per leg. Pool swim pace counts only your lengths, not the rest at the wall.
 
 ## 5. Hevy (gym)
 
-In Hevy: **Profile → Settings → Export & Import Data → Export Workouts**. Save the CSV and upload it on the **Import** page. Always upload the **full** export. Workouts you already have are left alone, edited ones are updated, and renamed ones are updated in place.
+In Hevy: **Profile → Settings → Export & Import Data → Export Workouts**. Save the CSV and upload it on the **Import** page. Always upload the **full** export. Workouts you already have are left alone, edited ones are updated, and renamed ones or ones whose start time you changed are updated in place. An exercise you do twice in one workout (e.g. bench, flyes, bench again) stays two separate blocks.
+
+**Estimated 1RM** (Epley) is worked out from sets of up to 20 reps and used to pick working weights. Personal bests and goal progress only count sets of 12 reps or fewer, where the estimate is reliable. Assisted lifts (assisted pull-ups, dips) never get one, since more assistance doesn't mean stronger.
 
 ## 6. Dashboard & focus suggestions
 
-The **Overview** page answers two questions: am I improving, and what should I focus on next. Everything there is calculated from your data, not by AI. The AI coach (section 7) builds on the same numbers.
+The **Overview** page answers two questions: am I improving, and what should I focus on next. Everything there is calculated from your data, not by AI. The AI coach (section 10) builds on the same numbers.
 
 - **Focus this week** shows up to 3 suggestions.
   - **Gym:** each muscle gets weekly working sets: a set counts 1 for the main muscle and ½ for helping muscles, and warm-ups don't count. A muscle below its minimum is "low", and you get an exercise to add:
     - **One you already do:** the weight comes from your recent sets (3 × 8–12, about 2 reps in reserve).
     - **A new one:** estimated from a related lift you do, then lowered by 20% and marked "estimate, start light". With no basis for an estimate, no weight is shown.
     - **Dumbbell weights** use the same convention as your Hevy logs. Set it under **Body → Dumbbell weights in Hevy** (default: total of both dumbbells).
-  - **Bike/run:** each session is labelled easy, steady, hard or long from time in heart-rate or power zones. If your last 3 weeks are missing a long session or a hard one, or are mostly hard, you get a concrete session with your own zone numbers.
+  - **Gym weeks:** while you've trained for less than 4 weeks, sets are averaged over the weeks you have, so a new start doesn't show every muscle as low.
+  - **Bike/run:** each session is labelled easy, steady, hard or long from time in heart-rate or power zones. If your last 3 weeks are missing a long session or a hard one, or are mostly hard, you get a concrete session with your own zone numbers. Easy and long runs are prescribed at 65–78% of max heart rate.
+- **Zones:**
+  - Heart rate: zones start at 72, 82, 87 and 92% of max (Seiler's 5-zone scale). "Hard" means zone 4 and up, so 87% or more.
+  - Power: Coggan zones from your FTP, with zone 5 open-ended. Rides are zoned on 30-second average power, so short surges on Zwift hills don't count as hard.
 - **Recent wins** are personal bests from the last 2 weeks (estimated 1RM, 20-min power, longest, fastest) and "more consistent than last year".
+  - **Fastest run or swim** only beats earlier ones of a similar distance (within 10%).
+  - **More consistent** compares sessions per week over the last 8 weeks with the same 8 weeks last year.
 - **Streak** counts consecutive weeks with at least 2 sessions. After 7 days without training, the page opens with a "Welcome back" card instead of comparisons.
 - **Trends** has a page per sport: power, efficiency and best 20 min for the bike; pace and aerobic efficiency for runs; pace per 100 m for swims; and for the gym, muscle coverage, volume and progress per exercise. Exercises the library doesn't know appear under **Tag your exercises**.
 
@@ -152,7 +170,15 @@ The **Overview** page answers two questions: am I improving, and what should I f
 
 **Better numbers:**
 - Enter your **FTP** on the Body page. Zwift shows it in your profile. Estimating it from regular rides underestimates it, which makes rides look harder than they were.
-- Set **max heart rate** if you know it. Otherwise it's taken from your highest recorded value, or estimated as 220 − age.
+  - **It's kept per date:** a new FTP applies from today on, and rides before it keep the FTP that was true then. Before your first entry, 95% of your best 20 minutes is used.
+  - **Zwift intervals** are only marked on target, above or below against an FTP you entered for that day. With only the estimate, they show without a verdict.
+- Set **max heart rate** if you know it. Otherwise it's your best 30-second heart rate of the last year, so one sensor spike doesn't skew every zone. Without heart-rate streams it's your second-highest session maximum, and without any data it's estimated as 208 − 0.7 × age.
+
+**Training load** (top of Trends): every session gets a load score.
+- **Rides with power:** TSS from your FTP.
+- **Runs, swims and rides without power:** heart-rate TSS (an hour at threshold heart rate, about 89% of max, scores 100).
+- **Gym:** a flat 40 per hour, as a rough estimate.
+- **Fitness** is your 42-day average load and **fatigue** your 7-day average. **Form** is fitness minus fatigue: well below zero means you're carrying fatigue, around zero is steady training, above zero means fresh.
 
 **Deploying an update with a new migration:** run `supabase db push` **before** `git push`, so the database is ready when the new code goes live.
 
@@ -162,11 +188,12 @@ Before the gym, tap **Plan a workout**, on the Overview or the Muscles page.
 
 - **Your days are your Hevy routines.** When you start a workout from a routine in Hevy, the workout gets the routine's name. Every name you've used in the last 60 days becomes a day you can pick, e.g. "Chest - Schouders - Triceps". Its exercises are the ones from the last time you did it.
 - **A plan is that routine with today's changes marked:**
-  - **Targets:** each exercise shows what you did last time. If every set at your top weight reached 12 reps, it says go up: 2.5 kg, or 2 kg per dumbbell. Otherwise: same weight, aim for one more rep.
+  - **Targets:** each exercise shows what you did last time. If every set at your top weight reached 12 reps, it says go up by about 5% of the weight, rounded to the equipment's step (2.5 kg barbell or cable, 5 kg machine, 2 kg per dumbbell), and never more than 10% unless one step already is. Otherwise: same weight, aim for one more rep.
+  - **Lifts you haven't done in a while** start lighter: 10% after 3 weeks, 20% after 8 weeks, with no "go up" until you're back in the groove.
   - **Variety:** at most one stuck lift (no progress in 6 weeks) is swapped for another exercise for the same muscle. A lift one of your goals is about is never swapped.
   - **Extras, if you have time:** at most two exercises for muscles this day trains but your routine misses, with weights from your own lifts. New exercises are marked "start light".
   - **Just what I've missed** is an alternative day: up to 5 exercises for your least-trained muscles.
-  - **After a week or more off,** plans keep last time's weights and skip the extras.
+  - **After a week or more off,** plans keep your recent weights and skip the extras; lifts away for 3 weeks or more still start lighter.
 - **Per exercise:**
   - **Swap** gives another exercise for the same muscle.
   - **⋯ → Skip for today** greys an exercise out.
@@ -201,12 +228,13 @@ To deploy: `supabase db push`, then `git push`.
   - Edit, move or delete the session from the same page.
 - **Goals steer the whole app.** Each goal has a kind (gym, bike, run, swim, body or general), and a lift goal knows its lift.
   - **Progress:** goals show on the Overview with a bar where it can be measured:
-    - lift goals by your best estimated 1RM
+    - lift goals by your best estimated 1RM; a goal with reps ("80 kg for 5 reps") by your heaviest set of at least that many reps
     - FTP goals by your FTP
     - run and swim distance goals by your longest run or swim in the last 8 weeks
+    - run and swim time goals ("5k under 25 min") by your best time over that distance, from sessions of about that length. "Marathon" and "half marathon" count as distances.
     - body goals from your measurement when you set the goal
 
-    Relative goals like "lose 5 kg" show as text only.
+    Relative goals like "lose 5 kg", pace goals, timed bike goals, and anything that can't be measured honestly show as text only.
   - **Focus tips:**
     - Muscles your goal lift uses come first ("helps: Bench 100 kg").
     - A run, ride or swim goal always brings a session of that sport ("toward: Run a 10K").
@@ -255,6 +283,8 @@ The **Coach** page is a chat with Claude about your training. Ask things like "w
 - **Model:** `claude-opus-5-5` by default. To change it, set `ANTHROPIC_MODEL` to a model that supports mid-conversation system messages and `fallbacks: "default"`: Opus 5.5, Opus 5 or Fable 5.1. Others reject every message.
 - **If Claude declines a request:** Anthropic automatically retries it on another Claude model. This is the API's "fallbacks" option, and it's always on.
 - **Cost:** pay-as-you-go on your Anthropic account, at $4 per million tokens in and $20 per million out. A typical question costs roughly 5–15 cents; long chats cost more, because the whole chat is sent each time. Start a new chat when you change topic, and set a monthly spend limit in the Anthropic console.
+  - **Daily cap:** every call's tokens are logged, and once today's estimated spend reaches `COACH_DAILY_BUDGET_USD` (default $5) the coach says so instead of answering, until tomorrow.
+  - **Time limit:** a long answer stops looking things up after 4 minutes and answers with what it has, so it finishes within Vercel's 5-minute limit.
 
 To deploy the coach: `supabase db push`, add `ANTHROPIC_API_KEY` in Vercel, then `git push`.
 
@@ -265,10 +295,12 @@ To deploy the coach: `supabase db push`, add `ANTHROPIC_API_KEY` in Vercel, then
 | "File too large (max 4 MB)" | Vercel limits request size. FIT files are normally far smaller; check that you picked the right file. |
 | The sync log says it can't read a folder | Give Full Disk Access to the Python file named in that log line (section 3). |
 | Sync log shows `server said 401` | `SYNC_TOKEN` in `sync.env` doesn't match Vercel's, or is shorter than 16 characters. |
-| You're logged out right after signing in | `OWNER_EMAIL` on the server doesn't match the account you signed in with. |
+| You're logged out right after signing in | `OWNER_EMAIL` (or `OWNER_ID`, if set) on the server doesn't match the account you signed in with, or `SUPABASE_JWT_SECRET` is the local default or too short (the API logs a warning). |
+| A file the sync says the server can't read stays unread after a fix | The server remembers unreadable files. Run `update fit_files set unreadable = false` in the Supabase SQL editor, then wait for the next daily retry or upload it on **Import**. |
 | Everything is slow or failing after a quiet week | Supabase paused the project; restore it in the dashboard. |
 | Coach says "The Anthropic API key was rejected" | Check `ANTHROPIC_API_KEY` in Vercel, then redeploy (env changes only apply to new deployments). |
 | Coach says "Claude is busy right now" | Rate limit or a temporary outage. Wait a minute and press Retry. |
+| Coach says today's budget is used up | Raise `COACH_DAILY_BUDGET_USD` in Vercel and redeploy, or wait until tomorrow. |
 
 ## Layout
 
@@ -277,6 +309,7 @@ lockedin/         FastAPI app (imports, dedupe, routes)
 supabase/         config + SQL migrations
 sync/             Mac uploader + launchd agent
 web/              React + Vite app
-samples/          synthetic FIT files and Hevy CSVs for testing
+samples/          synthetic FIT files and Hevy CSVs for testing (`make samples` rebuilds them)
 tests/            pytest suite
+.github/          CI: lint, API tests on Postgres 17, web tests and build
 ```
