@@ -13,7 +13,7 @@ from lockedin.agenda.zwo import ZwiftWorkout, duration_s, filename, render, stri
 from lockedin.fitness import ftp_at
 from lockedin.focus.sessions import counted
 from lockedin.plan.routines import routines
-from lockedin.timeoff import CATEGORIES, WORDS, clash, entry_on, item_category, off_on
+from lockedin.timeoff import CATEGORIES, WORDS, entry_on, item_clash, off_on
 from lockedin.timeutil import TZ
 
 Sport = Literal["gym", "bike", "run", "swim", "rest", "other"]
@@ -127,9 +127,7 @@ def _check_routine(conn: Connection, now: datetime, routine: str | None) -> None
 
 def _check_time_off(conn: Connection, day: date, sport: str, routine: str | None) -> None:
     """The coach doesn't plan something that is off on that day."""
-    off = off_on(conn, day)
-    category = item_category(conn, {"sport": sport, "routine": routine}) if off else None
-    if message := clash(off, category):
+    if message := item_clash(conn, off_on(conn, day), {"sport": sport, "routine": routine}):
         raise ValueError(f"{message}, so I can't plan it then.")
 
 
@@ -212,12 +210,12 @@ def items_between(conn: Connection, now: datetime, start: date, end: date, resul
     goals = _goal_labels(conn, {r.goal_id for r in rows})
     items = [_out(r, ftp, local_today(now), done, goals) for r in rows]
     offs: dict[date, dict[str, date]] = {}
-    cats: dict[tuple, str | None] = {}
+    sets: dict[str, list] = {}
     for item, r in zip(items, rows, strict=True):
         off = offs.setdefault(r.day, off_on(conn, r.day))
-        if off and (r.sport, r.routine) not in cats:
-            cats[r.sport, r.routine] = item_category(conn, {"sport": r.sport, "routine": r.routine})
-        item["clash"] = clash(off, cats.get((r.sport, r.routine)))
+        item["clash"] = item_clash(conn, off, item, sets)
+        if item["zwift_status"] and "bike" in off:
+            item["zwift_status"] = None  # not sent to Zwift: cycling is off that day
     for item in items:
         item["result"] = result_line(conn, item) if results and item["done"] else None
     return items

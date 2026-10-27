@@ -147,13 +147,8 @@ def describe(off: dict[str, date]) -> str:
     return ", ".join(f"no {WORDS[c]} until {_fmt(off[c])}" for c in CATEGORIES if c in off)
 
 
-def item_category(conn: Connection, item: dict) -> str | None:
-    """The category an agenda item falls under: its sport for run/bike/swim; for a gym routine, the region
-    (upper/core/lower) holding more than half of the routine's last working sets by primary muscle."""
-    if item["sport"] in ("run", "bike", "swim"):
-        return item["sport"]
-    if item["sport"] != "gym" or not item.get("routine"):
-        return None
+def set_regions(conn: Connection, routine: str) -> list[set[str]]:
+    """The muscle regions each working set of the routine's last workout hits by primary muscle."""
     rows = conn.execute(text(
         "select coalesce(array_agg(distinct m.region) filter (where m.region is not null), '{}') as regions "
         "from gym_sets s join exercises e on e.id = s.exercise_id "
@@ -161,11 +156,35 @@ def item_category(conn: Connection, item: dict) -> str | None:
         "left join muscles m on m.key = lm.muscle_key "
         "where s.workout_id = (select a.id from gym_workouts w join activities a on a.id = w.activity_id "
         f"where w.title = :t and {counted('a')} order by a.start_at desc limit 1) and s.set_type <> 'warmup' "
-        "group by s.id"), {"t": item["routine"]}).all()
-    for category, regions in REGIONS.items():
-        if 2 * sum(bool(set(regions) & set(r.regions)) for r in rows) > len(rows):
-            return category
-    return None
+        "group by s.id"), {"t": routine}).all()
+    return [set(r.regions) for r in rows]
+
+
+def item_clash(conn: Connection, off: dict[str, date], item: dict, sets: dict[str, list] | None = None) -> str | None:
+    """Why an agenda item clashes with `off` (from off_on): its sport for run/bike/swim. A gym item clashes when
+    upper, core and lower are all off, or when more than half of its routine's working sets hit a region that is off;
+    the message names the off category with the most of them. `sets` caches set_regions per routine."""
+    if not off:
+        return None
+    if item["sport"] in ("run", "bike", "swim"):
+        return clash(off, item["sport"])
+    if item["sport"] != "gym":
+        return None
+    if "all" in off:
+        return f"Everything is off until {_fmt(off['all'])}"
+    gym_off = [c for c in REGIONS if c in off]
+    if len(gym_off) == len(REGIONS):
+        return f"The gym is off until {_fmt(min(off[c] for c in gym_off))}"
+    if not gym_off or not item.get("routine"):
+        return None
+    sets = {} if sets is None else sets
+    if item["routine"] not in sets:
+        sets[item["routine"]] = set_regions(conn, item["routine"])
+    hits = {c: sum(bool(set(REGIONS[c]) & s) for s in sets[item["routine"]]) for c in gym_off}
+    any_hit = sum(bool({r for c in gym_off for r in REGIONS[c]} & s) for s in sets[item["routine"]])
+    if 2 * any_hit <= len(sets[item["routine"]]):
+        return None
+    return clash(off, max(gym_off, key=lambda c: hits[c]))
 
 
 def clash(off: dict[str, date], category: str | None) -> str | None:

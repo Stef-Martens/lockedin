@@ -13,7 +13,7 @@ from lockedin.timeoff import Restriction, TimeOffIn
 
 H = owner_headers()
 NOW = datetime(2026, 12, 1, 12, 0, tzinfo=UTC)  # Tuesday
-BENCH, SQUAT = "Bench Press (Barbell)", "Squat (Barbell)"
+BENCH, SQUAT, LEG_PRESS = "Bench Press (Barbell)", "Squat (Barbell)", "Leg Press Horizontal (Machine)"
 SWEET_SPOT = {"blocks": [{"type": "steady", "duration_s": 3600, "power": 0.7}]}
 
 
@@ -94,6 +94,15 @@ def test_zwift_feed_skips_bike_off_days(clean_db):
         assert [f["filename"][:10] for f in zwift_feed(c, NOW)] == ["2026-12-04", "2026-12-08"]
 
 
+def test_no_zwift_pill_for_a_ride_on_a_bike_off_day(client, clean_db, clock):
+    with clean_db.begin() as c:
+        off(c, start=date(2026, 12, 5), bike=date(2026, 12, 6))
+    off_day = post(client, day="2026-12-05", sport="bike", title="Ride", zwift=SWEET_SPOT).json()
+    fine_day = post(client, day="2026-12-08", sport="bike", title="Ride", zwift=SWEET_SPOT).json()
+    assert off_day["clash"] == "Cycling is off until 6 Dec" and off_day["zwift_status"] is None
+    assert fine_day["zwift_status"] == "pending"
+
+
 def test_gym_routine_mostly_chest_clashes_with_upper_body(clean_db):
     with clean_db.begin() as c:
         add_gym(c, NOW - timedelta(days=3), [(BENCH, 60, 8, "normal")] * 7 + [(SQUAT, 80, 8, "normal")] * 3, title="Chest")
@@ -104,11 +113,34 @@ def test_gym_routine_mostly_chest_clashes_with_upper_body(clean_db):
     out, err = save(clean_db, [{"op": "add", "day": "2026-12-03", "sport": "gym", "title": "Mixed", "routine": "Mixed"}])
     assert not err  # exactly half is not more than half
     with clean_db.begin() as c:
-        assert timeoff.item_category(c, {"sport": "gym", "routine": "Chest"}) == "upper"
-        assert timeoff.item_category(c, {"sport": "gym", "routine": "Mixed"}) is None
-        assert timeoff.item_category(c, {"sport": "gym", "routine": None}) is None
-        assert timeoff.item_category(c, {"sport": "swim", "routine": None}) == "swim"
-        assert timeoff.item_category(c, {"sport": "rest", "routine": None}) is None
+        upper = timeoff.off_on(c, date(2026, 12, 3))
+        assert timeoff.item_clash(c, upper, {"sport": "gym", "routine": "Chest"}) == "Upper body is off until 2 Jan"
+        assert timeoff.item_clash(c, upper, {"sport": "gym", "routine": "Mixed"}) is None
+        assert timeoff.item_clash(c, upper, {"sport": "gym", "routine": None}) is None
+        assert timeoff.item_clash(c, upper, {"sport": "swim", "routine": None}) is None
+        assert timeoff.item_clash(c, upper, {"sport": "rest", "routine": None}) is None
+
+
+def test_gym_clash_counts_every_region_that_is_off(clean_db):
+    with clean_db.begin() as c:
+        add_gym(c, NOW - timedelta(days=4), [(BENCH, 60, 8, "normal")] * 5 + [(LEG_PRESS, 80, 8, "normal")] * 5,
+                title="Mixed")
+        off(c, upper=date(2027, 1, 2), lower=date(2026, 12, 20))
+    out, err = save(clean_db, [{"op": "add", "day": "2026-12-03", "sport": "gym", "title": "Mixed", "routine": "Mixed"}])
+    assert err and "Upper body is off until 2 Jan, so I can't plan it then." in out
+
+
+def test_away_rules_out_every_gym_item(client, clean_db, clock):
+    with clean_db.begin() as c:
+        add_gym(c, NOW - timedelta(days=4), [(BENCH, 60, 8, "normal")] * 5 + [(SQUAT, 80, 8, "normal")] * 5, title="Mixed")
+        timeoff.create(c, TimeOffIn(reason="vacation", start=date(2026, 12, 5),
+                                    restrictions=[Restriction(category="all", until=date(2026, 12, 12))]))
+    for routine in ("Mixed", None):
+        out, err = save(clean_db, [{"op": "add", "day": "2026-12-08", "sport": "gym", "title": "Gym", "routine": routine}])
+        assert err and "Everything is off until 12 Dec, so I can't plan it then." in out
+    item = post(client, day="2026-12-08", sport="gym", title="Gym").json()
+    assert item["clash"] == "Everything is off until 12 Dec"
+    assert post(client, day="2026-12-08", sport="run", title="Run").json()["clash"] == "Running is off until 12 Dec"
 
 
 def test_first_two_weeks_back_are_easy(client, clean_db, clock):
