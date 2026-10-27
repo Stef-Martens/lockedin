@@ -9,6 +9,7 @@ from sqlalchemy.exc import DBAPIError
 MAX_QUERY_CHARS = 4000
 MAX_RESULT_CHARS = 20_000
 TIMEOUT = "3s"
+WORK_MEM = "2MB"
 
 COMMENTS = re.compile(r"--[^\n]*|/\*.*?\*/", re.S)
 
@@ -33,17 +34,24 @@ def check_query(sql: str) -> str:
 
 
 def run_readonly(engine: Engine, sql: str, max_rows: int = 200) -> dict:
+    """Limits: one read-only statement as coach_ro, TIMEOUT wall time, WORK_MEM per sort/hash step (larger ones
+    spill to disk instead of holding memory), 1 MB of JSON out of Postgres, then max_rows and MAX_RESULT_CHARS."""
     query = check_query(sql)
     try:
         with engine.connect() as conn:
-            conn.exec_driver_sql("set transaction read only")
-            conn.exec_driver_sql(f"set local statement_timeout = '{TIMEOUT}'")
-            conn.exec_driver_sql("set local time zone 'Europe/Brussels'")
-            raw = conn.execute(text("select coach.run_query(:q, :n)::text"), {"q": query, "n": max_rows + 1}).scalar_one()
-            conn.rollback()
-            # Session-level advisory locks survive a rollback; behind a pooler the connection lives on.
-            conn.exec_driver_sql("select pg_advisory_unlock_all()")
-            conn.rollback()
+            try:
+                conn.exec_driver_sql("set transaction read only")
+                conn.exec_driver_sql(f"set local statement_timeout = '{TIMEOUT}'")
+                conn.exec_driver_sql(f"set local work_mem = '{WORK_MEM}'")
+                conn.exec_driver_sql("set local time zone 'Europe/Brussels'")
+                raw = conn.execute(text("select coach.run_query(:q, :n)::text"),
+                                   {"q": query, "n": max_rows + 1}).scalar_one()
+            finally:
+                conn.rollback()
+                # Session-level advisory locks survive a rollback (and a failed query); behind a pooler the
+                # connection lives on.
+                conn.exec_driver_sql("select pg_advisory_unlock_all()")
+                conn.rollback()
     except DBAPIError as e:
         message = str(e.orig).splitlines()[0] if e.orig else str(e)
         raise QueryRejected(f"Postgres said: {message}") from None
