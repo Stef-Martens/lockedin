@@ -1,4 +1,4 @@
-"""Single-owner auth: Supabase JWTs for the app, a static bearer token for the Mac sync script."""
+"""Single-owner auth: Supabase JWTs for the app, static bearer tokens for the Mac sync script and the watch app."""
 
 import hmac
 import logging
@@ -88,5 +88,15 @@ def require_owner_or_sync(authorization: str | None = Header(None)) -> Literal["
     sync_token = get_settings().sync_token
     if len(sync_token) >= MIN_SYNC_TOKEN_LEN and hmac.compare_digest(token.encode(), sync_token.encode()):
         return "sync"
+    _owner_email(token)
+    return "owner"
+
+
+def require_owner_or_watch(authorization: str | None = Header(None)) -> Literal["owner", "watch"]:
+    """The owner, or the iPhone app's token (which unlocks only the watch feed)."""
+    token = _bearer(authorization)
+    watch_token = get_settings().watch_token
+    if len(watch_token) >= MIN_SYNC_TOKEN_LEN and hmac.compare_digest(token.encode(), watch_token.encode()):
+        return "watch"
     _owner_email(token)
     return "owner"

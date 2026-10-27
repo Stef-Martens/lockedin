@@ -18,6 +18,7 @@ TEST_DB = os.environ.get("LOCKEDIN_TEST_DB", "lockedin_test")
 OWNER_EMAIL = "me@example.com"
 JWT_SECRET = "test-secret-test-secret-test-secret-123"
 SYNC_TOKEN = "sync-test-token-0123456789"
+WATCH_TOKEN = "watch-test-token-0123456789"
 
 # Seeded by migrations and only read by the app (owner-tagged library rows are removed per test instead).
 REFERENCE_TABLES = {"muscles", "library_exercises", "library_muscles"}
@@ -37,6 +38,7 @@ os.environ.update(
     SUPABASE_JWT_SECRET=JWT_SECRET,
     OWNER_EMAIL=OWNER_EMAIL,
     SYNC_TOKEN=SYNC_TOKEN,
+    WATCH_TOKEN=WATCH_TOKEN,
 )
 
 
@@ -118,6 +120,7 @@ def owner_headers() -> dict:
 
 
 SYNC_HEADERS = {"Authorization": f"Bearer {SYNC_TOKEN}"}
+WATCH_HEADERS = {"Authorization": f"Bearer {WATCH_TOKEN}"}
 
 
 def count(conn, table: str) -> int:

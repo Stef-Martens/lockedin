@@ -20,6 +20,7 @@ class Settings:
     max_upload_bytes: int = 4_000_000
     owner_id: str | None = None
     coach_daily_budget_usd: float = 5.0
+    watch_token: str = ""
 
     @property
     def is_local(self) -> bool:
@@ -47,4 +48,5 @@ def get_settings() -> Settings:
         anthropic_model=os.environ.get("ANTHROPIC_MODEL") or "claude-opus-5-5",
         owner_id=(os.environ.get("OWNER_ID") or "").strip().lower() or None,
         coach_daily_budget_usd=_budget(os.environ.get("COACH_DAILY_BUDGET_USD")),
+        watch_token=os.environ.get("WATCH_TOKEN", ""),
     )

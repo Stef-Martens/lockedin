@@ -1,0 +1,81 @@
+{
+  "today": "2026-10-27",
+  "items": [
+    {
+      "id": 1,
+      "day": "2026-10-27",
+      "sport": "run",
+      "title": "Tempo",
+      "optional": false,
+      "note": null,
+      "summary": "10' warm-up Z2 · 4 × (5' @ 5:30–5:50, 2' jog) · cool-down",
+      "workout": {
+        "kind": "run",
+        "display_name": "Tempo",
+        "location": "outdoor",
+        "warmup": {
+          "goal": {
+            "type": "time",
+            "seconds": 600
+          },
+          "alert": {
+            "type": "heart_rate",
+            "min_bpm": 137,
+            "max_bpm": 156
+          }
+        },
+        "blocks": [
+          {
+            "iterations": 4,
+            "steps": [
+              {
+                "purpose": "work",
+                "goal": {
+                  "type": "time",
+                  "seconds": 300
+                },
+                "alert": {
+                  "type": "speed",
+                  "min_mps": 2.857,
+                  "max_mps": 3.03
+                }
+              },
+              {
+                "purpose": "recovery",
+                "goal": {
+                  "type": "time",
+                  "seconds": 120
+                },
+                "alert": null
+              }
+            ]
+          }
+        ],
+        "cooldown": {
+          "goal": {
+            "type": "open"
+          },
+          "alert": null
+        }
+      }
+    },
+    {
+      "id": 2,
+      "day": "2026-10-28",
+      "sport": "swim",
+      "title": "Swim",
+      "optional": false,
+      "note": "4 × 100 m, 30 s rest",
+      "summary": "1500 m @ 2:00/100 m",
+      "workout": {
+        "kind": "swim",
+        "display_name": "Swim",
+        "location": "pool",
+        "goal": {
+          "type": "distance",
+          "meters": 1500
+        }
+      }
+    }
+  ]
+}
