@@ -31,13 +31,16 @@ activities: one row per recorded session.
 gym_workouts: activity_id (= activities.id of the gym session), title, description.
 gym_sets: workout_id (= gym_workouts.activity_id), exercise_id, exercise_order, set_index (0-based),
   set_type ('normal'|'warmup'|'failure'|'dropset'), weight_kg, reps, distance_km, duration_s, rpe, notes,
-  e1rm (estimated 1-rep max, Epley, kg). Dumbbell weights are as logged: see profile.dumbbell_weights.
+  e1rm (estimated 1-rep max, Epley, kg; null above 20 reps and for assisted lifts; bests and goals use sets of
+  12 reps or fewer). Dumbbell weights are as logged: see profile.dumbbell_weights.
 exercises: id, name (Hevy's exercise name), is_bodyweight.
 library_exercises: name, equipment ('barbell'|'dumbbell'|'cable'|'machine'|'bodyweight'|'other'), related_to, ratio.
 library_muscles: exercise_name, muscle_key, role ('primary'|'secondary'). Join exercises.name = exercise_name.
 muscles: key, name, region, target_low, target_high (weekly effective sets: primary = 1, secondary = 0.5).
 measurement_types: id, name (Weight, Chest, Left arm, ...), unit ('kg' | 'cm'), kind ('weight'|'tape'|'other').
 measurements: type_id, measured_on (date), value, note. One body check-in = all rows on one measured_on.
+ftp_history: effective_from (date), ftp (W; null = estimated from rides from that day on). The FTP for a day is the
+  latest row on or before it; profile.ftp_override mirrors the current one.
 profile (single row): avoid_muscles (left-out muscle keys), never_exercises, coach_notes, date_of_birth, height_cm, sex, max_hr_override, ftp_override, resting_hr_override,
   dumbbell_weights ('pair' = logged weight is both dumbbells together, 'each' = per hand), reminder_weeks,
   last_goal_review_at.

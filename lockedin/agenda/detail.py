@@ -9,7 +9,7 @@ from lockedin.agenda import actual as act
 from lockedin.agenda.parts import parts, sweet_spot_minutes, tss_estimate
 from lockedin.agenda.store import get_item, local_today
 from lockedin.agenda.zwo import ZwiftWorkout, duration_s
-from lockedin.fitness import ftp_at
+from lockedin.fitness import ftp_at, owner_ftp_at
 from lockedin.focus.zones import hr_zone_bounds, max_hr_at
 from lockedin.plan.build import build_plan
 from lockedin.timeutil import TZ
@@ -89,8 +89,7 @@ def detail(conn: Connection, now: datetime, item_id: int) -> dict:
     if item["sport"] == "bike" and item["zwift"]:
         w = ZwiftWorkout(blocks=item["zwift"]["blocks"])
         ps = parts(w, ftp)
-        plan = {"kind": "zwift", "ftp": round(ftp) if ftp else None, "ftp_is_set": bool(conn.execute(text(
-                    "select ftp_override from profile where id = 1")).scalar()),
+        plan = {"kind": "zwift", "ftp": round(ftp) if ftp else None, "ftp_is_set": owner_ftp_at(conn, start or now) is not None,
                 "parts": ps, "duration_s": duration_s(w), "sweet_spot_min": sweet_spot_minutes(ps), "tss_est": tss_estimate(ps)}
     elif item["sport"] in ("run", "swim"):
         targets = item["targets"] or {}

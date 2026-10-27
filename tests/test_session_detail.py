@@ -194,3 +194,13 @@ def test_result_lines_only_when_asked(clean_db):
         assert items_between(c, NOW, datetime(2026, 10, 29).date(), datetime(2026, 10, 29).date())[0]["result"] is None
         lines = items_between(c, NOW, datetime(2026, 10, 29).date(), datetime(2026, 10, 29).date(), results=True)
         assert lines[0]["result"] == "Done · 60′ · 150 W"
+
+
+def test_ftp_set_after_the_ride_is_not_its_ftp(client, clean_db, clock):
+    with clean_db.begin() as c:
+        c.execute(text("update profile set ftp_override = 168"))
+        c.execute(text("insert into ftp_history (effective_from, ftp) values ('2026-10-30', 168)"))
+        iid = add(c, day="2026-10-29", sport="bike", title="Sweet Spot 3x10", zwift=SWEET_SPOT)
+        add_session(c, "bike", datetime(2026, 10, 29, 6, 12, tzinfo=UTC), 3900, source="zwift", power=ride_power((151, 149, 153)))
+    d = detail(client, iid)
+    assert d["plan"]["ftp_is_set"] is False and {p["status"] for p in d["actual"]["parts"]} == {"no_target"}
