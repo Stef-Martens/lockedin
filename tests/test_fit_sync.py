@@ -508,3 +508,106 @@ def test_an_edited_file_stays_the_owners_when_the_title_case_changes(tmp_path):
     assert written == 0 and warnings == [] and "tweaked" in (folder / "z2 ride.zwo").read_text()
     written, _, warnings = fit_sync.sync_workouts(cfg, Feed(served("Z2 Ride.zwo")))
     assert written == 0 and warnings == []  # and stays quiet
+
+
+# --- local upload record -----------------------------------------------------------------------------
+
+def no_reading(path):
+    raise AssertionError(f"read {path}")
+
+
+def test_files_already_uploaded_are_not_read_again(tmp_path, monkeypatch):
+    make(tmp_path / "a.fit", b"aaa")
+    assert fit_sync.sync_once(cfg(tmp_path), NOW, http=FakeHttp()).uploaded == 1
+    monkeypatch.setattr(fit_sync, "sha256_file", no_reading)
+    http = FakeHttp()
+    report = fit_sync.sync_once(cfg(tmp_path), NOW + 900, http=http)
+    assert (report.uploaded, report.duplicates, report.errors, http.calls) == (0, 1, [], [])
+
+
+def test_files_the_server_already_had_are_remembered_too(tmp_path, monkeypatch):
+    a = make(tmp_path / "a.fit", b"aaa")
+    fit_sync.sync_once(cfg(tmp_path), NOW, http=FakeHttp(known={fit_sync.sha256_file(a)}))
+    monkeypatch.setattr(fit_sync, "sha256_file", no_reading)
+    http = FakeHttp()
+    assert fit_sync.sync_once(cfg(tmp_path), NOW + 900, http=http).duplicates == 1 and http.calls == []
+
+
+def test_a_changed_file_is_hashed_and_uploaded_again(tmp_path):
+    p = make(tmp_path / "a.fit", b"aaa")
+    fit_sync.sync_once(cfg(tmp_path), NOW, http=FakeHttp())
+    make(p, b"aaa plus more", age_s=600)
+    http = FakeHttp()
+    assert fit_sync.sync_once(cfg(tmp_path), NOW, http=http).uploaded == 1
+    assert b"aaa plus more" in [c for c in http.calls if c[0].endswith("/upload")][0][2]
+
+
+def test_an_evicted_file_already_uploaded_is_not_downloaded_from_icloud(tmp_path, monkeypatch):
+    import errno
+    make(tmp_path / "old.fit", b"old ride")
+    fit_sync.sync_once(cfg(tmp_path), NOW, http=FakeHttp())
+
+    def evicted(path):
+        raise OSError(errno.EDEADLK, "Resource deadlock avoided")
+
+    requested = []
+    monkeypatch.setattr(fit_sync, "sha256_file", evicted)
+    monkeypatch.setattr(fit_sync, "icloud_download", requested.append)
+    report = fit_sync.sync_once(cfg(tmp_path), NOW + 900, http=FakeHttp())
+    assert requested == [] and report.pending == 0 and report.duplicates == 1
+
+
+def test_upload_record_lives_in_application_support_or_the_override(tmp_path, monkeypatch):
+    make(tmp_path / "a.fit", b"aaa")
+    fit_sync.sync_once(cfg(tmp_path), NOW, http=FakeHttp())
+    default = Path.home() / "Library" / "Application Support" / "lockedin" / "fit-sync-state.json"
+    assert str(tmp_path / "a.fit") in json.loads(default.read_text())["files"]
+    other = tmp_path / "elsewhere" / "state.json"
+    monkeypatch.setenv("LOCKEDIN_SYNC_STATE", str(other))
+    fit_sync.sync_once(cfg(tmp_path), NOW, http=FakeHttp())
+    assert str(tmp_path / "a.fit") in json.loads(other.read_text())["files"]
+
+
+def test_a_damaged_upload_record_just_starts_over(tmp_path):
+    state = Path.home() / "Library" / "Application Support" / "lockedin" / "fit-sync-state.json"
+    state.parent.mkdir(parents=True)
+    state.write_text("{not json")
+    make(tmp_path / "a.fit", b"aaa")
+    report = fit_sync.sync_once(cfg(tmp_path), NOW, http=FakeHttp())
+    assert report.uploaded == 1 and report.errors == []
+
+
+# --- files the server can't read -----------------------------------------------------------------------
+
+def unreadable_server(uploads):
+    def http(url, token, body, headers):
+        if url.endswith("/known"):
+            return 200, b'{"known": []}'
+        uploads.append(body)
+        if b'filename="bad.fit"' in body:
+            return 200, b'{"status": "error", "error": "Could not read FIT file"}'
+        return 200, b'{"status": "imported"}'
+    return http
+
+
+def test_a_file_the_server_cant_read_is_retried_a_day_later_not_every_run(tmp_path):
+    make(tmp_path / "bad.fit", b"garbage")
+    uploads = []
+    first = fit_sync.sync_once(cfg(tmp_path), NOW, http=unreadable_server(uploads))
+    assert len(first.errors) == 1 and len(uploads) == 1
+    later = fit_sync.sync_once(cfg(tmp_path), NOW + 900, http=unreadable_server(uploads))
+    assert later.errors == [] and len(uploads) == 1
+    tomorrow = fit_sync.sync_once(cfg(tmp_path), NOW + 25 * 3600, http=unreadable_server(uploads))
+    assert len(tomorrow.errors) == 1 and len(uploads) == 2  # a fixed parser on the server gets its chance
+
+
+def test_a_file_the_server_cant_read_doesnt_stop_waiting_for_a_ride_being_written(tmp_path):
+    make(tmp_path / "bad.fit", b"garbage")
+    make(tmp_path / "ride.fit", b"ride", age_s=5)
+    clock = {"t": NOW}
+
+    def sleep(s):
+        clock["t"] += s
+
+    reports = fit_sync.run(cfg(tmp_path), now=lambda: clock["t"], sleep=sleep, http=unreadable_server([]))
+    assert len(reports) == 2 and sum(r.uploaded for r in reports) == 1

@@ -11,6 +11,10 @@ Config: ~/.config/lockedin/sync.env (KEY=VALUE lines), overridable by environmen
 
 After uploading, it also puts the Zwift workouts planned in the LockedIn agenda into that folder. It keeps a
 manifest of the files it wrote and never touches any other file.
+
+It remembers which files are already on the server in ~/Library/Application Support/lockedin/fit-sync-state.json
+(LOCKEDIN_SYNC_STATE overrides the path), so those are never read or fetched from iCloud again, and files the
+server couldn't read are only retried once a day. Delete that file to have everything checked again.
 """
 
 from __future__ import annotations
@@ -41,6 +45,7 @@ SKIP_NAMES = {"inprogressactivity.fit"}  # Zwift's partial file during a ride
 MANIFEST = ".lockedin-workouts.json"
 RELEASED = "released"  # manifest value for a file of ours the owner edited: theirs now, left alone quietly
 TMP_SUFFIX = ".lockedin-tmp"  # ".<name>.lockedin-tmp" while a file is being written; never a .zwo to Zwift
+RETRY_UNREADABLE_S = 24 * 3600  # a file the server couldn't read is tried again a day later (maybe it's fixed)
 
 Http = Callable[[str, str, bytes, dict], tuple[int, bytes]]
 
@@ -54,6 +59,7 @@ class SyncReport:
     warnings: list[str] = field(default_factory=list)
     workouts_written: int = 0
     workouts_removed: int = 0
+    stopped: bool = False  # the whole run gave up (config, network, token), not just one file
 
 
 def load_config() -> dict:
@@ -150,26 +156,89 @@ def _multipart(filename: str, data: bytes, source: str) -> tuple[bytes, str]:
     return b"".join(parts), f"multipart/form-data; boundary={boundary}"
 
 
+def state_file() -> Path:
+    return Path(os.environ.get("LOCKEDIN_SYNC_STATE")
+                or Path.home() / "Library" / "Application Support" / "lockedin" / "fit-sync-state.json")
+
+
+def _load_state(path: Path) -> dict:
+    """{"files": {path: [size, mtime_ns, sha256, on server]}, "failed": {sha256: retry after}}. Only a cache:
+    missing or damaged just means every file is hashed and checked with the server again."""
+    try:
+        data = json.loads(path.read_text())
+        files, failed = data.get("files"), data.get("failed")
+        if isinstance(files, dict) and isinstance(failed, dict):
+            return {"files": {k: v for k, v in files.items() if isinstance(v, list) and len(v) == 4
+                              and isinstance(v[2], str)},
+                    "failed": {h: t for h, t in failed.items() if isinstance(t, (int, float))}}
+    except (OSError, ValueError, AttributeError):
+        pass
+    return {"files": {}, "failed": {}}
+
+
+def _save_state(path: Path, state: dict) -> None:
+    files = {k: v for k, v in state["files"].items() if os.path.lexists(k)}  # forget deleted files
+    shas = {v[2] for v in files.values()}
+    failed = {h: t for h, t in state["failed"].items() if h in shas}
+    path.parent.mkdir(parents=True, exist_ok=True)
+    _write_atomic(path, json.dumps({"files": files, "failed": failed}, indent=1, sort_keys=True).encode())
+
+
+def _unchanged(entry, st: os.stat_result) -> bool:
+    return entry is not None and entry[:2] == [st.st_size, st.st_mtime_ns]
+
+
 def sync_once(cfg: dict, now: float, http: Http = urllib_http) -> SyncReport:
     report = SyncReport()
     api, token = cfg.get("LOCKEDIN_API", "").rstrip("/"), cfg.get("SYNC_TOKEN", "")
     if not api or not token:
         report.errors.append(f"LOCKEDIN_API and SYNC_TOKEN must be set in {CONFIG_FILE}.")
+        report.stopped = True
         return report
+    where = state_file()
+    state = _load_state(where)
+    try:
+        _upload_new(cfg, api, token, now, http, report, state)
+    finally:
+        try:
+            _save_state(where, state)
+        except OSError as e:
+            report.warnings.append(f"Couldn't save {where}, so all files get checked again next run: {e}")
+    return report
 
+
+def _upload_new(cfg: dict, api: str, token: str, now: float, http: Http, report: SyncReport, state: dict) -> None:
+    record, failed = state["files"], state["failed"]
     pending: list = []
     files, report.warnings = candidate_files(folders_from(cfg), now, pending=pending)
     report.pending = len(pending)
+
+    def unreadable_here(p: Path, e: OSError) -> None:
+        if e.errno == errno.EDEADLK:  # iCloud placeholder ("Optimize Mac Storage"); fetch it, retry soon
+            icloud_download(p)
+            report.pending += 1
+        else:
+            report.warnings.append(f"Skipped {p.name} for now, couldn't read it: {e}")
+
     hashed = []
     for p, label in files:
         try:
-            hashed.append((p, label, sha256_file(p)))
+            st, entry = p.stat(), record.get(str(p))
+            if _unchanged(entry, st) and entry[3]:  # on the server already: not read, not fetched from iCloud
+                report.duplicates += 1
+                continue
+            if not _unchanged(entry, st):
+                record[str(p)] = entry = [st.st_size, st.st_mtime_ns, sha256_file(p), False]
         except OSError as e:
-            if e.errno == errno.EDEADLK:  # iCloud placeholder ("Optimize Mac Storage"); fetch it, retry soon
-                icloud_download(p)
-                report.pending += 1
-            else:
-                report.warnings.append(f"Skipped {p.name} for now, couldn't read it: {e}")
+            unreadable_here(p, e)
+            continue
+        if failed.get(entry[2], 0) <= now:  # else the server couldn't read it lately; wait a day
+            hashed.append((p, label, entry[2]))
+
+    def on_server(path: Path, digest: str) -> None:
+        record[str(path)][3] = True
+        failed.pop(digest, None)
+
     try:
         known: set[str] = set()
         for i in range(0, len(hashed), BATCH):
@@ -177,14 +246,21 @@ def sync_once(cfg: dict, now: float, http: Http = urllib_http) -> SyncReport:
             status, resp = http(f"{api}/api/fit/known", token, body, {"Content-Type": "application/json"})
             if status != 200:
                 report.errors.append(f"Server said {status} when checking files: {resp[:200]!r}")
-                return report
+                report.stopped = True
+                return
             known |= set(json.loads(resp)["known"])
 
         for path, label, digest in hashed:
             if digest in known:
                 report.duplicates += 1
+                on_server(path, digest)
                 continue
-            body, ctype = _multipart(path.name, path.read_bytes(), label)
+            try:
+                data = path.read_bytes()
+            except OSError as e:
+                unreadable_here(path, e)
+                continue
+            body, ctype = _multipart(path.name, data, label)
             status, resp = http(f"{api}/api/fit/upload", token, body, {"Content-Type": ctype})
             try:
                 result = json.loads(resp) if resp else {}
@@ -192,19 +268,23 @@ def sync_once(cfg: dict, now: float, http: Http = urllib_http) -> SyncReport:
                 result = {}
             if status == 401:
                 report.errors.append("Server said 401: SYNC_TOKEN doesn't match the server's. Stopped.")
-                return report
+                report.stopped = True
+                return
             if status != 200:
                 detail = result.get("detail") or resp[:120].decode("utf-8", "replace")
                 report.errors.append(f"{path.name}: server said {status} {detail}")
             elif result.get("status") == "imported":
                 report.uploaded += 1
+                on_server(path, digest)
             elif result.get("status") in ("duplicate", "empty"):  # empty: a ride started and quit
                 report.duplicates += 1
-            else:
-                report.errors.append(f"{path.name}: {result.get('error') or 'import failed'}")
+                on_server(path, digest)
+            else:  # the server couldn't read it: say so now, try again tomorrow, not every run
+                report.errors.append(f"{path.name}: {result.get('error') or 'import failed'} (retried in a day)")
+                failed[digest] = now + RETRY_UNREADABLE_S
     except (OSError, ValueError) as e:
         report.errors.append(f"Stopped, will retry next run: {e}")
-    return report
+        report.stopped = True
 
 
 def workouts_dir(cfg: dict) -> tuple[Path | None, str | None]:
@@ -368,7 +448,7 @@ def run(cfg: dict, now: Callable[[], float] = time.time, sleep: Callable[[float]
         http: Http = urllib_http) -> list[SyncReport]:
     """Sync, then keep waiting a bit while files are still being written (launchd fires on the first write)."""
     reports = [sync_once(cfg, now(), http=http)]
-    while reports[-1].pending and not reports[-1].errors and len(reports) <= MAX_WAITS:
+    while reports[-1].pending and not reports[-1].stopped and len(reports) <= MAX_WAITS:
         sleep(WAIT_S)
         reports.append(sync_once(cfg, now(), http=http))
     last = reports[-1]
