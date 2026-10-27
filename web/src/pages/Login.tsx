@@ -1,6 +1,19 @@
 import { type FormEvent, useState } from "react";
+import { Navigate, useLocation } from "react-router-dom";
 import { stagger } from "../lib/motion";
 import { supabase } from "../lib/supabase";
+
+/** Where to go after signing in: `?next=` when it's a page of this app, else home. */
+export function nextPath(search: string): string {
+  const next = new URLSearchParams(search).get("next");
+  return next && next.startsWith("/") && !next.startsWith("//") && !next.startsWith("/login") ? next : "/";
+}
+
+/** Signed in on /login (e.g. after the session expired): back to the page you were on. */
+export function AfterLogin() {
+  const { search } = useLocation();
+  return <Navigate to={nextPath(search)} replace />;
+}
 
 export default function Login() {
   const [email, setEmail] = useState("");
