@@ -1,10 +1,11 @@
 """Create (or reset the password of) the single LockedIn user via the Supabase admin API.
 
-Usage: make owner EMAIL=you@example.com PASSWORD=...
+Usage: make owner EMAIL=you@example.com  (asks for the password, so it stays out of your shell history)
 Needs SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in .env (or the environment).
 """
 
 import argparse
+import getpass
 import json
 import os
 import sys
@@ -29,8 +30,16 @@ def main() -> int:
     load_dotenv()
     p = argparse.ArgumentParser()
     p.add_argument("--email", required=True)
-    p.add_argument("--password", required=True)
+    p.add_argument("--password", help="avoid: it lands in your shell history; leave it out to be asked")
     a = p.parse_args()
+    if not a.password:
+        a.password = getpass.getpass("Password: ")
+        if a.password != getpass.getpass("Again: "):
+            print("The passwords don't match.")
+            return 1
+    if not a.password:
+        print("The password can't be empty.")
+        return 1
     base, key = os.environ["SUPABASE_URL"].rstrip("/"), os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
     if not key:
         print("Set SUPABASE_SERVICE_ROLE_KEY (from `supabase status` or the dashboard).")

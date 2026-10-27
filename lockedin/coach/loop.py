@@ -1,27 +1,31 @@
 """One owner message → streamed answer, running the coach's tools in between."""
 
 import logging
+import time
 from collections.abc import Callable, Iterator
 
-from lockedin.coach.llm import CoachLLM, CoachUnavailable, Final
+from lockedin.coach.llm import TOO_LONG, CoachLLM, CoachUnavailable, Final
 from lockedin.coach.prompt import SYSTEM_PROMPT
 from lockedin.coach.tools import TOOLS
 
 log = logging.getLogger(__name__)
 
 ANSWER_NOW = "You've used all the tool calls for this message. Answer now with what you have; no more tools."
+OUT_OF_TIME = "You're out of time for this message. Answer now with what you have; no more tools."
 JSON_RETRIES = 2
 
 ToolRunner = Callable[[str, object], tuple[str, bool]]
 
 
 def run_turn(llm: CoachLLM, *, history: list[dict], user_text: str, context: str, tool_runner: ToolRunner,
-             max_rounds: int = 8) -> Iterator[dict]:
-    """Yields text/tool/done/error events, plus `appended` events listing messages added to `history`.
+             max_rounds: int = 8, deadline: float | None = None,
+             clock: Callable[[], float] = time.monotonic) -> Iterator[dict]:
+    """Yields text/tool/done/error/usage events, plus `appended` events listing messages added to `history`.
 
     Each `appended` batch must be stored in one go: it always leaves the conversation valid to replay.
     The user and context messages wait for the model's first answer (a system message must be followed
-    by an assistant turn), and a tool call waits for its results.
+    by an assistant turn), and a tool call waits for its results. Past `deadline` (a `clock()` value) no new
+    tool round starts: the next round answers without tools, as after `max_rounds`.
     """
     pending = [{"role": "user", "content": user_text}, {"role": "system", "content": context}]
 
@@ -40,10 +44,10 @@ def run_turn(llm: CoachLLM, *, history: list[dict], user_text: str, context: str
 
     rounds = 0
     retries = 0
+    final_round = False
     while True:
         final = None
         try:
-            final_round = rounds >= max_rounds
             for item in llm.stream(system=SYSTEM_PROMPT, messages=history + pending, tools=TOOLS,
                                    tool_choice={"type": "none"} if final_round else None):
                 if isinstance(item, Final):
@@ -66,10 +70,15 @@ def run_turn(llm: CoachLLM, *, history: list[dict], user_text: str, context: str
             yield {"type": "error", "message": "Something went wrong talking to the coach. Try again."}
             return
         retries = 0
+        if final.usage:
+            yield {"type": "usage", "usage": final.usage}
 
         uses = [b for b in final.content if b.get("type") == "tool_use"]
         if final.stop_reason == "refusal":
             yield {"type": "error", "message": "I can't help with that one."}
+            return
+        if final.stop_reason == "model_context_window_exceeded":
+            yield {"type": "error", "message": TOO_LONG}
             return
         if final.stop_reason == "max_tokens" and uses:
             yield {"type": "error", "message": "That answer got too long; try a narrower question."}
@@ -85,7 +94,7 @@ def run_turn(llm: CoachLLM, *, history: list[dict], user_text: str, context: str
                 continue
             yield {"type": "done"}
             return
-        if rounds >= max_rounds:
+        if final_round:
             yield {"type": "error", "message": "That took too many steps; try a narrower question."}
             return
 
@@ -98,4 +107,8 @@ def run_turn(llm: CoachLLM, *, history: list[dict], user_text: str, context: str
         yield from append({"role": "assistant", "content": final.content}, {"role": "user", "content": results})
         rounds += 1
         if rounds >= max_rounds:
+            final_round = True
             pending.append({"role": "system", "content": ANSWER_NOW})
+        elif deadline is not None and clock() >= deadline:
+            final_round = True
+            pending.append({"role": "system", "content": OUT_OF_TIME})

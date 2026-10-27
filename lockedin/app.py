@@ -4,10 +4,18 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from lockedin.auth import require_owner
-from lockedin.config import get_settings
+from lockedin.config import Settings, get_settings
 from lockedin.routes import activities, agenda, body, checkins, coach, fit, hevy, overview, plan, preferences, status, trends
 
-app = FastAPI(title="LockedIn", docs_url="/api/docs", openapi_url="/api/openapi.json")
+
+def docs_urls(s: Settings) -> dict:
+    """The API docs only on the local stack; in production they'd map the API for anyone."""
+    local = s.is_local
+    return {"docs_url": "/api/docs" if local else None, "redoc_url": None,
+            "openapi_url": "/api/openapi.json" if local else None}
+
+
+app = FastAPI(title="LockedIn", **docs_urls(get_settings()))
 
 
 @app.exception_handler(RequestValidationError)

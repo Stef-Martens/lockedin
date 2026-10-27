@@ -57,7 +57,8 @@ def test_status_says_whether_the_coach_is_set_up(client):
     from dataclasses import replace
     h = owner_headers()
     app.dependency_overrides[get_settings] = lambda: replace(get_settings(), anthropic_api_key=None)
-    assert client.get("/api/coach/status", headers=h).json() == {"ready": False, "model": "claude-opus-5-5"}
+    assert client.get("/api/coach/status", headers=h).json() == {"ready": False, "model": "claude-opus-5-5",
+                                                                 "spent_today_usd": 0.0, "daily_budget_usd": 5.0}
     app.dependency_overrides[get_settings] = lambda: replace(get_settings(), anthropic_api_key="sk-x")
     assert client.get("/api/coach/status", headers=h).json()["ready"] is True
     assert client.get("/api/coach/status").status_code == 401

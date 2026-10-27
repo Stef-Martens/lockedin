@@ -51,7 +51,8 @@ def test_owner_or_sync_accepts_both():
 def test_asymmetric_token_verified_via_jwks(monkeypatch):
     key = ec.generate_private_key(ec.SECP256R1())
     now = int(time.time())
-    token = jwt.encode({"email": "me@example.com", "aud": "authenticated", "exp": now + 60},
+    token = jwt.encode({"sub": "u1", "email": "me@example.com", "aud": "authenticated", "exp": now + 60,
+                        "iss": "http://127.0.0.1:54321/auth/v1"},
                        key, algorithm="ES256", headers={"kid": "k1"})
 
     class FakeJwks:
