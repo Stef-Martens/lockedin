@@ -162,7 +162,8 @@ def _out(row, ftp: float | None, today: date, done: dict[int, int], goals: dict[
 def _ticks(conn: Connection, rows: list, start: date, end: date) -> dict[int, int]:
     """item id → activity id that ticks it. Each activity ticks one item. First the exact matches (a gym
     workout titled like the item's routine, a ride for a ride); then a gym item takes any gym workout left that
-    day (the Hevy title was changed); last a rest day takes whatever is left (the optional spin was done)."""
+    day (the Hevy title was changed); last a rest day takes whatever is left (the optional spin was done).
+    Within a pass, main items go before optional ones, so one ride ticks the planned ride, not the extra spin."""
     acts = conn.execute(text(
         "select a.id, a.sport, (a.start_at at time zone 'Europe/Brussels')::date as day, w.title "
         f"from activities a left join gym_workouts w on w.activity_id = a.id where {counted('a')} "
@@ -180,7 +181,7 @@ def _ticks(conn: Connection, rows: list, start: date, end: date) -> dict[int, in
         return item.sport in ("bike", "run", "swim") and a.sport == item.sport
 
     passes = (exact, lambda item, a: item.sport == "gym" and a.sport == "gym", lambda item, a: item.sport == "rest")
-    ordered = sorted(rows, key=lambda r: (r.day, 0 if r.routine else 1, r.sort, r.id))
+    ordered = sorted(rows, key=lambda r: (r.day, bool(r.optional), 0 if r.routine else 1, r.sort, r.id))
     for fits in passes:
         for item in ordered:
             if item.id in done:
