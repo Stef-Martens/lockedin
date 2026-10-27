@@ -128,6 +128,10 @@ def test_gym_clash_counts_every_region_that_is_off(clean_db):
         off(c, upper=date(2027, 1, 2), lower=date(2026, 12, 20))
     out, err = save(clean_db, [{"op": "add", "day": "2026-12-03", "sport": "gym", "title": "Mixed", "routine": "Mixed"}])
     assert err and "Upper body is off until 2 Jan, so I can't plan it then." in out
+    with clean_db.begin() as c:
+        off(c, core=date(2026, 12, 10))
+        every_part = timeoff.off_on(c, date(2026, 12, 3))
+        assert timeoff.item_clash(c, every_part, {"sport": "gym", "routine": None}) == "The gym is off until 10 Dec"
 
 
 def test_away_rules_out_every_gym_item(client, clean_db, clock):

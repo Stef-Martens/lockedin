@@ -164,7 +164,7 @@ def set_regions(conn: Connection, routine: str) -> list[set[str]]:
 
 
 def describe_entry(e: dict) -> str:
-    """Each restriction of an entry: "everything off until 5 Dec, no running until 17 Dec"."""
+    """Each restriction of an entry: "no running until 17 Dec, everything off until 5 Dec"."""
     return ", ".join(f"everything off until {_fmt(r['until'])}" if r["category"] == "all"
                      else f"no {WORDS[r['category']]} until {_fmt(r['until'])}" for r in e["restrictions"])
 
@@ -189,11 +189,11 @@ def item_clash(conn: Connection, off: dict[str, date], item: dict, sets: dict[st
     sets = {} if sets is None else sets
     if item["routine"] not in sets:
         sets[item["routine"]] = set_regions(conn, item["routine"])
-    hits = {c: sum(bool(set(REGIONS[c]) & s) for s in sets[item["routine"]]) for c in gym_off}
-    any_hit = sum(bool({r for c in gym_off for r in REGIONS[c]} & s) for s in sets[item["routine"]])
-    if 2 * any_hit <= len(sets[item["routine"]]):
+    rows = sets[item["routine"]]
+    off_regions = {r for c in gym_off for r in REGIONS[c]}
+    if 2 * sum(bool(off_regions & s) for s in rows) <= len(rows):
         return None
-    return clash(off, max(gym_off, key=lambda c: hits[c]))
+    return clash(off, max(gym_off, key=lambda c: sum(bool(set(REGIONS[c]) & s) for s in rows)))
 
 
 def clash(off: dict[str, date], category: str | None) -> str | None:
