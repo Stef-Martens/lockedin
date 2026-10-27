@@ -121,3 +121,8 @@ def test_coach_bad_steps_message(clean_db):
 def test_prompt_mentions_steps():
     from lockedin.coach.prompt import SYSTEM_PROMPT
     assert '"steps": null' in SYSTEM_PROMPT and "work out the summary" in SYSTEM_PROMPT
+
+
+def test_prompt_asks_for_swim_distance():
+    from lockedin.coach.prompt import SYSTEM_PROMPT
+    assert "always give a swim its total distance_m" in SYSTEM_PROMPT

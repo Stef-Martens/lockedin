@@ -116,7 +116,8 @@ AGENDA_CHANGE = {"type": "object", "required": ["op"], "properties": {
         "Runs and swims: what to aim for. A run with structure (intervals, tempo blocks, a progression) gets steps; "
         "an easy run with one target does not. With steps the server works out distance_m, duration_s, pace and "
         "hr_zone from them and ignores what you send for those. To change a stepped run's pace, change its steps; "
-        "steps: null makes it a plain run. Swims get no steps."), "properties": {
+        "steps: null makes it a plain run. Swims get no steps; always give a swim its total distance_m (its goal on "
+        "the watch)."), "properties": {
         "distance_m": {"type": "integer"}, "duration_s": {"type": "integer"},
         "pace_low": {"type": "integer", "description": "Faster end: s/km for runs, s/100 m for swims"},
         "pace_high": {"type": "integer", "description": "Slower end, same unit"},

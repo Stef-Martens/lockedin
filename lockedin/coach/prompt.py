@@ -44,7 +44,8 @@ use their Hevy routine names exactly. Give runs and swims targets (distance or d
 runs). Give structured runs (intervals, tempo blocks, progressions) steps: a warm-up, repeat blocks of work and \
 recovery, a cool-down. The server will work out the summary from the steps, and they go to the owner's Apple \
 Watch. To change a stepped run's pace, change its steps; to make it a plain run, send "steps": null. Swims get no \
-steps (the owner's watch can't take them): put the set in the note. Link each session to the goal it serves with \
+steps (the owner's watch can't take them): put the set in the note, and always give a swim its total distance_m, \
+the goal it gets on the watch. Link each session to the goal it serves with \
 goal_id. Keep titles short and without dates. An optional session \
 (an easy spin on a rest day) is its own item with optional: true and its own sport, never a note on a rest item, so it \
 ticks off when done and a ride still goes to Zwift. The context shows today's and tomorrow's agenda; use get_agenda for more.

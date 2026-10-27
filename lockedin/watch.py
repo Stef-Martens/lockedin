@@ -74,6 +74,13 @@ def _swim(item: dict) -> dict:
             "goal": _goal(_summary_goal(item["targets"] or {}))}
 
 
+def _summary(item: dict) -> str | None:
+    targets = item["targets"] or {}
+    if item["sport"] == "swim" and not targets.get("distance_m") and not targets.get("duration_s"):
+        return "No distance planned: goes over as an open swim"
+    return summary_line(item["sport"], targets)
+
+
 def feed(conn: Connection, now: datetime) -> dict:
     """Runs and swims from today through a week ahead that aren't done and aren't ruled out by time off."""
     today = local_today(now)
@@ -82,5 +89,5 @@ def feed(conn: Connection, now: datetime) -> dict:
     zones = _hr_ranges(conn, now) if any(i["sport"] == "run" for i in items) else {}
     return {"today": today.isoformat(), "items": [
         {"id": i["id"], "day": i["day"], "sport": i["sport"], "title": i["title"], "optional": i["optional"],
-         "note": i["note"], "summary": summary_line(i["sport"], i["targets"]),
+         "note": i["note"], "summary": _summary(i),
          "workout": _run(i, zones) if i["sport"] == "run" else _swim(i)} for i in items]}

@@ -123,6 +123,7 @@ def test_run_and_swim_goals_fall_back(client, clock):
     assert free["workout"]["blocks"][0]["steps"][0]["goal"] == {"type": "open"}
     assert free["summary"] is None
     assert swim["workout"] == {"kind": "swim", "display_name": "Fri 30 Oct · Swim", "location": "pool", "goal": {"type": "open"}}
+    assert swim["summary"] == "No distance planned: goes over as an open swim"
 
 
 def test_auth(client, clock):
