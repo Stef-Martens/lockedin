@@ -440,3 +440,71 @@ def test_an_edited_lockedin_file_is_left_alone_quietly_after_the_first_note(tmp_
     fit_sync.sync_workouts(cfg, Feed([]))  # no longer planned: still the owner's file
     assert "tweaked" in (folder / "a.zwo").read_text()
     assert "a.zwo" not in json.loads((folder / ".lockedin-workouts.json").read_text())
+
+
+# --- atomic .zwo writes ------------------------------------------------------------------------------
+
+def test_an_interrupted_workout_write_leaves_the_old_file_and_is_finished_next_run(tmp_path, monkeypatch):
+    cfg, folder = zwift_cfg(tmp_path)
+    fit_sync.sync_workouts(cfg, Feed(served("a.zwo")))
+    new = [{"item_id": 1, "filename": "a.zwo", "content": "<workout_file>new plan</workout_file>"}]
+    real = Path.write_bytes
+
+    def half_then_crash(self, data):
+        real(self, data[: len(data) // 2])
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(Path, "write_bytes", half_then_crash)
+    written, _, warnings = fit_sync.sync_workouts(cfg, Feed(new))
+    monkeypatch.undo()
+    assert written == 0 and warnings
+    assert (folder / "a.zwo").read_text() == ZWO.format("a.zwo")  # never a truncated workout in Zwift
+    written, _, warnings = fit_sync.sync_workouts(cfg, Feed(new))
+    assert written == 1 and warnings == [] and "new plan" in (folder / "a.zwo").read_text()
+    assert sorted(p.name for p in folder.iterdir()) == [".lockedin-workouts.json", "a.zwo"]
+
+
+def test_a_temp_file_left_by_a_crash_is_cleaned_up_and_never_a_workout(tmp_path):
+    cfg, folder = zwift_cfg(tmp_path)
+    (folder / ".a.zwo.lockedin-tmp").write_text("<workout_fi")  # killed between write and rename
+    written, removed, warnings = fit_sync.sync_workouts(cfg, Feed(served("a.zwo")))
+    assert (written, removed, warnings) == (1, 0, [])
+    assert sorted(p.name for p in folder.iterdir()) == [".lockedin-workouts.json", "a.zwo"]
+    assert set(json.loads((folder / ".lockedin-workouts.json").read_text())) == {"a.zwo"}
+
+
+# --- names that differ only in case (APFS is case-insensitive) ---------------------------------------
+
+def case_insensitive(folder: Path) -> bool:
+    (folder / "Case.probe").write_text("")
+    try:
+        return (folder / "case.PROBE").exists()
+    finally:
+        (folder / "Case.probe").unlink()
+
+
+def test_a_title_whose_case_changed_replaces_our_file_quietly(tmp_path):
+    cfg, folder = zwift_cfg(tmp_path)
+    fit_sync.sync_workouts(cfg, Feed(served("2026-10-29 Z2 ride.zwo")))
+    feed = Feed(served("2026-10-29 Z2 Ride.zwo"))
+    written, _, warnings = fit_sync.sync_workouts(cfg, feed)
+    assert written == 1 and warnings == [] and feed.confirmed == [1]
+    zwo = [p for p in folder.iterdir() if p.suffix == ".zwo"]
+    assert len(zwo) == 1 and zwo[0].read_text() == ZWO.format("2026-10-29 Z2 Ride.zwo")
+    assert set(json.loads((folder / ".lockedin-workouts.json").read_text())) == {"2026-10-29 Z2 Ride.zwo"}
+    assert fit_sync.sync_workouts(cfg, feed)[:3] == (0, 0, [])  # settled
+    fit_sync.sync_workouts(cfg, Feed([]))
+    assert not [p for p in folder.iterdir() if p.suffix == ".zwo"]
+
+
+def test_an_edited_file_stays_the_owners_when_the_title_case_changes(tmp_path):
+    cfg, folder = zwift_cfg(tmp_path)
+    if not case_insensitive(folder):
+        pytest.skip("only matters on a case-insensitive file system")
+    fit_sync.sync_workouts(cfg, Feed(served("z2 ride.zwo")))
+    (folder / "z2 ride.zwo").write_text("<workout_file>tweaked</workout_file>")
+    fit_sync.sync_workouts(cfg, Feed(served("z2 ride.zwo")))  # told once: it's theirs now
+    written, _, warnings = fit_sync.sync_workouts(cfg, Feed(served("Z2 Ride.zwo")))
+    assert written == 0 and warnings == [] and "tweaked" in (folder / "z2 ride.zwo").read_text()
+    written, _, warnings = fit_sync.sync_workouts(cfg, Feed(served("Z2 Ride.zwo")))
+    assert written == 0 and warnings == []  # and stays quiet

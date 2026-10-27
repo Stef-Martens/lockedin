@@ -40,6 +40,7 @@ MAX_WAITS = 10
 SKIP_NAMES = {"inprogressactivity.fit"}  # Zwift's partial file during a ride
 MANIFEST = ".lockedin-workouts.json"
 RELEASED = "released"  # manifest value for a file of ours the owner edited: theirs now, left alone quietly
+TMP_SUFFIX = ".lockedin-tmp"  # ".<name>.lockedin-tmp" while a file is being written; never a .zwo to Zwift
 
 Http = Callable[[str, str, bytes, dict], tuple[int, bytes]]
 
@@ -237,10 +238,29 @@ def _load_manifest(path: Path) -> dict | None:
     return data
 
 
+def _write_atomic(path: Path, data: bytes) -> None:
+    """Write via a hidden temp file in the same folder, so Zwift never sees a half-written file."""
+    tmp = path.with_name(f".{path.name}{TMP_SUFFIX}")
+    try:
+        tmp.write_bytes(data)
+        os.replace(tmp, path)
+    except OSError:
+        tmp.unlink(missing_ok=True)
+        raise
+
+
+def _clean_temp_files(folder: Path) -> None:
+    """Remove temp files a killed run left behind (only ours: hidden and ending in TMP_SUFFIX)."""
+    for p in folder.iterdir():
+        if p.name.startswith(".") and p.name.endswith(TMP_SUFFIX):
+            try:
+                p.unlink()
+            except OSError:
+                pass
+
+
 def _save_manifest(folder: Path, state: dict) -> None:
-    tmp = folder / (MANIFEST + ".tmp")
-    tmp.write_text(json.dumps(state, indent=1, sort_keys=True))
-    tmp.replace(folder / MANIFEST)
+    _write_atomic(folder / MANIFEST, json.dumps(state, indent=1, sort_keys=True).encode())
 
 
 def sync_workouts(cfg: dict, http: Http = urllib_http) -> tuple[int, int, list[str]]:
@@ -248,7 +268,9 @@ def sync_workouts(cfg: dict, http: Http = urllib_http) -> tuple[int, int, list[s
 
     A file is only ever replaced or deleted if the manifest says this script wrote it and it is still exactly
     what was written; anything else (the owner's own files, or ours edited in Zwift) is left alone. The
-    manifest is saved after every change, so an interrupted run never loses track of a file. Afterwards the
+    manifest is saved after every change, so an interrupted run never loses track of a file, and files are
+    written through a hidden temp file, so it never leaves a half-written one. Names are matched ignoring case,
+    like the Mac's file system does, so a title whose case changed is still our file. Afterwards the
     server is told which workouts are actually in place, which is what the agenda shows as "In Zwift".
     """
     folder, problem = workouts_dir(cfg)
@@ -258,6 +280,7 @@ def sync_workouts(cfg: dict, http: Http = urllib_http) -> tuple[int, int, list[s
     if manifest is None:
         return 0, 0, [f"Zwift workouts: {folder / MANIFEST} is damaged, so no workout files were touched. "
                       "Delete it and the next run starts fresh (files it listed are then left alone)."]
+    _clean_temp_files(folder)
     api, token = cfg.get("LOCKEDIN_API", "").rstrip("/"), cfg.get("SYNC_TOKEN", "")
     status, resp = http(f"{api}/api/agenda/zwift/sync", token, b"{}", {"Content-Type": "application/json"})
     if status != 200:
@@ -267,7 +290,9 @@ def sync_workouts(cfg: dict, http: Http = urllib_http) -> tuple[int, int, list[s
         return 0, 0, ["Zwift workouts: the server's reply wasn't a list of workouts; nothing changed."]
 
     state = dict(manifest)  # saved as we go
+    ours = {k.lower(): k for k in manifest}  # APFS ignores case: "Z2 Ride.zwo" is our old "Z2 ride.zwo"
     keep: dict[str, str] = {}
+    wanted: set[str] = set()  # every planned name, lower-cased, also the ones that couldn't be written this run
     in_place: list[int] = []
     written = removed = 0
     warnings: list[str] = []
@@ -276,25 +301,30 @@ def sync_workouts(cfg: dict, http: Http = urllib_http) -> tuple[int, int, list[s
         if not name.endswith(".zwo") or name.startswith(".") or "/" in name or "\\" in name:
             warnings.append(f"Zwift workouts: skipped an unsafe file name: {name!r}")
             continue
+        wanted.add(name.lower())
         data = str(w.get("content", "")).encode()
         digest = _digest(data)
         path = folder / name
+        was = ours.get(name.lower())  # the manifest's spelling of this name, if any
         try:
+            if was is not None and was != name:  # the title's case changed: track it under the new spelling
+                state[name] = state.pop(was)
+                _save_manifest(folder, state)
             current = _digest(path.read_bytes()) if path.exists() else None
             if current is not None and current != digest:
-                if manifest.get(name) == RELEASED:  # edited by the owner earlier; already told them
-                    keep[name] = RELEASED
-                    continue
-                if name not in manifest:
+                if was is None:
                     warnings.append(f"Zwift workouts: {name} already exists and isn't from LockedIn; left it alone.")
                     continue
-                if current != manifest[name]:
+                if manifest[was] == RELEASED:  # edited by the owner earlier; already told them
+                    keep[name] = RELEASED
+                    continue
+                if current != manifest[was]:
                     warnings.append(f"Zwift workouts: {name} was changed in Zwift, so it's yours now; left it alone.")
                     state[name] = keep[name] = RELEASED
                     _save_manifest(folder, state)
                     continue
             if current != digest:
-                path.write_bytes(data)
+                _write_atomic(path, data)
                 written += 1
             if state.get(name) != digest:  # also adopts an identical file from an interrupted run
                 state[name] = digest
@@ -306,19 +336,26 @@ def sync_workouts(cfg: dict, http: Http = urllib_http) -> tuple[int, int, list[s
         if isinstance(w.get("item_id"), int):
             in_place.append(w["item_id"])
 
+    kept = {k.lower(): k for k in keep}
     for name, digest in manifest.items():
         if name in keep:
             continue
         path = folder / name
+        twin = kept.get(name.lower())
+        if twin is None and name.lower() in wanted:
+            continue  # still planned, just couldn't be written this time: keep it for the retry
         try:
-            if path.exists() and _digest(path.read_bytes()) == digest:  # still exactly what this script wrote
+            if twin is not None and path.exists() and os.path.samefile(path, folder / twin):
+                pass  # the same file under its new spelling; nothing to remove
+            elif path.exists() and _digest(path.read_bytes()) == digest:  # still exactly what this script wrote
                 path.unlink()
                 removed += 1
         except OSError as e:
             warnings.append(f"Zwift workouts: couldn't remove {name}, will retry: {e}")
             continue
-        state.pop(name, None)
-        _save_manifest(folder, state)
+        if twin is None:
+            state.pop(name, None)
+            _save_manifest(folder, state)
 
     status, _ = http(f"{api}/api/agenda/zwift/confirm", token, json.dumps({"item_ids": in_place}).encode(),
                      {"Content-Type": "application/json"})
