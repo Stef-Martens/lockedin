@@ -3,24 +3,26 @@ name = "lockedin"
 version = "0.1.0"
 description = "Personal training tracker and coach"
 requires-python = ">=3.12"
+# The one list of dependencies. Vercel installs the exact versions in uv.lock (requirements.txt mirrors it);
+# after changing anything here, run `make lock` and commit both.
 dependencies = [
-    "fastapi>=0.115",
-    "sqlalchemy>=2.0.36",
-    "psycopg[binary]>=3.2",
-    "fitdecode>=0.10",
-    "pyjwt[crypto]>=2.9",
-    "python-multipart>=0.0.12",
-    "python-dotenv>=1.0",
+    "fastapi>=0.115,<1",
+    "sqlalchemy>=2.0.36,<3",
+    "psycopg[binary]>=3.2,<4",
+    "fitdecode>=0.10,<1",
+    "pyjwt[crypto]>=2.9,<3",
+    "python-multipart>=0.0.12,<1",
+    "python-dotenv>=1.0,<2",
     "tzdata>=2024.1",
-    "anthropic>=2.3",
+    "anthropic>=2.3,<3",
 ]
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=8",
-    "httpx>=0.27",
-    "uvicorn[standard]>=0.32",
-    "fit-tool>=0.9.13",
+    "pytest>=8,<10",
+    "httpx>=0.27,<1",
+    "uvicorn[standard]>=0.32,<1",
+    "fit-tool>=0.9.13,<1",
 ]
 
 [build-system]
