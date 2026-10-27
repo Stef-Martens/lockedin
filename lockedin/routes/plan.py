@@ -9,8 +9,8 @@ from lockedin.auth import require_owner
 from lockedin.db import get_conn
 from lockedin.focus.consistency import in_comeback
 from lockedin.focus.preferences import load_preferences, prefs_hash
-from lockedin.plan.build import NoRoutine, build_plan, swap_item
 from lockedin.goals.progress import progress
+from lockedin.plan.build import NoRoutine, build_plan, swap_item
 from lockedin.plan.goals import active_goals
 from lockedin.plan.routines import routine, routines
 from lockedin.routes.overview import get_now

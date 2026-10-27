@@ -6,11 +6,11 @@ from datetime import datetime
 
 from sqlalchemy import Connection, text
 
-from lockedin.focus.consistency import comeback, in_comeback
+from lockedin.focus.consistency import in_comeback
 from lockedin.focus.preferences import Preferences, load_preferences, prefs_hash
 from lockedin.focus.suggest import goal_first, gym_suggestions, low_muscles, low_reason, weighted_pick
-from lockedin.goals.steer import goal_muscles
 from lockedin.focus.wins import stalled_exercises
+from lockedin.goals.steer import goal_muscles
 from lockedin.plan.goals import active_goals, goal_for, goal_label, known_exercises
 from lockedin.plan.routines import Routine, last_logged, latest_sets, routine
 from lockedin.plan.steps import eased, gap_cut, step_up

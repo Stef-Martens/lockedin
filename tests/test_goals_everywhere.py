@@ -1,7 +1,7 @@
 from datetime import UTC, date, datetime, timedelta
 
 from conftest import owner_headers
-from focus_helpers import add_gym, add_session
+from focus_helpers import add_gym
 from sqlalchemy import text
 
 from lockedin.app import app

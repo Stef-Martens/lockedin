@@ -15,7 +15,14 @@ from fit_tool.profile.messages.length_message import LengthMessage
 from fit_tool.profile.messages.record_message import RecordMessage
 from fit_tool.profile.messages.session_message import SessionMessage
 from fit_tool.profile.profile_type import (
-    Event, EventType, FileType, LengthType, Manufacturer, Sport, SubSport, SwimStroke,
+    Event,
+    EventType,
+    FileType,
+    LengthType,
+    Manufacturer,
+    Sport,
+    SubSport,
+    SwimStroke,
 )
 
 OUT = Path(__file__).resolve().parent.parent / "samples"

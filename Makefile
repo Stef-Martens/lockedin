@@ -2,12 +2,12 @@ PY := .venv/bin/python
 
 UV_VERSION := 0.13.6
 
-.PHONY: install dev test samples owner db-up lock
+.PHONY: install dev test lint samples owner db-up lock
 
 install:
 	python3 -m venv .venv
 	$(PY) -m pip install -q --upgrade pip
-	$(PY) -m pip install -q -e '.[dev]'
+	$(PY) -m pip install -q -r requirements.txt -e '.[dev]'  # runtime pinned as on Vercel
 	npm --prefix web install
 
 db-up:
@@ -19,8 +19,13 @@ dev:
 test: db-up
 	$(PY) -m pytest
 
+lint:
+	$(PY) -m ruff check .
+	npm --prefix web run lint
+
 samples:
 	$(PY) scripts/make_samples.py
+	$(PY) samples/make_ingest_samples.py
 
 owner:
 	@test -n "$(EMAIL)" || (echo "usage: make owner EMAIL=you@example.com (asks for the password)" && exit 1)

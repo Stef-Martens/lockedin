@@ -7,9 +7,9 @@ from sqlalchemy import Connection, text
 
 from lockedin.focus.coverage import CREDIT, CREDIT_FROM
 from lockedin.focus.preferences import load_preferences
-from lockedin.goals.steer import goal_muscles
 from lockedin.focus.sessions import COUNTED_SQL, counted
 from lockedin.focus.suggest import gym_suggestions
+from lockedin.goals.steer import goal_muscles
 from lockedin.timeutil import TZ, week_start
 
 # Cardio draws stripes on these muscles; it never adds gym sets.

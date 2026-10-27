@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 from types import SimpleNamespace
 
 import pytest
-from focus_helpers import add_gym, add_session
+from focus_helpers import add_gym
 from sqlalchemy import text
 
 from lockedin.agenda import actual as act

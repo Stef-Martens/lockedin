@@ -6,10 +6,10 @@ from datetime import datetime, timedelta
 from sqlalchemy import Connection
 
 from lockedin.fitness import ftp_at
-from lockedin.goals.steer import sport_goals
 from lockedin.focus.effort import Effort, effort_for_window
 from lockedin.focus.sessions import counted_sessions
 from lockedin.focus.zones import hr_zone_bounds, max_hr_at, power_zone_bounds
+from lockedin.goals.steer import sport_goals
 
 ACTIVE_DAYS = 42
 LOOKBACK_DAYS = 21

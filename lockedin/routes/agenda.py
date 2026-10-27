@@ -1,10 +1,9 @@
 from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi.encoders import jsonable_encoder
 from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import Connection
-
-from fastapi.encoders import jsonable_encoder
 
 from lockedin.agenda import store
 from lockedin.agenda.detail import detail

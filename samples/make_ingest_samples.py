@@ -19,7 +19,14 @@ from fit_tool.profile.messages.length_message import LengthMessage  # noqa: E402
 from fit_tool.profile.messages.record_message import RecordMessage  # noqa: E402
 from fit_tool.profile.messages.session_message import SessionMessage  # noqa: E402
 from fit_tool.profile.profile_type import (  # noqa: E402
-    Event, EventType, FileType, LengthType, Manufacturer, Sport, SubSport, SwimStroke,
+    Event,
+    EventType,
+    FileType,
+    LengthType,
+    Manufacturer,
+    Sport,
+    SubSport,
+    SwimStroke,
 )
 from make_samples import OUT, build, hr_every, ms  # noqa: E402
 

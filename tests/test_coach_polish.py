@@ -7,7 +7,6 @@ from test_coach_loop import FakeLLM, answer, go, kinds, tool_use, tools_turn
 
 from lockedin.app import app
 from lockedin.coach.llm import CoachUnavailable
-from lockedin.coach.loop import ANSWER_NOW
 from lockedin.coach.sql import QueryRejected, run_readonly
 from lockedin.coach.tools import SCHEMA_TEXT
 from lockedin.config import get_settings

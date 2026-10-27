@@ -9,11 +9,10 @@ from pydantic import ValidationError
 from sqlalchemy import Connection, Engine, text
 
 from lockedin.agenda import store as agenda
-from lockedin.goals.progress import progress
-from lockedin.plan.goals import known_exercises
-
 from lockedin.coach.sql import QueryRejected, run_readonly
 from lockedin.focus.facts import focus_facts
+from lockedin.goals.progress import progress
+from lockedin.plan.goals import known_exercises
 
 SCHEMA_TEXT = """\
 Readable tables (Postgres; run_sql sees only these). Times are timestamptz shown in Europe/Brussels; weeks start Monday.

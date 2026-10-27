@@ -9,8 +9,8 @@ from sqlalchemy import Connection, text
 
 from lockedin.focus.coverage import muscle_coverage
 from lockedin.focus.preferences import load_preferences
-from lockedin.goals.steer import goal_muscles
 from lockedin.focus.sessions import counted
+from lockedin.goals.steer import goal_muscles
 from lockedin.plan.steps import gap_cut
 
 TARGET_REPS = 12          # 12 reps at full effort ≈ 10 reps at RPE 8, so "3 × 8–12" stays honest
