@@ -13,6 +13,7 @@ const Agenda = lazy(() => import("./pages/Agenda"));
 const ActivityDetail = lazy(() => import("./pages/ActivityDetail"));
 const Body = lazy(() => import("./pages/Body"));
 const Coach = lazy(() => import("./pages/Coach"));
+const Forecast = lazy(() => import("./pages/Forecast"));
 const Import = lazy(() => import("./pages/Import"));
 const Muscles = lazy(() => import("./pages/Muscles"));
 const Overview = lazy(() => import("./pages/Overview"));
@@ -50,6 +51,7 @@ export default function App() {
         <Route path="import" element={<Import />} />
         <Route path="trends" element={<Navigate to="/trends/bike" replace />} />
         <Route path="trends/:sport" element={<Trends />} />
+        <Route path="forecast" element={<Forecast />} />
         <Route path="agenda" element={<Agenda />} />
         <Route path="agenda/:id" element={<SessionPage />} />
         <Route path="muscles" element={<Muscles />} />

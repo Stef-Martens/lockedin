@@ -12,6 +12,7 @@ const LINKS = [
   { to: "/coach", label: "Coach", short: "Coach", icon: "coach" },
   { to: "/activities", label: "Activities", short: "Activities", icon: "activities" },
   { to: "/trends/bike", label: "Trends", short: "Trends", match: "/trends" },
+  { to: "/forecast", label: "Forecast", short: "Forecast" },
   { to: "/muscles", label: "Muscles", short: "Muscles", icon: "muscles" },
   { to: "/body", label: "Body", short: "Body" },
   { to: "/import", label: "Import", short: "Import" },

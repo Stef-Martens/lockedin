@@ -94,7 +94,10 @@ function GymCards({ goals, goalsFailed }: { goals: Goal[] | null; goalsFailed: b
       <div className="card rise" style={stagger(2)}>
         <div className="row spread">
           <span className="eyebrow">Your goals</span>
-          <Link to="/coach" style={{ fontSize: 13, fontWeight: 600, textDecoration: "none" }}>Coach</Link>
+          <span className="row" style={{ gap: 14 }}>
+            <Link to="/forecast" style={{ fontSize: 13, fontWeight: 600, textDecoration: "none" }}>Forecast →</Link>
+            <Link to="/coach" style={{ fontSize: 13, fontWeight: 600, textDecoration: "none" }}>Coach</Link>
+          </span>
         </div>
         {goalsFailed ? (
           <p className="muted" style={{ margin: "8px 0 0", fontSize: 14 }}>Couldn't load your goals.</p>

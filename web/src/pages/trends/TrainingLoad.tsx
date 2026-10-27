@@ -1,26 +1,12 @@
 import { Bar, BarChart, CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { loadAxes, LoadLegend, LoadReadout, useLoadColors } from "../../components/LoadChart";
 import { Card, SectionHead, Tile } from "../../components/ui";
 import { ApiError } from "../../lib/api";
-import { dayMonth, shortDay } from "../../lib/format";
+import { dayMonth } from "../../lib/format";
 import { formNumber, formWords, loadNumber } from "../../lib/load";
 import { prefersReducedMotion } from "../../lib/motion";
-import type { LoadDay, TrainingLoad as LoadData } from "../../lib/types";
+import type { TrainingLoad as LoadData } from "../../lib/types";
 import { useApi } from "../../lib/useApi";
-import { useCssVar } from "../../lib/useCssVar";
-
-
-
-function Readout({ active, payload }: { active?: boolean; payload?: { payload: LoadDay }[] }) {
-  const r = payload?.[0]?.payload;
-  if (!active || !r) return null;
-  return (
-    <div className="chart-tooltip num">
-      <div className="muted">{shortDay(r.day)} · load {loadNumber(r.load)}</div>
-      <div>Fitness <strong>{loadNumber(r.fitness)}</strong> · Fatigue <strong>{loadNumber(r.fatigue)}</strong></div>
-      <div>Form <strong>{formNumber(r.form)}</strong> · {formWords(r.form).toLowerCase()}</div>
-    </div>
-  );
-}
 
 /**
  * Fitness (42-day average load) and fatigue (7-day) on one axis, form (the gap between them) as its own small
@@ -28,12 +14,8 @@ function Readout({ active, payload }: { active?: boolean; payload?: { payload: L
  */
 export default function TrainingLoad() {
   const { data, error } = useApi<LoadData>("/api/load");
-  const fitness = useCssVar("--series-power");
-  const fatigue = useCssVar("--series-pace");
-  const form = useCssVar("--series-cadence");
-  const grid = useCssVar("--hairline");
-  const muted = useCssVar("--ink-muted");
-  const axis = useCssVar("--axis");
+  const c = useLoadColors();
+  const { fitness, fatigue, form, grid, axis } = c;
   const animate = !prefersReducedMotion();
 
   if (error) {
@@ -51,18 +33,10 @@ export default function TrainingLoad() {
   }
   const rows = data.days;
   const t = data.today;
-  const x = { dataKey: "day", tickFormatter: dayMonth,
-    tick: { fill: muted, fontSize: 12 }, stroke: axis, tickLine: false, minTickGap: 24 };
-  const y = { tick: { fill: muted, fontSize: 12 }, axisLine: false, tickLine: false, width: 40, allowDecimals: false };
+  const { x, y } = loadAxes(c, dayMonth);
   return (
     <Card i={0}>
-      <SectionHead title="Training load" right={
-        <span className="legend" aria-label="Legend">
-          <span><i className="swatch" style={{ background: fitness }} />Fitness</span>
-          <span><i className="swatch" style={{ background: fatigue }} />Fatigue</span>
-          <span><i className="swatch" style={{ background: form }} />Form</span>
-        </span>
-      } />
+      <SectionHead title="Training load" right={<LoadLegend c={c} />} />
       <div className="tiles">
         <Tile label="Fitness" value={loadNumber(t.fitness)} hint="your 6-week average load" dot={fitness} i={1} />
         <Tile label="Fatigue" value={loadNumber(t.fatigue)} hint="your last week's average load" dot={fatigue} i={2} />
@@ -74,7 +48,7 @@ export default function TrainingLoad() {
             <CartesianGrid vertical={false} stroke={grid} />
             <XAxis {...x} hide />
             <YAxis {...y} />
-            <Tooltip cursor={{ stroke: "#5b6066" }} content={<Readout />} />
+            <Tooltip cursor={{ stroke: "#5b6066" }} content={<LoadReadout />} />
             <Line type="monotone" dataKey="fitness" stroke={fitness} strokeWidth={2} dot={false} isAnimationActive={animate} animationDuration={900} />
             <Line type="monotone" dataKey="fatigue" stroke={fatigue} strokeWidth={2} dot={false} isAnimationActive={animate} animationDuration={900} />
           </LineChart>
@@ -87,7 +61,7 @@ export default function TrainingLoad() {
             <XAxis {...x} />
             <YAxis {...y} />
             <ReferenceLine y={0} stroke={axis} />
-            <Tooltip cursor={{ fill: "rgba(255,255,255,0.04)" }} content={<Readout />} />
+            <Tooltip cursor={{ fill: "rgba(255,255,255,0.04)" }} content={<LoadReadout />} />
             <Bar dataKey="form" fill={form} isAnimationActive={animate} animationDuration={700} />
           </BarChart>
         </ResponsiveContainer>

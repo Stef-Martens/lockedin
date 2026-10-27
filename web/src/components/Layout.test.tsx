@@ -9,14 +9,14 @@ vi.mock("../lib/supabase", () => ({ supabase: { auth: { signOut: vi.fn() } } }))
 afterEach(cleanup);
 
 describe("Layout", () => {
-  it("puts Agenda second and tucks Trends, Body, Import and Sign out under More on phones", () => {
+  it("puts Agenda second and tucks Trends, Forecast, Body, Import and Sign out under More on phones", () => {
     render(<MemoryRouter><Routes><Route element={<Layout />}><Route index element={<p>home</p>} /></Route></Routes></MemoryRouter>);
     const side = screen.getAllByRole("navigation", { name: "Main" })[0];
     expect([...side.querySelectorAll("a")].map((a) => a.textContent).slice(0, 2)).toEqual(["Overview", "Agenda"]);
     const tabs = screen.getByRole("navigation", { name: "Tabs" });
     expect([...tabs.querySelectorAll("a")].map((a) => a.textContent)).toEqual(["Home", "Agenda", "Coach", "Activities", "Muscles"]);
     fireEvent.click(screen.getByRole("button", { name: "More" }));
-    expect(screen.getAllByRole("menuitem").map((m) => m.textContent)).toEqual(["Trends", "Body", "Import", "Sign out"]);
+    expect(screen.getAllByRole("menuitem").map((m) => m.textContent)).toEqual(["Trends", "Forecast", "Body", "Import", "Sign out"]);
   });
 
   it("gives focus back to More on Escape", () => {

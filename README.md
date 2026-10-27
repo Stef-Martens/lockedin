@@ -291,6 +291,19 @@ The **Coach** page is a chat with Claude about your training. Ask things like "w
 
 To deploy the coach: `supabase db push`, add `ANTHROPIC_API_KEY` in Vercel, then `git push`.
 
+## 11. Forecast
+
+The **Forecast** page (sidebar, or **More** on the phone) answers: where am I heading, and when do I get there? Everything is worked out from your own data, and nothing is forecast without enough of it.
+
+- **Goals:** one card per goal that has a bar on the Overview.
+  - **The chart:** your weekly values (best estimated 1RM, longest run, best time over the distance, measurements), the trend ahead as a dashed line with a shaded "likely" band, your target, and the goal's date if it names one ("by March", "before 15 January", "in 12 weeks").
+  - **The answer:** "On track for 31 Mar: around mid-February", "Around mid-March (likely Feb–May)", "Behind… you'd need +1.2 kg a week (now +0.4)", or "Not at this pace".
+  - **How:** a straight line through the last 12 weeks (26 when that's thin). Gains slow down over time, so for lifts, FTP, run times and distances the weekly gain halves every 6 months; body measurements stay straight. The band is one standard error either side.
+  - **Too little data:** a forecast needs about 4 weeks with at least 4 sessions or check-ins.
+- **Fitness ahead:** fitness, fatigue and form for the last 4 weeks and the next 2. The future part assumes you do your agenda as planned (optional sessions left out): Zwift workouts by their planned TSS, runs and swims by time × the intensity of their heart-rate zone, gym at the usual flat 40 an hour.
+- **Race times:** predicted 5k, 10k and half marathon from your runs in the last 90 days (3 km or longer), by Riegel's formula, plus how your predicted 5k has moved. They come from training runs, so a race effort is usually a bit faster.
+- **FTP:** Zwift's FTP over time and, once there's enough of a trend, where it's heading.
+
 ## Troubleshooting
 
 | Symptom | Fix |

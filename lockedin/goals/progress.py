@@ -9,6 +9,7 @@ from lockedin.fitness import ftp_at
 from lockedin.focus.sessions import counted
 from lockedin.hevy.importer import PR_MAX_REPS
 from lockedin.plan.goals import goal_for, known_exercises
+from lockedin.timeutil import TZ
 
 WINDOW = timedelta(weeks=8)
 LIFT_SEARCH = timedelta(days=90)
@@ -135,21 +136,22 @@ def goal_lift(conn: Connection, now: datetime, goal: dict, names: list[str] | No
     return matches[0] if len(matches) == 1 else None
 
 
-def _longest(conn: Connection, now: datetime, sport: str) -> float | None:
+def _longest(conn: Connection, now: datetime, sport: str, window: timedelta = WINDOW) -> float | None:
     m = conn.execute(text(
         f"select max(a.distance_m) from activities a where {counted('a')} and a.sport = :s "
         "and a.start_at > :since and a.start_at <= :now"
-    ), {"s": sport, "since": now - WINDOW, "now": now}).scalar()
+    ), {"s": sport, "since": now - window, "now": now}).scalar()
     return float(m) if m else None
 
 
-def _best_time(conn: Connection, now: datetime, sport: str, km: float, target_s: int) -> dict | None:
+def _best_time(conn: Connection, now: datetime, sport: str, km: float, target_s: int,
+               window: timedelta = WINDOW) -> dict | None:
     """Best whole-activity time over the goal's distance. Done once any activity at least that long was within the
     time; otherwise read only from activities about that long (a 10 km run holds no reliable 5 km time)."""
     rows = conn.execute(text(
         f"select a.distance_m, coalesce(a.moving_s, a.duration_s) as secs from activities a where {counted('a')} "
         "and a.sport = :s and a.distance_m >= :d and a.start_at > :since and a.start_at <= :now"
-    ), {"s": sport, "d": km * 1000 * DISTANCE_SLACK, "since": now - WINDOW, "now": now}).all()
+    ), {"s": sport, "d": km * 1000 * DISTANCE_SLACK, "since": now - window, "now": now}).all()
     done = [r.secs for r in rows if r.secs and r.secs <= target_s]
     close = [r.secs for r in rows if r.secs and r.distance_m <= km * 1000 * TIME_MATCH]
     best = min(done) if done else min(close, default=None)
@@ -165,7 +167,8 @@ def _sane(result: dict | None) -> dict | None:
     return result
 
 
-def progress(conn: Connection, now: datetime, goal: dict) -> dict | None:
+def progress(conn: Connection, now: datetime, goal: dict, window: timedelta = WINDOW) -> dict | None:
+    """Where a measurable goal stands: the best of the `window` before `now` (8 weeks on the Overview)."""
     area = goal.get("area") or "general"
     lowered = (goal.get("text") or "").lower()
     if RELATIVE.search(lowered):
@@ -181,13 +184,13 @@ def progress(conn: Connection, now: datetime, goal: dict) -> dict | None:
                 "select max(s.weight_kg) from gym_sets s join exercises e on e.id = s.exercise_id "
                 "join activities a on a.id = s.workout_id where e.name = :n and s.set_type <> 'warmup' and s.reps >= :r "
                 f"and {counted('a')} and a.start_at > :since and a.start_at <= :now"
-            ), {"n": lift, "r": reps, "since": now - WINDOW, "now": now}).scalar()
+            ), {"n": lift, "r": reps, "since": now - window, "now": now}).scalar()
             return _sane(_result(float(best) if best else None, n[0], "kg", f" × {reps}"))
         best = conn.execute(text(
             "select max(s.e1rm) from gym_sets s join exercises e on e.id = s.exercise_id join activities a on a.id = s.workout_id "
             f"where e.name = :n and s.set_type <> 'warmup' and s.reps <= {PR_MAX_REPS} and {counted('a')} "
             "and a.start_at > :since and a.start_at <= :now"
-        ), {"n": lift, "since": now - WINDOW, "now": now}).scalar()
+        ), {"n": lift, "since": now - window, "now": now}).scalar()
         return _sane(_result(float(best) if best else None, n[0], "kg", " est. 1RM"))
 
     timed = bool(_times(_words(goal)))
@@ -208,8 +211,8 @@ def progress(conn: Connection, now: datetime, goal: dict) -> dict | None:
                 return None
             if timed:  # "5k under 25 min": a time over the distance, or no bar rather than a wrong one
                 target_s = _target_time(_words(goal), target_km, area)
-                return _best_time(conn, now, area, target_km, target_s) if target_s else None
-            longest = _longest(conn, now, area)
+                return _best_time(conn, now, area, target_km, target_s, window) if target_s else None
+            longest = _longest(conn, now, area, window)
             return _result(longest / 1000 if longest else None, target_km, "km")
 
     if area == "body":
@@ -225,8 +228,8 @@ def progress(conn: Connection, now: datetime, goal: dict) -> dict | None:
             starts, currents = [], []
             for kind in kinds:
                 values = conn.execute(text(
-                    "select measured_on, value from measurements where type_id = :t order by measured_on"
-                ), {"t": kind.id}).all()
+                    "select measured_on, value from measurements where type_id = :t and measured_on <= :d order by measured_on"
+                ), {"t": kind.id, "d": now.astimezone(TZ).date()}).all()
                 if values:
                     before = [v for d, v in values if d <= created]
                     starts.append(before[-1] if before else values[0][1])

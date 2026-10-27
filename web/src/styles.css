@@ -611,6 +611,21 @@ fieldset.plain { border: 0; padding: 0; margin: 0; min-width: 0; }
 .load-form-title { margin-top: 10px; }
 @media (prefers-reduced-motion: reduce) { .checkin-meter > div { transition: none; } }
 
+/* ---------- Forecast ---------- */
+.forecast-goal-head { flex-wrap: nowrap; align-items: flex-start; }
+.forecast-goal-head h3 { margin: 0; font-size: 16px; font-weight: 600; line-height: 1.35; overflow-wrap: anywhere; }
+.forecast-goal-head .pill { white-space: nowrap; margin-top: 2px; }
+.forecast-summary { margin: 6px 0 4px; font-size: 15px; font-weight: 600; color: var(--ink-2); }
+.forecast-ahead { margin: 12px 0 0; }
+.forecast-now { font-size: 13px; margin-bottom: 8px; }
+.forecast-from { display: block; font-size: 12.5px; color: var(--ink-muted); margin: 8px 0 0; }
+.forecast-from a { color: var(--ink-3); }
+.forecast-race-chart { margin-top: 16px; }
+.forecast-note { margin-top: 10px; }
+.forecast-ftp { margin: 6px 0 8px; }
+.pill.behind { background: #2a1f1d; color: #ffb4a8; }
+.legend .swatch.dashed { height: 0; border-radius: 0; border-top: 2px dashed; width: 14px; }
+
 /* ---------- Touch: no zoom on focus, 44px tap targets ---------- */
 @media (max-width: 899px), (pointer: coarse) {
   /* iOS Safari zooms into any field under 16px when it gets focus. */
