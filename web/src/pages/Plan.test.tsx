@@ -134,6 +134,15 @@ describe("Plan page", () => {
     expect(await screen.findByText("Face Pull")).toBeTruthy();
   });
 
+  it("marks a lift that starts lighter after a break, and says so in the comeback banner", async () => {
+    apiFetch.mockImplementationOnce(() => Promise.resolve({ ...PLAN, comeback: true,
+      items: [item({ change: "eased", weight_kg: 72.5, last: [{ kg: 80, reps: 8 }] })] }));
+    await open("/plan?day=Chest%20-%20Schouders%20-%20Triceps");
+    expect(await screen.findByText("Back after a break: lighter")).toBeTruthy();
+    expect(screen.getByText(/lighter for lifts you haven't done in a while/)).toBeTruthy();
+    expect(screen.queryByText(/same weights as last time/)).toBeNull();
+  });
+
   it("says when the muscle list couldn't load in Preferences", async () => {
     apiFetch.mockImplementationOnce(() => Promise.resolve({ avoid_muscles: [], never_exercises: [], coach_notes: "" }))
       .mockImplementationOnce(() => Promise.reject(new Error("down")));

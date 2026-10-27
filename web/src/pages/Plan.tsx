@@ -87,7 +87,7 @@ function DayPicker({ open }: { open: (params: Record<string, string>) => void })
     <>
       <PageHeader eyebrow="Going to the gym?" title="Plan a workout" sub="Pick your day; the app fills it in."
         right={<button className="btn" onClick={() => open({ prefs: "1" })}>Preferences</button>} />
-      {days.comeback && <div className="note accent rise">Welcome back. Plans keep last time's weights for now; build up again from there.</div>}
+      {days.comeback && <div className="note accent rise">Welcome back. Plans keep your recent weights; lifts you haven't done in a while start lighter. Build up again from there.</div>}
       <div className="plan-days">
         {days.days.map((d, i) => (
           <button key={d.title} className="plan-day lift rise" style={stagger(i)} onClick={() => open({ day: d.title })}>
@@ -151,7 +151,7 @@ function PlanView({ dayTitle, open }: { dayTitle: string | null; open: (params: 
           <button className="btn" onClick={() => open({ prefs: "1", ...(dayTitle ? { from: dayTitle } : { missed: "1" }) })}>Preferences</button>
           <button className="btn" onClick={rebuild}>New plan</button>
         </div>} />
-      {plan.comeback && <div className="note accent rise">Welcome back: same weights as last time, no extras today. Ease in.</div>}
+      {plan.comeback && <div className="note accent rise">Welcome back: your recent weights, lighter for lifts you haven't done in a while, and no extras today. Ease in.</div>}
       {notice && <div className="note" role="status">{notice}</div>}
       {plan.items.length === 0 && <p className="muted">Nothing stands out: every muscle has had its share lately. Pick one of your days instead.</p>}
       <div className="plan-list">

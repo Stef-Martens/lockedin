@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
 import type { Point } from "../../components/SeriesChart";
 import { Card } from "../../components/ui";
-import type { EffortMix, FocusItem } from "../../lib/focus";
+import type { EffortMix, FocusItem, FocusZones } from "../../lib/focus";
 import { dayMs } from "../../lib/format";
 import { stagger } from "../../lib/motion";
 import { useApi } from "../../lib/useApi";
@@ -23,7 +23,7 @@ export function Failed({ retry }: { retry: () => void }) {
 }
 
 export function useFocusSessions(): SessionItem[] {
-  const { data } = useApi<{ session_suggestions: Omit<SessionItem, "type">[] }>("/api/focus");
+  const { data } = useApi<{ session_suggestions: Omit<SessionItem, "type">[]; zones?: FocusZones }>("/api/focus");
   return (data?.session_suggestions ?? []).map((s) => ({ type: "session" as const, ...s }));
 }
 

@@ -18,7 +18,12 @@ const AGENDA = { week_start: "2026-10-26", today: "2026-10-29", items: [
   { ...item, id: 4, day: "2026-10-29", sport: "rest", title: "Stretch a bit" },
   { ...item, id: 3, day: "2026-10-30", sport: "rest", title: "Rest" },
 ] };
-const GOALS = [{ id: 1, text: "Bench 100 kg", target: "by March 2027", progress: { label: "96 / 100 kg est. 1RM", fraction: 0.96 } }];
+const GOALS = [
+  { id: 1, text: "Bench 100 kg", target: "by March 2027", progress: { label: "96 / 100 kg est. 1RM", fraction: 0.96, unit: "kg" } },
+  // A time goal: lower is better, so the server sends target ÷ best as the fraction and the label ready to show.
+  { id: 2, text: "Run 5k under 25 min", target: null, progress: { label: "27:00 / 25:00 for 5 km", fraction: 25 / 27, unit: "min" } },
+  { id: 3, text: "Run 10k under 55 min", target: null, progress: { label: "53:30 / 55:00 for 10 km", fraction: 55 / 53.5, unit: "min" } },
+];
 
 let failGoals = false;
 let agenda: (path: string) => Promise<unknown> = () => Promise.resolve(AGENDA);
@@ -41,6 +46,16 @@ describe("Overview", () => {
     expect(screen.getByText(/Next · Friday: Rest/)).toBeTruthy();
     expect(await screen.findByText("96 / 100 kg est. 1RM")).toBeTruthy();
     expect(screen.getByText("toward: Run a 10K")).toBeTruthy();
+  });
+
+  it("shows time goals as the server words them, with a bar that fills toward a lower time", async () => {
+    render(<MemoryRouter><Overview /></MemoryRouter>);
+    const label = await screen.findByText("27:00 / 25:00 for 5 km");
+    const bar = (text: string) => (screen.getByText(text).closest(".goal-progress")!.querySelector(".goal-bar span") as HTMLElement).style.width;
+    expect(label).toBeTruthy();
+    expect(bar("Run 5k under 25 min")).toBe("93%");
+    expect(bar("Run 10k under 55 min")).toBe("100%");  // already faster than the goal: a full bar, not 103%
+    expect(bar("Bench 100 kg")).toBe("96%");
   });
 
   it("says when goals couldn't be loaded instead of 'no goals'", async () => {

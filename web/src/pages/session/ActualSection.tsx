@@ -17,12 +17,16 @@ export default function ActualSection({ d }: { d: SessionDetail }) {
     const avgWork = work.length ? Math.round(work.reduce((s, p) => s + (p.avg_w ?? 0), 0) / work.length) : null;
     const all = a.parts ?? [];
     const onTarget = all.filter((p) => p.status === "on_target").length;
+    // No FTP for that day: nothing can be judged, so don't say "0 of 3 on target".
+    const unjudged = a.intervals_on_target === null || (all.length > 0 && all.every((p) => p.status === "no_target"));
+    const intervalsHint = unjudged ? "Set your FTP to judge intervals"
+      : all.some((p) => p.target_w) ? `${onTarget} of ${all.length} on target` : undefined;
     return (
       <>
         <div className="tiles">
           <Tile label="Time" value={formatMin(a.moving_s ?? a.duration_s)} hint={plan.kind === "zwift" ? `planned ${formatMin(plan.duration_s)}` : undefined} i={0} />
           <Tile label="Avg power" value={a.avg_power ? `${a.avg_power} W` : "–"} i={1} />
-          {avgWork != null && <Tile label="Intervals" value={`${avgWork} W`} hint={all.some((p) => p.target_w) ? `${onTarget} of ${all.length} on target` : undefined} i={2} />}
+          {avgWork != null && <Tile label="Intervals" value={`${avgWork} W`} hint={intervalsHint} i={2} />}
           <Tile label="Avg HR" value={a.avg_hr ? `${a.avg_hr}` : "–"} i={3} />
           <Tile label="TSS" value={a.tss ? String(Math.round(a.tss)) : "–"} hint={plan.kind === "zwift" ? `planned ${plan.tss_est}` : undefined} i={4} />
         </div>

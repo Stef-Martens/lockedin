@@ -33,7 +33,14 @@ function TotalTile({ minutes, sessions, label }: { minutes: number; sessions: nu
 
 type Goal = { id: number; text: string; target: string | null; progress?: GoalProgress };
 
-type GoalProgress = { label: string; fraction: number } | null;
+/**
+ * The server does the maths and the words: `fraction` is how far along (for a time goal, where lower is better,
+ * target ÷ best), `label` is shown as given ("96 / 100 kg est. 1RM", "27:00 / 25:00 for 5 km").
+ */
+type GoalProgress = { label: string; fraction: number; unit?: string } | null;
+
+/** Bar width in %: past the target (a time faster than the goal gives > 1) stays a full bar. */
+const goalBar = (fraction: number) => Math.round(Math.min(1, Math.max(0, fraction)) * 100);
 
 // Rest days and notes can't be ticked off, so they don't count as to-dos.
 const trackable = (i: AgendaItem) => !["rest", "other"].includes(i.sport);
@@ -99,7 +106,7 @@ function GymCards({ goals, goalsFailed }: { goals: Goal[] | null; goalsFailed: b
                   <span>{g.text}</span>
                   {g.progress && <span className="secondary num" style={{ fontSize: 13, whiteSpace: "nowrap" }}>{g.progress.label}</span>}
                 </div>
-                {g.progress && <div className="goal-bar"><span className="grow-x" style={{ width: `${Math.round(g.progress.fraction * 100)}%` }} /></div>}
+                {g.progress && <div className="goal-bar"><span className="grow-x" style={{ width: `${goalBar(g.progress.fraction)}%` }} /></div>}
                 {g.target && <div className="muted" style={{ fontSize: 12 }}>{g.target}</div>}
               </div>
             ))}

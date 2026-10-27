@@ -14,6 +14,10 @@ describe("changeLabel", () => {
     expect(changeLabel(item({ change: "up", weight_kg: null, reps: "13", last: [{ kg: null, reps: 12 }] }))).toBe("One more rep");
     expect(changeLabel(item({ change: "same" }))).toBe("Same weight, aim for one more rep");
     expect(changeLabel(item({ change: "welcome_back" }))).toBe("Welcome back: same as last time");
+    expect(changeLabel(item({ change: "welcome_back", weight_kg: 80, last: [{ kg: 80, reps: 8 }] }))).toBe("Welcome back: same as last time");
+    // eased during a comeback: still "welcome_back", but the weight is lower than last time
+    expect(changeLabel(item({ change: "welcome_back", weight_kg: 72.5, last: [{ kg: 80, reps: 8 }] }))).toBe("Welcome back: lighter than last time");
+    expect(changeLabel(item({ change: "eased", weight_kg: 72.5, last: [{ kg: 80, reps: 8 }] }))).toBe("Back after a break: lighter");
     expect(changeLabel(item({ change: "new" }))).toBe("New · start light");
     expect(changeLabel(item({ change: null }))).toBeNull();
   });

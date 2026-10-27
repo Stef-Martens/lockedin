@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { focusLine, formatMinutes, type FocusItem } from "./focus";
+import { focusLine, formatMinutes, zoneRange, type FocusItem } from "./focus";
 
 const gym = (over: Partial<Extract<FocusItem, { type: "gym" }>>): FocusItem => ({
   type: "gym", muscle_key: "triceps", muscle_name: "Triceps", exercise: "Triceps Extension (Cable)", sets: 3, reps: "8–12",
@@ -54,5 +54,12 @@ describe("winParts", () => {
   });
   it("falls back to the whole text", () => {
     expect(winParts("something else")).toEqual({ value: "", note: "something else" });
+  });
+});
+
+describe("zoneRange", () => {
+  it("writes an open-ended top zone as a floor, never lo–null", () => {
+    expect(zoneRange([151, 176], "W")).toBe("151–176 W");
+    expect(zoneRange([252, null], "W")).toBe("≥ 252 W");
   });
 });
