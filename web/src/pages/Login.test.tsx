@@ -21,6 +21,8 @@ describe("after signing in", () => {
     expect(nextPath("?next=%2Fbody")).toBe("/body");
     expect(nextPath("?next=https%3A%2F%2Fevil.example")).toBe("/");
     expect(nextPath("?next=%2F%2Fevil.example")).toBe("/");
+    expect(nextPath("?next=%2F%5Cevil.example")).toBe("/");  // browsers read /\ as //
+    expect(nextPath("?next=%2F%09%2Fevil.example")).toBe("/");
     expect(nextPath("")).toBe("/");
   });
 });

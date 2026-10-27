@@ -80,7 +80,7 @@ Free projects **pause after about a week with no activity**. Your regular syncs 
    | `COACH_DAILY_BUDGET_USD` | optional: the most the coach may spend per day (default 5) |
 
    The service-role key does **not** go into Vercel.
-3. Deploy. Open `https://<your-app>.vercel.app` on your phone and sign in. To make it feel like an app, use Safari's **Share → Add to Home Screen**.
+3. Deploy. Open `https://<your-app>.vercel.app` on your phone and sign in. To make it feel like an app, use Safari's **Share → Add to Home Screen**. It gets its own icon and opens full-screen. On the phone, **Sign out** is under **More**. If your login expires while the app sat in the background, it renews it quietly and only sends you to the login page when that fails, then brings you back to the page you were on.
 
 ## 3. Mac sync (Zwift + HealthFit)
 
@@ -308,8 +308,8 @@ To deploy the coach: `supabase db push`, add `ANTHROPIC_API_KEY` in Vercel, then
 lockedin/         FastAPI app (imports, dedupe, routes)
 supabase/         config + SQL migrations
 sync/             Mac uploader + launchd agent
-web/              React + Vite app
+web/              React + Vite app (`node web/scripts/make-icons.mjs` redraws the app icons)
 samples/          synthetic FIT files and Hevy CSVs for testing (`make samples` rebuilds them)
-tests/            pytest suite
+tests/            pytest suite (web tests live next to the pages: `npm --prefix web test`)
 .github/          CI: lint, API tests on Postgres 17, web tests and build
 ```

@@ -6,7 +6,9 @@ import { supabase } from "../lib/supabase";
 /** Where to go after signing in: `?next=` when it's a page of this app, else home. */
 export function nextPath(search: string): string {
   const next = new URLSearchParams(search).get("next");
-  return next && next.startsWith("/") && !next.startsWith("//") && !next.startsWith("/login") ? next : "/";
+  // Browsers read a backslash as a slash and drop tabs/newlines, so "/\evil" or "/\t/evil" would leave the app.
+  const inApp = next && next.startsWith("/") && ![...next].some(c => c === "\\" || c < " ") && !next.startsWith("//");
+  return inApp && !next.startsWith("/login") ? next : "/";
 }
 
 /** Signed in on /login (e.g. after the session expired): back to the page you were on. */
