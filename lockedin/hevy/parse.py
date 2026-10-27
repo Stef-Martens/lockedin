@@ -37,6 +37,7 @@ class HevyWorkout:
     start_at: datetime
     end_at: datetime
     sets: list[HevySet] = field(default_factory=list)
+    end_given: bool = True  # False when the export has no end time and end_at is start + 1 h
 
 
 @dataclass
@@ -80,7 +81,7 @@ def parse_hevy_csv(text: str) -> HevyParseResult:
         raise ValueError(f"Missing column(s): {', '.join(missing)}. Is this a Hevy workout export?")
 
     workouts: dict[tuple[str, str], HevyWorkout] = {}
-    orders: dict[tuple[str, str], dict[str, int]] = {}
+    blocks: dict[tuple[str, str], list] = {}  # per workout: [order, exercise, sets so far] of the current block
     skipped: list[tuple[int, str]] = []
 
     for row_no, values in enumerate(reader, start=2):
@@ -110,14 +111,18 @@ def parse_hevy_csv(text: str) -> HevyParseResult:
         key = (title, start_raw)
         w = workouts.get(key)
         if w is None:
-            w = workouts[key] = HevyWorkout(title, _blank(r.get("description")), start, max(end, start))
-            orders[key] = {}
-        order = orders[key].setdefault(exercise, len(orders[key]))
+            w = workouts[key] = HevyWorkout(title, _blank(r.get("description")), start, max(end, start),
+                                            end_given=end_raw is not None)
+            blocks[key] = [-1, None, 0]
+        # A block is a run of rows of one exercise; doing it again later in the workout starts a new block.
+        block = blocks[key]
+        if block[1] != exercise:
+            block[:] = [block[0] + 1, exercise, 0]
         idx = _int(r.get("set_index"))
         w.sets.append(HevySet(
             exercise_title=exercise,
-            exercise_order=order,
-            set_index=idx if idx is not None else sum(s.exercise_title == exercise for s in w.sets),
+            exercise_order=block[0],
+            set_index=idx if idx is not None else block[2],
             set_type=_blank(r.get("set_type")) or "normal",
             weight_kg=round(weight, 2) if weight is not None else None,
             reps=reps,
@@ -127,4 +132,5 @@ def parse_hevy_csv(text: str) -> HevyParseResult:
             superset_id=_blank(r.get("superset_id")),
             notes=_blank(r.get("exercise_notes")),
         ))
+        block[2] += 1
     return HevyParseResult(list(workouts.values()), skipped)

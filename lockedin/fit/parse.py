@@ -1,6 +1,7 @@
 """Decode a FIT activity file (Zwift or HealthFit) into a summary plus per-second streams."""
 
 import io
+from bisect import bisect_right
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Literal
@@ -52,6 +53,7 @@ class ParsedFit:
     swim_lengths: int | None
     swim_strokes: int | None
     streams: Streams
+    swim_active_s: int | None = None  # pool swims: time in active lengths, i.e. without rest at the wall
 
 
 def _values(frame) -> dict:
@@ -83,6 +85,13 @@ def _aware(ts: datetime) -> datetime:
 
 
 def parse_fit(data: bytes) -> ParsedFit:
+    """The file's first activity; see parse_fit_activities for multisport files."""
+    return parse_fit_activities(data)[0]
+
+
+def parse_fit_activities(data: bytes) -> list[ParsedFit]:
+    """One activity per session: a multisport file (e.g. a bike-run brick) has a session per leg.
+    Transitions and legs too short to count are left out."""
     try:
         return _parse(data)
     except FitParseError:
@@ -91,9 +100,9 @@ def parse_fit(data: bytes) -> ParsedFit:
         raise FitParseError(f"Could not read FIT file: {e}") from e
 
 
-def _parse(data: bytes) -> ParsedFit:
+def _parse(data: bytes) -> list[ParsedFit]:
     file_id: dict = {}
-    session: dict = {}
+    sessions: list[dict] = []
     records: list[dict] = []
     lengths: list[dict] = []
     try:
@@ -103,8 +112,8 @@ def _parse(data: bytes) -> ParsedFit:
                     continue
                 if frame.name == "file_id":
                     file_id = _values(frame)
-                elif frame.name == "session" and not session:
-                    session = _values(frame)
+                elif frame.name == "session":
+                    sessions.append(_values(frame))
                 elif frame.name == "record":
                     v = _values(frame)
                     if "timestamp" in v:
@@ -114,6 +123,36 @@ def _parse(data: bytes) -> ParsedFit:
     except Exception as e:  # fitdecode raises several types for truncated/garbage input
         raise FitParseError(f"Could not read FIT file: {e}") from e
 
+    legs = sorted((s for s in sessions if "start_time" in s), key=lambda s: _aware(s["start_time"]))
+    if len(legs) < 2:
+        return [_activity(file_id, sessions[0] if sessions else {}, records, lengths)]
+    starts = [_aware(s["start_time"]) for s in legs]
+
+    def leg(ts) -> int:  # the last leg started by then
+        return max(bisect_right(starts, _aware(ts)) - 1, 0) if ts else 0
+
+    parts: list[tuple[list, list]] = [([], []) for _ in legs]
+    for r in records:
+        parts[leg(r["timestamp"])][0].append(r)
+    for ln in lengths:
+        parts[leg(ln.get("start_time") or ln.get("timestamp"))][1].append(ln)
+    out = []
+    for s, (recs, lens) in zip(legs, parts):
+        if str(s.get("sport")) == "transition":
+            continue
+        d0 = next((r["distance"] for r in recs if r.get("distance") is not None), None)
+        if d0:  # some devices count distance on from the previous leg
+            recs = [{**r, "distance": r["distance"] - d0} if r.get("distance") is not None else r for r in recs]
+        try:
+            out.append(_activity(file_id, s, recs, lens))
+        except EmptyActivity:
+            continue
+    if not out:
+        raise EmptyActivity("No activity data in this file (started and stopped right away).")
+    return out
+
+
+def _activity(file_id: dict, session: dict, records: list[dict], lengths: list[dict]) -> ParsedFit:
     if not session and not records:
         raise FitParseError("FIT file has no activity data.")
     timer = session.get("total_timer_time")
@@ -168,4 +207,6 @@ def _parse(data: bytes) -> ParsedFit:
         swim_lengths=len(active) if active else _int(session.get("num_active_lengths")),
         swim_strokes=sum(ln.get("total_strokes", 0) for ln in active) if active else _int(session.get("total_strokes")),
         streams=streams,
+        swim_active_s=_int(sum(ln.get("total_timer_time", ln.get("total_elapsed_time", 0)) for ln in active))
+        if active else None,
     )
