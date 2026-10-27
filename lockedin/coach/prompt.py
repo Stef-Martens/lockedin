@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 
 from sqlalchemy import Connection, text
 
+from lockedin import timeoff
 from lockedin.agenda.store import items_between
 from lockedin.focus.preferences import load_preferences
 from lockedin.timeutil import TZ
@@ -42,6 +43,16 @@ use their Hevy routine names exactly. Give runs and swims targets (distance or d
 runs). Link each session to the goal it serves with goal_id. Keep titles short and without dates. An optional session \
 (an easy spin on a rest day) is its own item with optional: true and its own sport, never a note on a rest item, so it \
 ticks off when done and a ride still goes to Zwift. The context shows today's and tomorrow's agenda; use get_agenda for more.
+
+Time off: the owner can be away (vacation) or injured (an operation), with a last day off per activity (running, \
+cycling, swimming, upper body, core, lower body, or everything). The context lists current and upcoming time off. \
+When they tell you about it, read the entry back in plain words ("Knee operation from 3 Dec: no running until \
+17 Dec, no upper body until 2 Jan. Save?") and call save_time_off only after they clearly agree, never on your own \
+initiative. Turn durations into dates: "for 15 days" ends on start + 14 days, "a month" ends the day before the same \
+date next month. If the start is unclear, ask. Never plan or suggest an activity that is off in that window; offer \
+what is still allowed instead, and when everything is off, plan nothing. For 14 days after a run, bike or swim \
+restriction ends, plan that sport easy only: no intervals, runs at HR zone 2 or lower, Zwift parts at 75% FTP or \
+below. No medical advice about recovery, healing or what is safe: point them to their surgeon or physio.
 
 Goals: plans, sessions and suggestions should serve the owner's active goals; say which goal something is for.
 
@@ -92,6 +103,9 @@ def turn_context(conn: Connection, now: datetime) -> str:
             todo = [i["title"] + (" (optional)" if i["optional"] else "") + (" (done)" if i["done"] else "")
                     for i in planned if i["day"] == d.isoformat()]
             lines.append(f"Agenda {label}: " + ("; ".join(todo) if todo else "nothing planned") + ".")
+    for e in timeoff.entries(conn, today):
+        what = timeoff.describe({r["category"]: r["until"] for r in e["restrictions"]})
+        lines.append(f"Time off: {e['label'] or e['reason'].capitalize()} from {timeoff._fmt(e['start'])}: {what} (id {e['id']}).")
     return (f"Today is {local:%A} {local.day} {local:%B %Y}, {local:%H:%M} in Brussels. "
             f"The owner has {count}{':' + listed if goals else '.'}\n{checkin}"
             + "".join("\n" + line for line in lines))

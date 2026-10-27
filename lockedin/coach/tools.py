@@ -8,6 +8,7 @@ from fastapi.encoders import jsonable_encoder
 from pydantic import ValidationError
 from sqlalchemy import Connection, Engine, text
 
+from lockedin import timeoff
 from lockedin.agenda import store as agenda
 from lockedin.coach.sql import QueryRejected, run_readonly
 from lockedin.focus.facts import focus_facts
@@ -49,6 +50,8 @@ agenda_items: id, day, sport ('gym'|'bike'|'run'|'swim'|'rest'|'other'), title, 
   s/km or s/100 m, hr_zone), goal_id (the goal it serves), source ('coach'|'manual'). Use get_agenda for done state.
 goals: id, text, area ('gym'|'bike'|'run'|'swim'|'body'|'general'), target, exercise (exact lift name, if about one), status ('active'|'achieved'|'dropped'),
   source, created_at, updated_at.
+time_off: id, reason ('vacation'|'injury'), label, start_day, restrictions (jsonb list of {category, until}; category 'run'|'bike'|'swim'|
+  'upper'|'core'|'lower'|'all', until = the last day it stays off). An entry is off from start_day to its latest until.
 
 Tips: prefer get_focus_facts for coverage, suggestions, zones, plateaus and wins; use SQL for anything else.
 Results are capped at 200 rows, so aggregate in SQL (group by week, exercise, ...) instead of pulling raw rows.
@@ -92,6 +95,16 @@ AGENDA_CHANGE = {"type": "object", "required": ["op"], "properties": {
         "hr_zone": {"type": "integer", "description": "Runs only, 1-5"}}},
     "goal_id": {"type": "integer", "description": "The active goal this session serves (from get_goals)."}}}
 
+TIME_OFF_ENTRY = {"type": "object", "required": ["reason", "start", "restrictions"], "properties": {
+    "reason": {"type": "string", "enum": ["vacation", "injury"]},
+    "label": {"type": "string", "description": "Short, e.g. 'Knee operation' or 'Ski trip'."},
+    "start": {"type": "string", "description": "First day off, YYYY-MM-DD."},
+    "restrictions": {"type": "array", "maxItems": 7, "items": {
+        "type": "object", "required": ["category", "until"], "properties": {
+            "category": {"type": "string", "enum": list(timeoff.CATEGORIES),
+                         "description": "'all' = everything (a vacation); upper/core/lower = body regions."},
+            "until": {"type": "string", "description": "Last day it stays off, YYYY-MM-DD."}}}}}}
+
 
 TOOLS = [
     _tool("get_schema", "Describe the tables and columns run_sql can read, with units and meanings. "
@@ -126,6 +139,12 @@ TOOLS = [
           "rides, give structured `zwift.blocks` (powers as fractions of FTP); the app turns them into a Zwift "
           "workout file that the owner's Mac puts into Zwift. Don't put dates in titles.",
           {"changes": {"type": "array", "maxItems": MAX_AGENDA_CHANGES, "items": AGENDA_CHANGE}}, ["changes"]),
+    _tool("save_time_off", "Record, change or remove time off: a vacation or an injury/operation with an end date per "
+          "activity. Only call this after the owner has clearly agreed to the exact entry in this conversation. "
+          "'create' needs entry; 'update' needs id and the whole entry; 'delete' needs id (the id is in the "
+          "context line or the time_off table).",
+          {"action": {"type": "string", "enum": ["create", "update", "delete"]},
+           "id": {"type": "integer"}, "entry": TIME_OFF_ENTRY}, ["action"]),
 ]
 SCHEMAS = {t["name"]: t["input_schema"] for t in TOOLS}
 TYPES = {"string": str, "integer": int, "object": dict, "array": list, "number": (int, float), "boolean": bool}
@@ -239,6 +258,24 @@ def _save_agenda(conn: Connection, args: dict, now: datetime) -> list[dict]:
     return out
 
 
+def _save_time_off(conn: Connection, args: dict) -> dict:
+    action = args["action"]
+    if action != "create" and type(args.get("id")) is not int:
+        raise ValueError(f"'{action}' needs the id of the time off.")
+    if action == "delete":
+        timeoff.delete(conn, args["id"])
+        return {"deleted": args["id"]}
+    if "entry" not in args:
+        raise ValueError(f"'{action}' needs the entry.")
+    try:
+        body = timeoff.TimeOffIn(**args["entry"])
+    except ValidationError as e:
+        raise ValueError("; ".join(
+            f"{'.'.join(str(p) for p in err['loc'])}: {err['msg']}" if err["loc"] else err["msg"].removeprefix("Value error, ")
+            for err in e.errors())) from None
+    return timeoff.create(conn, body) if action == "create" else timeoff.update(conn, args["id"], body)
+
+
 def execute_tool(name: str, args: object, *, conn: Connection, engine: Engine, now: datetime) -> tuple[str, bool]:
     """Run one tool call. Returns (content, is_error); errors are messages the model can act on."""
     if name not in SCHEMAS:
@@ -264,7 +301,9 @@ def execute_tool(name: str, args: object, *, conn: Connection, engine: Engine, n
             return _dump(_get_agenda(conn, args, now)), False
         if name == "save_agenda":
             return _dump(_save_agenda(conn, args, now)), False
+        if name == "save_time_off":
+            return _dump(_save_time_off(conn, args)), False
         _mark_reviewed(conn, now)
         return "ok", False
-    except (QueryRejected, ValueError) as e:
+    except (QueryRejected, ValueError, LookupError) as e:
         return str(e), True
