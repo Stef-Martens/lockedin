@@ -11,7 +11,7 @@ const OVERVIEW = { totals: { week: totals, month: totals }, weekly: [], streak: 
   measure_due: false, last_tape_measurement_on: null, checkin_due: false, next_checkin_on: "2026-11-09", last_checkin_on: "2026-10-26",
   hevy_due: false, hevy_last_upload_at: null };
 const item = { sport: "bike", note: null, optional: false, routine: null, zwift: null, zwift_status: null, sort: 0, source: "coach",
-  activity_id: null, targets: null, goal_id: null, goal: null, result: null, done: false, clash: null };
+  activity_id: null, targets: null, goal_id: null, goal: null, result: null, done: false, clash: null, plan_line: null };
 const AGENDA = { week_start: "2026-10-26", today: "2026-10-29", items: [
   { ...item, id: 1, day: "2026-10-29", title: "Sweet Spot 3x10", done: true, activity_id: 5, result: "Done · 66′ · 128 W", goal: "FTP 200 W" },
   { ...item, id: 2, day: "2026-10-29", sport: "gym", title: "Push", routine: "Push" },

@@ -11,7 +11,7 @@ vi.mock("react-router-dom", async (orig) => ({ ...(await orig<typeof import("rea
 const item = (over: Partial<AgendaItem>): AgendaItem => ({
   id: 1, day: "2026-10-27", sport: "gym", title: "Rug - Bicep", note: null, optional: false, routine: "Rug - Bicep",
   zwift: null, zwift_status: null, sort: 0, source: "coach", done: false, activity_id: null, targets: null, goal_id: null,
-  goal: null, result: null, clash: null, ...over,
+  goal: null, result: null, clash: null, plan_line: null, ...over,
 });
 const WEEK: AgendaWeek = {
   week_start: "2026-10-26", today: "2026-10-26", time_off: [],
@@ -49,6 +49,17 @@ describe("Agenda page", () => {
     const link = screen.getByRole("link", { name: /Plan it/ });
     expect(link.getAttribute("href")).toBe("/plan?day=Rug%20-%20Bicep");
     expect(screen.getByText("Goes to Zwift at the next sync")).toBeTruthy();
+  });
+
+  it("shows a stepped run's plan line in place of its note", async () => {
+    mock((path) => Promise.resolve(path === "/api/time-off" ? [] : { ...WEEK, items: [
+      ...WEEK.items,
+      item({ id: 5, day: "2026-10-28", sport: "run", title: "Intervals", note: "Keep it smooth", routine: null,
+        plan_line: "10′ warm-up Z2 · 4 × (5′ @ 5:30–5:50, 2′ jog) · cool-down" }),
+    ] }));
+    await open();
+    expect(screen.getByText("10′ warm-up Z2 · 4 × (5′ @ 5:30–5:50, 2′ jog) · cool-down")).toBeTruthy();
+    expect(screen.queryByText("Keep it smooth")).toBeNull();
   });
 
   it("adds a run on Wednesday", async () => {

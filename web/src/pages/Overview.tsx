@@ -69,7 +69,7 @@ function TodayBlock({ items, upcoming }: { items: AgendaItem[] | "failed"; upcom
             : <span className="today-check note" aria-hidden="true" />}
           <div style={{ minWidth: 0 }}>
             <div className="today-title">{it.title}{it.goal && <span className="goal-tag">for: {it.goal}</span>}{it.optional && <span className="muted"> · optional</span>}</div>
-            <div className="secondary" style={{ fontSize: 13 }}>{it.done ? it.result : it.zwift?.summary ?? it.note ?? (it.routine ? "Your routine" : "")}</div>
+            <div className="secondary" style={{ fontSize: 13 }}>{it.done ? it.result : it.zwift?.summary ?? it.plan_line ?? it.note ?? (it.routine ? "Your routine" : "")}</div>
           </div>
           {it.done ? <Link className="btn small" to={`/agenda/${it.id}`}>See how it went</Link>
             : it.sport === "gym" && it.routine ? <Link className="btn primary small" to={`/plan?day=${encodeURIComponent(it.routine)}`}>Plan it</Link>

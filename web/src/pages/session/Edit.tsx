@@ -21,7 +21,7 @@ export default function Edit({ item, onSaved, onCancel }: { item: AgendaItem; on
     low: toClock(t.pace_low), high: toClock(t.pace_high), zone: t.hr_zone ? String(t.hr_zone) : "",
   });
   const [error, setError] = useState<string | null>(null);
-  const withTargets = item.sport === "run" || item.sport === "swim";
+  const withTargets = (item.sport === "run" || item.sport === "swim") && !t.steps;
   const save = (e: FormEvent) => {
     e.preventDefault();
     const changes: Record<string, unknown> = {};
@@ -70,6 +70,12 @@ export default function Edit({ item, onSaved, onCancel }: { item: AgendaItem; on
                 </select>
               </label>
             )}
+          </div>
+        )}
+        {t.steps && (
+          <div>
+            {item.plan_line && <p className="flush">{item.plan_line}</p>}
+            <p className="muted flush">Ask the coach to change the steps.</p>
           </div>
         )}
         <label className="row check-row">

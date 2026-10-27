@@ -49,6 +49,7 @@ export default function PlanSection({ plan, item }: { plan: SessionPlan; item: A
     return (
       <Card i={2}>
         <SectionHead title="The plan" />
+        {item.plan_line && <p className="flush">{item.plan_line}</p>}
         <div className="tiles">
           {plan.distance_m && <Tile label="Distance" value={plan.distance_m >= 1000 ? `${(plan.distance_m / 1000).toFixed(1)} km` : `${plan.distance_m} m`} i={0} />}
           {plan.duration_s && <Tile label="Duration" value={formatMin(plan.duration_s)} i={1} />}

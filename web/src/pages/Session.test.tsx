@@ -9,7 +9,7 @@ const base = {
   id: 2, day: "2026-10-29", sport: "bike" as const, title: "Sweet Spot 3x10", note: "Seated", optional: false, routine: null,
   zwift: { blocks: [], duration_s: 3900, summary: "65′ · 3 × 10′ at 151 W", filename: "2026-10-29 Sweet Spot 3x10.zwo" },
   zwift_status: "synced" as const, sort: 0, source: "coach" as const, done: false, activity_id: null, targets: null,
-  goal_id: 1, goal: "FTP 200 W", result: null, clash: null,
+  goal_id: 1, goal: "FTP 200 W", result: null, clash: null, plan_line: null,
 };
 const parts = [
   { label: "Warm-up", start_s: 0, end_s: 600, from_w: 84, to_w: 126, from_frac: 0.5, to_frac: 0.75, work: false },
@@ -100,6 +100,42 @@ describe("Session page", () => {
       const body = JSON.parse(apiFetch.mock.calls.filter((c) => c[1]?.method === "PATCH").at(-1)![1]!.body as string);
       expect(body.targets.distance_m).toBe(8500);
     });
+  });
+
+  const STEPPED = { ...base, sport: "run" as const, title: "Intervals", note: null, zwift: null, zwift_status: null,
+    plan_line: "10′ warm-up Z2 · 4 × (5′ @ 5:30–5:50, 2′ jog) · cool-down",
+    targets: { duration_s: 2700, steps: { warmup: { goal: { time_s: 600 }, target: { hr_zone: 2 } },
+      blocks: [{ repeat: 4, steps: [{ kind: "work" as const, goal: { time_s: 300 }, target: { pace_low: 330, pace_high: 350 } },
+        { kind: "recovery" as const, goal: { time_s: 120 } }] }], cooldown: { goal: { open: true } } } } };
+
+  it("shows a stepped run's plan line on the plan card", async () => {
+    open({ item: STEPPED, plan: { kind: "targets", duration_s: 2700, hr_bpm: null }, actual: null });
+    await screen.findByRole("heading", { name: "Intervals" });
+    expect(screen.getByText(STEPPED.plan_line)).toBeTruthy();
+  });
+
+  it("edits a stepped run without target fields, and sends no targets", async () => {
+    open({ item: STEPPED, plan: { kind: "targets", duration_s: 2700, hr_bpm: null }, actual: null });
+    await screen.findByRole("heading", { name: "Intervals" });
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    expect(screen.queryByLabelText("Distance (km)")).toBeNull();
+    expect(screen.queryByLabelText("Duration (min)")).toBeNull();
+    expect(screen.queryByLabelText(/^Pace/)).toBeNull();
+    expect(screen.queryByLabelText("Heart-rate zone")).toBeNull();
+    expect(screen.getAllByText(STEPPED.plan_line).length).toBeGreaterThan(0);
+    expect(screen.getByText("Ask the coach to change the steps.")).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("Title"), { target: { value: "Intervals 4x5" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(apiFetch).toHaveBeenCalledWith("/api/agenda/2", { method: "PATCH", body: JSON.stringify({ title: "Intervals 4x5" }) }));
+  });
+
+  it("keeps the target fields for a run without steps", async () => {
+    open({ item: { ...base, sport: "run", title: "Steady run", zwift: null, zwift_status: null, targets: { distance_m: 8000 } },
+      plan: { kind: "targets", hr_bpm: null }, actual: null });
+    await screen.findByRole("heading", { name: "Steady run" });
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    expect(screen.getByLabelText("Distance (km)")).toBeTruthy();
+    expect(screen.queryByText("Ask the coach to change the steps.")).toBeNull();
   });
 
   it("labels the power axis and counts intervals on target", async () => {

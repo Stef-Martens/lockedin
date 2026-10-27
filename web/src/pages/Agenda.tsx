@@ -13,7 +13,7 @@ import TimeOffCard from "./agenda/TimeOffCard";
 const ZWIFT_TEXT = { synced: "In Zwift ✓", pending: "Goes to Zwift at the next sync" };
 
 function ItemCard({ item, past, onOpen, i }: { item: AgendaItem; past: boolean; onOpen: () => void; i: number }) {
-  const summary = item.done ? item.result : item.zwift?.summary ?? item.note;
+  const summary = item.done ? item.result : item.zwift?.summary ?? item.plan_line ?? item.note;
   const notDone = past && !item.done && !["rest", "other"].includes(item.sport);
   return (
     <div className={`agenda-item rise${item.sport === "rest" ? " rest" : ""}${item.done ? " done" : ""}${notDone ? " missed" : ""}`}

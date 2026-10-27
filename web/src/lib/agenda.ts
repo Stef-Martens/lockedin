@@ -28,8 +28,15 @@ export interface AgendaItem {
   result: string | null;
   /** "Running is off until 17 Dec" when time off rules it out that day. */
   clash: string | null;
+  /** One-line summary of a run's steps ("10′ warm-up Z2 · 4 × (5′ @ 5:30–5:50, 2′ jog) · cool-down"). */
+  plan_line: string | null;
 }
-export interface Targets { distance_m?: number; duration_s?: number; pace_low?: number; pace_high?: number; hr_zone?: number }
+export interface StepGoal { time_s?: number; distance_m?: number; open?: boolean }
+export interface StepTarget { pace_low?: number; pace_high?: number; hr_zone?: number }
+export interface RunStep { goal: StepGoal; target?: StepTarget }
+export interface RunBlock { repeat: number; steps: (RunStep & { kind: "work" | "recovery" })[] }
+export interface RunSteps { warmup?: RunStep; blocks: RunBlock[]; cooldown?: RunStep }
+export interface Targets { distance_m?: number; duration_s?: number; pace_low?: number; pace_high?: number; hr_zone?: number; steps?: RunSteps }
 export interface AgendaWeek { week_start: string; today: string; items: AgendaItem[]; time_off: TimeOffDay[] }
 
 export const SPORT_COLOR: Record<AgendaSport, string> = {
