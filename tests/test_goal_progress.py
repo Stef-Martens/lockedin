@@ -82,7 +82,8 @@ def test_relative_and_ratio_goals_get_no_bar(conn, words, area):
 
 def test_a_target_far_below_today_is_a_misread(conn):
     add_gym(conn, datetime(2026, 10, 20, 17, tzinfo=UTC), [(BENCH, 72, 10, "normal")])  # e1RM 96
-    assert progress(conn, NOW, goal(conn, "Bench 40 kg for 10 reps", "gym", exercise=BENCH)) is None
+    assert progress(conn, NOW, goal(conn, "Bench 40 kg", "gym", exercise=BENCH)) is None
+    assert progress(conn, NOW, goal(conn, "Bench 30 kg for 10 reps", "gym", exercise=BENCH)) is None  # vs 72 × 10
 
 
 def test_thousands_separators(conn):

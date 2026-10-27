@@ -13,7 +13,7 @@ SAMPLES = ROOT / "samples"
 TEST_ADMIN_URL = os.environ.get(
     "TEST_ADMIN_URL", "postgresql+psycopg://postgres:postgres@127.0.0.1:54322/postgres"
 )
-TEST_DB = "lockedin_test"
+TEST_DB = os.environ.get("LOCKEDIN_TEST_DB", "lockedin_test")
 
 OWNER_EMAIL = "me@example.com"
 JWT_SECRET = "test-secret-test-secret-test-secret-123"
