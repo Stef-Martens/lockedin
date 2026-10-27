@@ -1,8 +1,9 @@
 """Keep one record per real session when the Apple Watch (via HealthFit) also recorded it.
 
-A HealthFit workout overlapping a Zwift ride or a Hevy workout by more than half of the
-shorter one is marked superseded by it. If the Zwift ride has no heart rate, the Watch's
-heart rate is copied onto it. Works whichever file arrives first.
+A HealthFit workout overlapping a Zwift ride or run (of the same sport) or a Hevy workout by more
+than half of the shorter one is marked superseded by it. If the Zwift activity has no heart rate,
+the heart rate of the Watch file sharing the most time with it is copied onto it. Works whichever
+file arrives first, and is decided again when a Hevy workout moves.
 """
 
 from bisect import bisect_left
@@ -10,15 +11,22 @@ from bisect import bisect_left
 from sqlalchemy import Connection, text
 
 PRIMARY_SOURCES = ("zwift", "hevy")
-# Which Watch workouts each primary can stand in for: a run or ride inside a gym session stays a run or ride.
-REPLACES = {"zwift": ("bike", "other"), "hevy": ("other",)}
 HR_MATCH_WINDOW_S = 5
 
 
+def _replaces(primary) -> tuple[str, ...]:
+    """Which Watch workouts a primary can stand in for: a run or ride inside a gym session stays a run or
+    ride, and a Zwift run replaces the Watch's indoor run, not a ride."""
+    return ("other",) if primary.source == "hevy" else (primary.sport, "other")
+
+
+def _shared_s(a, b) -> float:
+    return (min(a.end_at, b.end_at) - max(a.start_at, b.start_at)).total_seconds()
+
+
 def _overlaps(a, b) -> bool:
-    shared = (min(a.end_at, b.end_at) - max(a.start_at, b.start_at)).total_seconds()
     shorter = min((a.end_at - a.start_at).total_seconds(), (b.end_at - b.start_at).total_seconds())
-    return shared > 0.5 * shorter
+    return _shared_s(a, b) > 0.5 * shorter
 
 
 def _get(conn: Connection, activity_id: int):
@@ -27,29 +35,45 @@ def _get(conn: Connection, activity_id: int):
 
 def resolve_overlaps(conn: Connection, activity_id: int) -> None:
     a = _get(conn, activity_id)
-    others = conn.execute(text(
-        "select * from activities where id <> :i and start_at < :end and end_at > :start"
-    ), {"i": a.id, "start": a.start_at, "end": a.end_at}).all()
-
     if a.source == "healthfit":
-        primaries = [o for o in others
-                     if o.source in PRIMARY_SOURCES and a.sport in REPLACES[o.source] and _overlaps(a, o)]
-        if not primaries:
-            return
-        preferred = "zwift" if a.sport == "bike" else "hevy"
-        primary = sorted(primaries, key=lambda o: o.source != preferred)[0]
-        _supersede(conn, watch=a, primary=primary)
+        _resolve_watch(conn, a)
     elif a.source in PRIMARY_SOURCES:
-        for o in others:
-            if (o.source == "healthfit" and o.superseded_by is None and o.sport in REPLACES[a.source]
-                    and _overlaps(a, o)):
-                _supersede(conn, watch=o, primary=a)
+        # It may have moved (times edited in Hevy): let go of the Watch workouts it stood in for and decide again.
+        freed = conn.execute(text("update activities set superseded_by = null where superseded_by = :i returning id"),
+                             {"i": a.id}).scalars().all()
+        overlapping = conn.execute(text(
+            "select id from activities where source = 'healthfit' and superseded_by is null "
+            "and start_at < :end and end_at > :start"
+        ), {"start": a.start_at, "end": a.end_at}).scalars().all()
+        for wid in sorted({*freed, *overlapping}):
+            _resolve_watch(conn, _get(conn, wid))
 
 
-def _supersede(conn: Connection, *, watch, primary) -> None:
+def _resolve_watch(conn: Connection, watch) -> None:
+    primaries = [o for o in conn.execute(text(
+        "select * from activities where source = any(:src) and start_at < :end and end_at > :start"
+    ), {"src": list(PRIMARY_SOURCES), "start": watch.start_at, "end": watch.end_at})
+        if watch.sport in _replaces(o) and _overlaps(watch, o)]
+    if not primaries:
+        return
+    preferred = "hevy" if watch.sport == "other" else "zwift"
+    primary = min(primaries, key=lambda o: (o.source != preferred, -_shared_s(watch, o), o.id))
     conn.execute(text("update activities set superseded_by = :p where id = :w"), {"p": primary.id, "w": watch.id})
-    if primary.source == "zwift" and primary.avg_hr is None and watch.avg_hr is not None:
-        _merge_hr(conn, watch=watch, ride=primary)
+    if primary.source == "zwift":
+        _borrow_hr(conn, primary.id)
+
+
+def _borrow_hr(conn: Connection, ride_id: int) -> None:
+    """A Zwift ride without its own heart rate takes it from the Watch file it shares the most time with."""
+    ride = _get(conn, ride_id)
+    if ride.avg_hr is not None and ride.hr_merged_from is None:
+        return  # its own strap
+    watches = conn.execute(text("select * from activities where superseded_by = :r and avg_hr is not null"),
+                           {"r": ride.id}).all()
+    if watches:
+        best = min(watches, key=lambda w: (-_shared_s(ride, w), w.id))
+        if best.id != ride.hr_merged_from:
+            _merge_hr(conn, watch=best, ride=ride)
 
 
 def _merge_hr(conn: Connection, *, watch, ride) -> None:
