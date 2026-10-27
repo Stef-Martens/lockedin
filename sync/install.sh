@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Installs the launchd agent that runs sync/fit_sync.py whenever the Zwift or HealthFit folder changes,
-# and at least hourly. Reads folder paths from ~/.config/lockedin/sync.env.
+# and every 15 minutes (StartInterval 900). Reads folder paths from ~/.config/lockedin/sync.env.
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 conf="$HOME/.config/lockedin/sync.env"

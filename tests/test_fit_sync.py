@@ -611,3 +611,8 @@ def test_a_file_the_server_cant_read_doesnt_stop_waiting_for_a_ride_being_writte
 
     reports = fit_sync.run(cfg(tmp_path), now=lambda: clock["t"], sleep=sleep, http=unreadable_server([]))
     assert len(reports) == 2 and sum(r.uploaded for r in reports) == 1
+
+
+def test_comments_match_the_15_minute_schedule():
+    for f in (p for p in (ROOT / "sync").iterdir() if p.is_file()):
+        assert "hourly" not in f.read_text().lower(), f.name
