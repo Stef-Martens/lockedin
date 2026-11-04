@@ -58,8 +58,8 @@ def claim(conn: Connection, activity_id: int, item_id: int | None, now: datetime
 
 def save(conn: Connection, activity_id: int, label: str, body: str, model: str, now: datetime) -> None:
     conn.execute(text(
-        "update workout_verdicts set label = :l, body = :b, model = :m, written_at = :now, failed_at = null, "
-        "claimed_at = null where activity_id = :a"
+        "update workout_verdicts set label = :l, body = :b, model = :m, written_at = :now, failed_at = null "
+        "where activity_id = :a"
     ), {"a": activity_id, "l": label, "b": body, "m": model, "now": now})
 
 

@@ -62,6 +62,15 @@ def test_written_not_claimable_without_rewrite(conn):
     assert store.read(conn, a).body == "Nice run."  # still there until the new one is saved
 
 
+def test_stale_rewrite_cannot_claim_right_after_save(conn):
+    a = add_session(conn, "run", START, 1800)
+    assert store.claim(conn, a, None, NOW)
+    store.save(conn, a, "unplanned", "Nice run.", "m", NOW)
+    assert store.claim(conn, a, None, NOW + timedelta(hours=1), rewrite=True)
+    store.save(conn, a, "on_plan", "Good.", "m", NOW + timedelta(hours=1))
+    assert not store.claim(conn, a, None, NOW + timedelta(hours=1), rewrite=True)
+
+
 def test_save_clears_failure(conn):
     a = add_session(conn, "run", START, 1800)
     store.claim(conn, a, None, NOW)
