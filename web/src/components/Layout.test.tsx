@@ -1,14 +1,28 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import Layout from "./Layout";
 
-vi.mock("../lib/api", () => ({ apiFetch: () => Promise.resolve({ zwift: { last_import_at: null } }) }));
+const status = vi.hoisted(() => ({ zwift: { last_import_at: null as string | null }, healthfit: { last_import_at: null as string | null } }));
+vi.mock("../lib/api", () => ({ apiFetch: () => Promise.resolve(status) }));
 vi.mock("../lib/supabase", () => ({ supabase: { auth: { signOut: vi.fn() } } }));
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+  status.zwift.last_import_at = null;
+  status.healthfit.last_import_at = null;
+});
 
 describe("Layout", () => {
+  it("dates the Mac sync by its newest upload, a Watch workout as much as a Zwift ride", async () => {
+    vi.useFakeTimers({ now: new Date("2026-11-04T21:00:00Z"), toFake: ["Date"] });
+    status.zwift.last_import_at = "2026-10-29T12:00:00+00:00";
+    status.healthfit.last_import_at = "2026-11-04T18:00:00+00:00";
+    render(<MemoryRouter><Routes><Route element={<Layout />}><Route index element={<p>home</p>} /></Route></Routes></MemoryRouter>);
+    await waitFor(() => expect(screen.getAllByText(/Mac sync · 3 h ago/).length).toBeGreaterThan(0));
+  });
+
   it("puts Agenda second and tucks Trends, Forecast, Body, Import and Sign out under More on phones", () => {
     render(<MemoryRouter><Routes><Route element={<Layout />}><Route index element={<p>home</p>} /></Route></Routes></MemoryRouter>);
     const side = screen.getAllByRole("navigation", { name: "Main" })[0];

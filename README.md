@@ -188,7 +188,7 @@ The **Overview** page answers two questions: am I improving, and what should I f
 
 ## 7. Workout planner
 
-Before the gym, tap **Plan a workout**, on the Overview or the Muscles page.
+Before the gym, tap **Plan it** on the Overview when a gym session with a routine is planned today, or **Plan a workout** on the Muscles page.
 
 - **Your days are your Hevy routines.** When you start a workout from a routine in Hevy, the workout gets the routine's name. Every name you've used in the last 60 days becomes a day you can pick, e.g. "Chest - Schouders - Triceps". Its exercises are the ones from the last time you did it.
 - **A plan is that routine with today's changes marked:**

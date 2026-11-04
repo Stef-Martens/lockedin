@@ -64,7 +64,9 @@ export default function Layout() {
 
   const cls = (base: string, l: (typeof LINKS)[number]) => ({ isActive }: { isActive: boolean }) =>
     `${base}${isActive || (l.match && pathname.startsWith(l.match)) ? " active" : ""}`;
-  const last = status?.zwift.last_import_at ?? null;
+  // Rides come in as Zwift files, runs and swims through HealthFit: either one is the Mac sync at work.
+  const uploads = [status?.zwift.last_import_at, status?.healthfit.last_import_at].filter((at): at is string => !!at);
+  const last = uploads.length ? uploads.reduce((a, b) => (new Date(a) > new Date(b) ? a : b)) : null;
   const live = recent(last);
   const sync = (
     <span className="row sync" style={{ gap: 8 }}>

@@ -81,43 +81,34 @@ function TodayBlock({ items, upcoming }: { items: AgendaItem[] | "failed"; upcom
   );
 }
 
-function GymCards({ goals, goalsFailed }: { goals: Goal[] | null; goalsFailed: boolean }) {
+function GoalsCard({ goals, goalsFailed }: { goals: Goal[] | null; goalsFailed: boolean }) {
   return (
-    <div className="grid-auto" style={{ ["--min" as string]: "300px" }}>
-      <Link to="/plan" className="card accent lift rise" style={{ ...stagger(1), display: "block", color: "var(--ink)", textDecoration: "none" }}>
-        <div className="eyebrow">Going to the gym?</div>
-        <div className="row spread" style={{ marginTop: 8 }}>
-          <span style={{ fontSize: 15, color: "var(--ink-2)" }}>Your routine with today's targets and what you've missed.</span>
-          <span className="btn primary" style={{ whiteSpace: "nowrap" }}>Plan a workout</span>
-        </div>
-      </Link>
-      <div className="card rise" style={stagger(2)}>
-        <div className="row spread">
-          <span className="eyebrow">Your goals</span>
-          <span className="row" style={{ gap: 14 }}>
-            <Link to="/forecast" style={{ fontSize: 13, fontWeight: 600, textDecoration: "none" }}>Forecast →</Link>
-            <Link to="/coach" style={{ fontSize: 13, fontWeight: 600, textDecoration: "none" }}>Coach</Link>
-          </span>
-        </div>
-        {goalsFailed ? (
-          <p className="muted" style={{ margin: "8px 0 0", fontSize: 14 }}>Couldn't load your goals.</p>
-        ) : goals && goals.length > 0 ? (
-          <div style={{ marginTop: 6 }}>
-            {goals.map((g) => (
-              <div key={g.id} className="goal-progress">
-                <div className="row spread" style={{ flexWrap: "nowrap" }}>
-                  <span>{g.text}</span>
-                  {g.progress && <span className="secondary num" style={{ fontSize: 13, whiteSpace: "nowrap" }}>{g.progress.label}</span>}
-                </div>
-                {g.progress && <div className="goal-bar"><span className="grow-x" style={{ width: `${goalBar(g.progress.fraction)}%` }} /></div>}
-                {g.target && <div className="muted" style={{ fontSize: 12 }}>{g.target}</div>}
-              </div>
-            ))}
-          </div>
-        ) : goals ? (
-          <p className="muted" style={{ margin: "8px 0 0", fontSize: 14 }}>No goals yet. Set some with the coach.</p>
-        ) : null}
+    <div className="card rise" style={stagger(1)}>
+      <div className="row spread">
+        <span className="eyebrow">Your goals</span>
+        <span className="row" style={{ gap: 14 }}>
+          <Link to="/forecast" style={{ fontSize: 13, fontWeight: 600, textDecoration: "none" }}>Forecast →</Link>
+          <Link to="/coach" style={{ fontSize: 13, fontWeight: 600, textDecoration: "none" }}>Coach</Link>
+        </span>
       </div>
+      {goalsFailed ? (
+        <p className="muted" style={{ margin: "8px 0 0", fontSize: 14 }}>Couldn't load your goals.</p>
+      ) : goals && goals.length > 0 ? (
+        <div style={{ marginTop: 6 }}>
+          {goals.map((g) => (
+            <div key={g.id} className="goal-progress">
+              <div className="row spread" style={{ flexWrap: "nowrap" }}>
+                <span>{g.text}</span>
+                {g.progress && <span className="secondary num" style={{ fontSize: 13, whiteSpace: "nowrap" }}>{g.progress.label}</span>}
+              </div>
+              {g.progress && <div className="goal-bar"><span className="grow-x" style={{ width: `${goalBar(g.progress.fraction)}%` }} /></div>}
+              {g.target && <div className="muted" style={{ fontSize: 12 }}>{g.target}</div>}
+            </div>
+          ))}
+        </div>
+      ) : goals ? (
+        <p className="muted" style={{ margin: "8px 0 0", fontSize: 14 }}>No goals yet. Set some with the coach.</p>
+      ) : null}
     </div>
   );
 }
@@ -192,7 +183,7 @@ export default function Overview() {
       )}
 
       {today && <TodayBlock items={today} upcoming={upcoming} />}
-      <GymCards goals={goals} goalsFailed={goalsFailed} />
+      <GoalsCard goals={goals} goalsFailed={goalsFailed} />
 
       <div className="grid-auto" style={{ ["--min" as string]: "200px" }}>
         <TotalTile key={period} minutes={Math.round(total)} sessions={sessions} label={period === "week" ? "This week" : monthName} />
