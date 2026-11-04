@@ -67,18 +67,19 @@ class RunSteps(BaseModel):
 
 
 def expand(steps: dict) -> list[dict]:
-    """The steps in run order, repeats unrolled."""
+    """The steps in run order, repeats unrolled; `repeat` is which time through its block (None outside a block)."""
     out = []
 
-    def add(kind: str, step: dict, repeated: bool = False):
-        out.append({"kind": kind, "goal": step["goal"], "target": step.get("target"), "repeated": repeated})
+    def add(kind: str, step: dict, repeated: bool = False, repeat: int | None = None):
+        out.append({"kind": kind, "goal": step["goal"], "target": step.get("target"), "repeated": repeated,
+                    "repeat": repeat})
 
     if steps.get("warmup"):
         add("warmup", steps["warmup"])
     for block in steps["blocks"]:
-        for _ in range(block["repeat"]):
+        for n in range(1, block["repeat"] + 1):
             for s in block["steps"]:
-                add(s["kind"], s, block["repeat"] >= 2)
+                add(s["kind"], s, block["repeat"] >= 2, n)
     if steps.get("cooldown"):
         add("cooldown", steps["cooldown"])
     return out

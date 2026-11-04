@@ -85,14 +85,11 @@ def zwift_parts(plan_parts: list[dict], s, ftp: float | None) -> tuple[list[dict
 MOVING = 0.5  # m/s; slower than this is standing still
 
 
-def splits(s, band: tuple[int | None, int | None]) -> list[dict] | None:
-    """Per-km pace on moving time. A km boundary that falls between two samples (a GPS gap) gets its time
-    by interpolation, so a gap spreads over the kms it crossed instead of making one absurd split."""
-    if s is None or not s.distance or not any(s.distance):
-        return None
+def moving_seconds(s) -> list[float]:
+    """Moving seconds up to each sample of a stream with a distance."""
     t, d = list(s.t_offset), list(s.distance)
     speed = list(s.speed) if getattr(s, "speed", None) else None
-    moving = [0.0]  # moving seconds up to each sample
+    moving = [0.0]
     for i in range(1, len(t)):
         dt = t[i] - t[i - 1]
         if d[i] is not None and d[i - 1] is not None and dt > 0:
@@ -102,6 +99,16 @@ def splits(s, band: tuple[int | None, int | None]) -> list[dict] | None:
         else:
             still = speed is not None and (speed[i] or 0) <= MOVING
         moving.append(moving[-1] + (0 if still else dt))
+    return moving
+
+
+def splits(s, band: tuple[int | None, int | None]) -> list[dict] | None:
+    """Per-km pace on moving time. A km boundary that falls between two samples (a GPS gap) gets its time
+    by interpolation, so a gap spreads over the kms it crossed instead of making one absurd split."""
+    if s is None or not s.distance or not any(s.distance):
+        return None
+    d = list(s.distance)
+    moving = moving_seconds(s)
     out: list[dict] = []
     last_m, last_i, k = 0.0, 0, 1
 

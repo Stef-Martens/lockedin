@@ -7,20 +7,9 @@ from sqlalchemy import Connection
 
 from lockedin.agenda.steps import summary_line
 from lockedin.agenda.store import items_between, local_today
-from lockedin.focus.zones import hr_zone_bounds, max_hr_at
+from lockedin.focus.zones import hr_ranges
 
 DAYS_AHEAD = 7
-ZONE_1_FLOOR = 0.60  # LockedIn's zone 1 starts at 0; on the watch it starts at 60 % of max HR
-
-
-def _hr_ranges(conn: Connection, now: datetime) -> dict[int, tuple[int, int]]:
-    """Zone → bpm range, or empty when max HR isn't known (then heart-rate alerts are left out)."""
-    max_hr = max_hr_at(conn, now)
-    if max_hr is None:
-        return {}
-    zones = hr_zone_bounds(max_hr)
-    zones[1] = (round(max_hr * ZONE_1_FLOOR), zones[1][1])
-    return zones
 
 
 def _goal(goal: dict) -> dict:
@@ -86,7 +75,7 @@ def feed(conn: Connection, now: datetime) -> dict:
     today = local_today(now)
     items = [i for i in items_between(conn, now, today, today + timedelta(days=DAYS_AHEAD))
              if i["sport"] in ("run", "swim") and not i["done"] and not i["clash"]]
-    zones = _hr_ranges(conn, now) if any(i["sport"] == "run" for i in items) else {}
+    zones = hr_ranges(conn, now) if any(i["sport"] == "run" for i in items) else {}
     return {"today": today.isoformat(), "items": [
         {"id": i["id"], "day": i["day"], "sport": i["sport"], "title": i["title"], "optional": i["optional"],
          "note": i["note"], "summary": _summary(i),

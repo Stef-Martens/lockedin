@@ -69,6 +69,14 @@ def downsample(streams: dict, max_points: int = MAX_POINTS, fields: tuple[str, .
     return out
 
 
+def gym_sets(conn: Connection, activity_id: int) -> list[dict]:
+    return [dict(r._mapping) for r in conn.execute(text(
+        "select e.name as exercise, s.exercise_order, s.set_index, s.set_type, s.weight_kg, s.reps, s.rpe, "
+        "s.e1rm, s.superset_id, s.notes, s.distance_km, s.duration_s from gym_sets s "
+        "join exercises e on e.id = s.exercise_id where s.workout_id = :i order by s.exercise_order, s.set_index"
+    ), {"i": activity_id})]
+
+
 @router.get("/{activity_id}")
 def get_activity(activity_id: int, conn: Connection = Depends(get_conn)) -> dict:
     row = conn.execute(text(f"{SUMMARY_SQL} where a.id = :i"), {"i": activity_id}).first()
@@ -81,11 +89,7 @@ def get_activity(activity_id: int, conn: Connection = Depends(get_conn)) -> dict
     s = conn.execute(text("select * from activity_streams where activity_id = :i"), {"i": activity_id}).first()
     d["streams"] = downsample(dict(s._mapping)) if s and s.t_offset else None
 
-    d["sets"] = [dict(r._mapping) for r in conn.execute(text(
-        "select e.name as exercise, s.exercise_order, s.set_index, s.set_type, s.weight_kg, s.reps, s.rpe, "
-        "s.e1rm, s.superset_id, s.notes, s.distance_km, s.duration_s from gym_sets s "
-        "join exercises e on e.id = s.exercise_id where s.workout_id = :i order by s.exercise_order, s.set_index"
-    ), {"i": activity_id})] if d["sport"] == "gym" else None
+    d["sets"] = gym_sets(conn, activity_id) if d["sport"] == "gym" else None
 
     for key in ("superseded_by", "hr_merged_from"):
         ref = d[key]

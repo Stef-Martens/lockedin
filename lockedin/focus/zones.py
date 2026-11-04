@@ -16,6 +16,7 @@ POWER_ZONE_STARTS = (0, 56, 76, 91, 106)      # % of FTP where zones 1..5 start
 PLAUSIBLE_MAX_HR = (140, 215)
 MAX_HR_WINDOW_S = 30  # a max HR held 30 s, so one optical spike can't set every zone
 HR_MAX_GAP_S = 10
+ZONE_1_FLOOR = 0.60  # LockedIn's zone 1 starts at 0; for a target to aim at, it starts at 60 % of max HR
 
 
 def _zone(value: float, ref: float, starts: tuple[int, ...]) -> int:
@@ -93,3 +94,13 @@ def max_hr_at(conn: Connection, now: datetime) -> int | None:
     if p.date_of_birth:
         return round(208 - 0.7 * _age(p.date_of_birth, now.astimezone(TZ).date()))  # Tanaka et al. 2001
     return None
+
+
+def hr_ranges(conn: Connection, now: datetime) -> dict[int, tuple[int, int]]:
+    """Zone → bpm range to aim at, or empty when max HR isn't known."""
+    max_hr = max_hr_at(conn, now)
+    if max_hr is None:
+        return {}
+    zones = hr_zone_bounds(max_hr)
+    zones[1] = (round(max_hr * ZONE_1_FLOOR), zones[1][1])
+    return zones
