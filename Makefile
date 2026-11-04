@@ -2,7 +2,7 @@ PY := .venv/bin/python
 
 UV_VERSION := 0.13.6
 
-.PHONY: install dev test lint samples owner db-up lock ios
+.PHONY: install dev test lint samples owner db-up lock ios ios-auto ios-auto-off
 
 install:
 	python3 -m venv .venv
@@ -34,6 +34,12 @@ owner:
 # Build the iPhone app and install it on your iPhone (README section 13); again every 7 days.
 ios:
 	./ios/install.sh
+
+ios-auto:
+	./ios/auto-install.sh
+
+ios-auto-off:
+	./ios/auto-uninstall.sh
 
 # Re-pin uv.lock (what Vercel installs) and requirements.txt after editing pyproject.toml.
 # Keeps current versions where they still fit; `make lock UPGRADE=--upgrade` moves everything to the newest allowed.

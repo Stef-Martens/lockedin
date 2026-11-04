@@ -1,6 +1,7 @@
 #!/bin/bash
 # Builds the LockedIn iPhone app, signs it with your Personal Team and installs it on your iPhone.
-# A free Apple ID's signature runs out after 7 days: run this again (make ios) when the app stops opening.
+# A free Apple ID's signature runs out after 7 days: run this again (make ios), or let make ios-auto do it.
+# LOCKEDIN_NO_LAUNCH=1 installs without opening the app.
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -36,6 +37,16 @@ if [[ -z "$DEVICE" ]]; then
 fi
 echo "Installing on $DEVICE with team $TEAM"
 
+# Xcode reuses a cached profile until it expires, so a reinstall on day 5 would still stop on day 7.
+# Without this app's cached profile it fetches a new one, good for 7 days from now.
+profiles="$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"
+for profile in "$profiles"/*.mobileprovision; do
+  [[ -f "$profile" ]] || continue
+  if grep -q "<string>$TEAM\.$BUNDLE_ID</string>" <<<"$(security cms -D -i "$profile" 2>/dev/null)"; then
+    rm -f "$profile"
+  fi
+done
+
 xcodegen generate
 xcodebuild build \
   -project LockedIn.xcodeproj -scheme LockedIn -configuration Debug \
@@ -44,6 +55,8 @@ xcodebuild build \
   DEVELOPMENT_TEAM="$TEAM"
 
 xcrun devicectl device install app --device "$DEVICE" build/Build/Products/Debug-iphoneos/LockedIn.app
+
+[[ -n "${LOCKEDIN_NO_LAUNCH:-}" ]] && exit 0
 
 if ! launch="$(xcrun devicectl device process launch --device "$DEVICE" --terminate-existing "$BUNDLE_ID" 2>&1)"; then
   echo "$launch" >&2

@@ -355,7 +355,9 @@ A small iPhone app, **LockedIn**, lists your planned runs and swims for today an
 
 ### Every 7 days
 
-A free Apple ID signs apps for 7 days only. When the app stops opening, run `make ios` again with the iPhone nearby. Your address and key stay.
+A free Apple ID signs apps for 7 days only. `make ios` fetches a new signature each time, so it always gives a full 7 days. Your address and key stay.
+
+**Let the Mac do it:** `make ios-auto` (once). Every 3 hours while the Mac is awake, it checks whether the last install is 5 or more days old, and if so reinstalls without opening the app. It needs the iPhone on the same Wi-Fi or on the cable, and maybe unlocked; a failed try is simply repeated 3 hours later. From day 6 a Mac notification tells you it keeps failing. If the app ever says it can't be opened, run `make ios` by hand and trust the certificate again if asked. Log: `~/Library/Logs/lockedin-ios.log`. To stop it: `make ios-auto-off`.
 
 ### Limits of the watch (watchOS 10)
 
