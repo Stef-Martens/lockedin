@@ -89,7 +89,7 @@ One call, no tools. All facts are prepared by the server as JSON and put in the 
 
 **Rules in the prompt:**
 - Use only numbers present in the facts.
-- Say what's missing instead of guessing (no heart rate, no splits).
+- Never guess at what's missing, and mention it only if it changes the verdict (no heart rate, no splits).
 - Plain words, 2 to 4 sentences, no headings or lists, no praise for its own sake. Say plainly when it went badly.
 - Don't give medical advice. On a session after time off, compare with the easy-back note.
 
