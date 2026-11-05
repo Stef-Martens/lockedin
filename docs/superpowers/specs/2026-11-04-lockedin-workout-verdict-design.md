@@ -20,7 +20,7 @@ After a workout, the owner opens the coach and asks "what did you think of my la
 - Chatting from the card. The coach page stays where questions go.
 - The chat coach reading or quoting verdicts.
 - Advice on what to change in the plan. The verdict looks back; one forward-looking remark is fine, changing the agenda isn't.
-- Rewriting a verdict because later data changed the comparison, such as a new max HR or FTP.
+- Rewriting a verdict because later data changed the comparison, such as a new max HR or FTP. (Filling in a workout's watch laps is the one exception, once.)
 
 ## Anti-goals
 
@@ -35,7 +35,7 @@ Placed above the Today block on the Overview page *(my call)*:
 
 - **Header:** "Last workout", the day, sport and title (the agenda item's title, or for example "Run" when nothing was planned), and a link "See how it went". It goes to the session page when an agenda item is ticked by this workout, else to the activity page.
 - **Label:** `On plan`, `Close to plan` or `Off plan`. A workout with no plan gets a neutral `Not planned` instead.
-- **Text:** 2 to 4 sentences. Example, with invented numbers: "Tempo run, 4 × 5′. Three of the four blocks were inside 5:30–5:50; the last one drifted to 5:58. Heart rate stayed in zone 4 until that last block, so the pace was about right."
+- **Text:** 2 to 4 sentences, starting with how it went. Example, with invented numbers: "Tempo run, 4 × 5′. Three of the four blocks were inside 5:30–5:50; the last one drifted to 5:58. Heart rate stayed in zone 4 until that last block, so the pace was about right."
 
 **States:**
 - **No workout, or the latest is more than 14 days old:** no card *(my call: an old verdict on the dashboard is noise)*.
@@ -85,7 +85,7 @@ One call, no tools. All facts are prepared by the server as JSON and put in the 
 - **Recent similar sessions:** the last 3 counted sessions of the same sport before this one, with date and main numbers, so it can say "faster than last week at the same heart rate".
 - **Context:** the `easy_back` note (first two weeks after time off), and the owner's active goals as one line each.
 
-**Per-block running data has a limit.** The app currently splits a run per km, not per planned step. The verdict may only speak about what the facts show: km splits, zones and totals, not a block-by-block result. Matching stream data to the planned steps is left to the builder if it's small and exact; if not, it's left out rather than guessed.
+**Per-block running data comes from the watch's own laps** *(changed 2026-11-05, replacing an earlier approach of placing the plan's steps on the run's data)*. A workout started from a planned run records one lap per step, with its `wkt_step_index`, `intensity` and exact time, distance and heart rate, so nothing is guessed. A run without such laps gets km splits, zones and totals, and the verdict doesn't speak about blocks. See "Watch laps" below.
 
 **Rules in the prompt:**
 - Use only numbers present in the facts.
@@ -102,6 +102,15 @@ One call, no tools. All facts are prepared by the server as JSON and put in the 
 The result should come back as structured data (label and text), using whatever the API documents for that on this model. The builder confirms this against the `claude-api` skill rather than from memory, and it must work together with the client's existing settings (adaptive thinking, fallbacks).
 
 **Client and cost.** It uses the same model client as the coach (`get_llm`, `CoachLLM`), so tests can replace it. Each call is recorded in `coach.usage` with `conversation_id` null, and counts towards `coach_daily_budget_usd` the same way. At current prices ($4 in, $20 out per million tokens on Opus 5.5), expect about 2 to 4 cents per verdict *(this corrects the "a cent or two" said in conversation)*. The builder measures one real call if a key is available.
+
+## Watch laps
+
+Checked against a real file from the owner's watch (2026-11-04, tempo 3 × 8 min): 8 laps, `lap_trigger: time`, `intensity` warmup/active/recovery/cooldown, `wkt_step_index` 0,1,2,1,2,1,2,4, and each planned step exactly its planned length.
+
+- **Stored at import** as `activities.laps` (jsonb, a list; `[]` when the file has none, null when never read).
+- **Blocks:** laps with a step index, in order. They follow the plan when each lap's kind matches the planned step at that position and there are no more laps than steps; only then does a block get its plan's goal, target and `in_target`. Otherwise the blocks are shown without judging them against the plan.
+- **On the session page:** a table of the blocks. On a run with steps, km splits lose their faster/slower labels, because the plan's band belongs to the work blocks only.
+- **Older runs:** the Mac can upload recent files again. A known file whose activity has null laps gets them filled in, and that workout's verdict is deleted so it's written again from the laps.
 
 ## Data
 
