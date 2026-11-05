@@ -239,6 +239,28 @@ def test_metres_in_no_moving_time_give_no_pace():
     assert (row["seconds"], row["metres"], row["pace_s_per_km"], row["in_target"]) == (0, 20, None, None)
 
 
+def stopped_in_step_1(seconds, every):
+    """Three blocks with a stop inside the first, sampled every so many seconds; sampled once, it's an auto-pause."""
+    n = seconds // every
+    s = stream((300, 3.0, 160), (n, 0.0, 100), (300, 3.0, 160), (300, 2.0, 130), (600, 3.0, 160))
+    s.t_offset = s.t_offset[:301] + [300 + every * k for k in range(1, n + 1)] + [t + seconds - n for t in s.t_offset[301 + n:]]
+    return s
+
+
+@pytest.mark.parametrize(("seconds", "every"), [
+    (120, 1), (120, 5), (120, 10), (120, 11), (120, 15), (120, 30), (120, 60), (300, 11), (300, 29), (600, 15),
+    (600, 300),  # a stray sample during an auto-pause falls on the safe side
+])
+def test_stop_with_samples_gets_no_results_however_far_apart_they_are(seconds, every):
+    assert step_results(THREE_BLOCKS, stopped_in_step_1(seconds, every)) is None
+
+
+@pytest.mark.parametrize("seconds", [120, 900])
+def test_sampleless_stop_does_not_shift_steps(seconds):
+    rows = step_results(THREE_BLOCKS, stopped_in_step_1(seconds, seconds))
+    assert [(r["seconds"], r["metres"], r["pace_s_per_km"]) for r in rows] == [(600, 1800, 333), (300, 600, 500), (600, 1800, 333)]
+
+
 def test_auto_pause_without_samples_does_not_shift_steps():
     steps = {"blocks": [{"repeat": 1, "steps": [{"kind": "work", "goal": {"time_s": 600}},
                                                 {"kind": "recovery", "goal": {"time_s": 120}}]}]}

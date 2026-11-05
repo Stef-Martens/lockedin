@@ -25,7 +25,7 @@ MAX_GAP_S = 30  # moving seconds without a distance reading; more and the steps 
 MAX_SPEED = 10  # m/s; metres gained faster than this over moving time were run while the timeline counted a stop
 JUMP_SLACK_M = 30  # GPS drift that a stop or an auto-pause can add on its own
 MAX_STOP_S = 30  # stopped with samples coming in; the watch may count a time step through it, and this much barely moves a block's average
-SAMPLES_EVERY_S = 10  # a longer wait for the next sample means recording stopped (auto-pause), which the watch's clock also does
+SAMPLES_EVERY_S = 10  # a lone still interval longer than this is taken for an auto-pause, which the watch's clock also sits out; it can't be told apart from a stop with no sample in it
 EVER = datetime(2000, 1, 1, tzinfo=UTC)
 
 
@@ -61,9 +61,11 @@ def _in_target(target: dict | None, pace: int | None, avg_hr: int | None, zones:
 
 
 def _stopped_with_samples(t: list[int], moving: list[float], end: float) -> int:
-    """Seconds standing still before `end` while samples kept coming in."""
+    """Seconds standing still before `end` while samples kept coming in. An auto-pause leaves one still interval,
+    from the last sample before it to the first one back; a still interval next to another had a sample in the stop."""
+    still = [False] + [moving[i] == moving[i - 1] for i in range(1, len(moving))] + [False]
     return sum(t[i] - t[i - 1] for i in range(1, len(moving))
-               if moving[i] == moving[i - 1] and moving[i] < end and t[i] - t[i - 1] <= SAMPLES_EVERY_S)
+               if still[i] and moving[i] < end and (t[i] - t[i - 1] <= SAMPLES_EVERY_S or still[i - 1] or still[i + 1]))
 
 
 def step_results(steps: dict, stream, zones: dict[int, tuple[int, int]] | None = None) -> list[dict] | None:
