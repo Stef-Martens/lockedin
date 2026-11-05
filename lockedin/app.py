@@ -5,7 +5,7 @@ from fastapi.responses import JSONResponse
 
 from lockedin.auth import require_owner
 from lockedin.config import Settings, get_settings
-from lockedin.routes import activities, agenda, body, checkins, coach, fit, forecast, hevy, overview, plan, preferences, status, timeoff, trends, watch
+from lockedin.routes import activities, agenda, body, checkins, coach, fit, forecast, hevy, overview, plan, preferences, status, timeoff, trends, verdicts, watch
 
 
 def docs_urls(s: Settings) -> dict:
@@ -36,6 +36,7 @@ app.include_router(trends.router)
 app.include_router(forecast.router)
 app.include_router(checkins.router)
 app.include_router(coach.router)
+app.include_router(verdicts.router)
 app.include_router(preferences.router)
 app.include_router(plan.router)
 app.include_router(agenda.sync_router)
