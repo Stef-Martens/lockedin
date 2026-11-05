@@ -1,11 +1,53 @@
 import { Card, SectionHead, Tile } from "../../components/ui";
 import { formatDuration, formatMin, formatSportPace } from "../../lib/format";
-import { statusLabel, type SessionDetail, type Status } from "../../lib/session";
+import { statusLabel, type BlockRow, type SessionDetail, type Status } from "../../lib/session";
 import { PaceChart, RideChart } from "./charts";
 
 function StatusText({ status }: { status: Status }) {
   const s = statusLabel(status);
   return <span className={`status-${s.tone}`}>{s.text}</span>;
+}
+
+const BLOCK_NAMES = { warmup: "Warm-up", recovery: "Recovery", cooldown: "Cool-down" } as const;
+
+/** A work block's verdict from its own numbers; a zone target can only be on or off, since the row has no bpm range. */
+function blockVerdict(r: BlockRow): { text: string; tone: "good" | "near" } | null {
+  if (r.kind !== "work" || r.in_target == null) return null;
+  if (r.in_target) return statusLabel("on_target");
+  const t = r.planned_target;
+  if (t?.pace_low != null && t.pace_high != null && r.pace_s_per_km != null) {
+    if (r.pace_s_per_km < t.pace_low) return statusLabel("faster") as { text: string; tone: "near" };
+    if (r.pace_s_per_km > t.pace_high) return statusLabel("slower") as { text: string; tone: "near" };
+  }
+  return { text: "Off target", tone: "near" };
+}
+
+/** The watch's laps, one row each. Block numbers count the work rows in order. */
+function BlocksCard({ blocks, i }: { blocks: NonNullable<SessionDetail["actual"]>["blocks"] & object; i: number }) {
+  let n = 0;
+  return (
+    <Card i={i}>
+      <SectionHead title="Blocks" />
+      <div className="table-wrap">
+        <table className="table" aria-label="Blocks">
+          <thead><tr><th>Block</th><th className="num">Time</th><th className="num">Pace</th><th className="num">HR</th><th /></tr></thead>
+          <tbody>{blocks.rows.map((r, k) => {
+            const name = r.kind === "work" ? `Block ${++n}` : BLOCK_NAMES[r.kind];
+            const v = blocks.follows_plan ? blockVerdict(r) : null;
+            const planned = r.planned_goal?.time_s;
+            const cut = r.kind === "work" && planned != null && r.seconds != null && r.seconds < planned * 0.9;
+            return (
+              <tr key={k}><td>{name}</td>
+                <td className="num">{r.seconds != null ? (cut ? `${formatDuration(r.seconds)} of ${formatDuration(planned)}` : formatDuration(r.seconds)) : "–"}</td>
+                <td className="num">{formatSportPace(r.pace_s_per_km, "run")}</td><td className="num">{r.avg_hr ?? "–"}</td>
+                <td>{v ? <span className={`status-${v.tone}`}>{v.text}</span> : null}</td></tr>
+            );
+          })}</tbody>
+        </table>
+      </div>
+      {!blocks.follows_plan && <p className="muted small-print">This run didn't follow the plan's steps.</p>}
+    </Card>
+  );
 }
 
 /** What you did, next to the plan: tiles, the ride or pace chart, and a table per part, split or exercise. */
@@ -76,6 +118,7 @@ export default function ActualSection({ d }: { d: SessionDetail }) {
         {sport === "run" && a.pace && (
           <Card i={3}><SectionHead title="Pace" /><PaceChart a={a} low={t?.pace_low} high={t?.pace_high} /></Card>
         )}
+        {a.blocks && a.blocks.rows.length > 0 && <BlocksCard blocks={a.blocks} i={4} />}
         {a.splits && (
           <Card i={4}>
             <SectionHead title="Splits" />

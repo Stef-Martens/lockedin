@@ -194,6 +194,57 @@ describe("Session page", () => {
     expect(within(chart).getByText("5:50")).toBeTruthy();
   });
 
+  describe("blocks", () => {
+    const row = { seconds: 480, metres: 1450, pace_s_per_km: 331, avg_hr: 164, planned_goal: { time_s: 480 }, repeat: 1 };
+    const rows = [
+      { ...row, kind: "warmup" as const, repeat: null, seconds: 600, pace_s_per_km: 384, avg_hr: 135, planned_goal: { time_s: 600 }, planned_target: null, in_target: null },
+      { ...row, kind: "work" as const, planned_target: { pace_low: 345, pace_high: 360 }, in_target: false },
+      { ...row, kind: "recovery" as const, planned_target: null, in_target: null },
+      { ...row, kind: "work" as const, pace_s_per_km: 352, planned_target: { pace_low: 345, pace_high: 360 }, in_target: true },
+      { ...row, kind: "work" as const, pace_s_per_km: 400, seconds: 72, planned_target: { pace_low: 345, pace_high: 360 }, in_target: false },
+      { ...row, kind: "work" as const, planned_target: { hr_zone: 4 }, in_target: false },
+      { ...row, kind: "cooldown" as const, repeat: null, planned_target: null, in_target: null },
+    ];
+    const run = (blocks: unknown, splits: unknown = null): SessionDetail => ({
+      item: { ...base, sport: "run", title: "Intervals", zwift: null, zwift_status: null, done: true, activity_id: 31, targets: null },
+      plan: { kind: "targets", hr_bpm: null },
+      actual: { ...AFTER.actual!, power: undefined, parts: undefined, pace: undefined, zones: null, splits, blocks } as SessionDetail["actual"] });
+
+    it("lists each lap, judging the work blocks by their own numbers", async () => {
+      open(run({ follows_plan: true, rows }));
+      await screen.findByRole("heading", { name: "Intervals" });
+      const t = within(screen.getByRole("table", { name: "Blocks" }));
+      const r = t.getAllByRole("row").slice(1).map((x) => x.textContent);
+      expect(r[0]).toContain("Warm-up"); expect(r[0]).toContain("10:00"); expect(r[0]).toContain("135");
+      expect(r[1]).toContain("Block 1"); expect(r[1]).toContain("Faster");
+      expect(r[2]).toContain("Recovery"); expect(r[2]).not.toMatch(/target|Faster|Slower/);
+      expect(r[3]).toContain("Block 2"); expect(r[3]).toContain("On target");
+      expect(r[4]).toContain("Block 3"); expect(r[4]).toContain("Slower"); expect(r[4]).toContain("1:12 of 8:00");
+      expect(r[5]).toContain("Block 4"); expect(r[5]).toContain("Off target");
+      expect(r[6]).toContain("Cool-down");
+      expect(t.getByText("Faster").className).toBe("status-near");
+      expect(t.getByText("On target").className).toBe("status-good");
+      expect(screen.queryByText("This run didn't follow the plan's steps.")).toBeNull();
+    });
+
+    it("shows the laps without verdicts when the run didn't follow the plan", async () => {
+      open(run({ follows_plan: false, rows: rows.map((x) => ({ ...x, repeat: null, planned_goal: null, planned_target: null, in_target: null })) }));
+      await screen.findByRole("heading", { name: "Intervals" });
+      const t = within(screen.getByRole("table", { name: "Blocks" }));
+      expect(t.getByText("Block 4")).toBeTruthy();
+      expect(t.queryByText(/target|Faster|Slower/i)).toBeNull();
+      expect(screen.getByText("This run didn't follow the plan's steps.")).toBeTruthy();
+    });
+
+    it("has no card without blocks, and a split without status has no label", async () => {
+      open(run(null, [{ km: 1, pace: 330, avg_hr: 150 }]));
+      await screen.findByRole("heading", { name: "Intervals" });
+      expect(screen.queryByRole("table", { name: "Blocks" })).toBeNull();
+      const cells = within(screen.getByRole("table", { name: "Splits" })).getAllByRole("row")[1].querySelectorAll("td");
+      expect(cells[3].textContent).toBe("");
+    });
+  });
+
   it("doesn't offer to plan a gym day that's already done", async () => {
     open({ ...GYM, plan: { kind: "gym", routine: "Push", items: [{ id: "x", exercise: "Face Pull", equipment: "cable", kind: "add",
       muscle: "rear_delt", sets: 3, reps: "8–12", weight_kg: 15, dumbbell: null, change: null, estimate: false, last: [],
