@@ -26,17 +26,35 @@ const GOALS = [
 ];
 
 let failGoals = false;
+let verdict: (() => Promise<unknown>) | null = null;
 let overview: typeof OVERVIEW | Record<string, unknown> = OVERVIEW;
 let agenda: (path: string) => Promise<unknown> = () => Promise.resolve(AGENDA);
 vi.mock("../lib/api", () => ({
-  apiFetch: (path: string) => path.startsWith("/api/goals") && failGoals ? Promise.reject(new Error("down"))
+  apiFetch: (path: string) => path.startsWith("/api/verdicts") ? (verdict ? verdict() : Promise.reject(new Error("none")))
+    : path.startsWith("/api/goals") && failGoals ? Promise.reject(new Error("down"))
     : path.startsWith("/api/agenda") ? agenda(path)
     : Promise.resolve(path.startsWith("/api/overview") ? overview : GOALS),
 }));
 vi.mock("../components/WeeklyVolumeChart", () => ({ default: () => null }));
-afterEach(() => { cleanup(); agenda = () => Promise.resolve(AGENDA); });
+afterEach(() => { cleanup(); verdict = null; agenda = () => Promise.resolve(AGENDA); });
 
 describe("Overview", () => {
+  it("puts the coach's verdict above Today, and shows the page while it is still loading", async () => {
+    verdict = () => Promise.resolve({ activity: { id: 5, sport: "bike", day: "2026-10-29", title: "Sweet Spot 3x10", item_id: 1 },
+      verdict: { status: "done", label: "on_plan", text: "Right on the targets." } });
+    render(<MemoryRouter><Overview /></MemoryRouter>);
+    const text = await screen.findByText("Right on the targets.");
+    const today = await screen.findByRole("heading", { name: "Today" });
+    expect(text.compareDocumentPosition(today) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("does not wait for the verdict", async () => {
+    verdict = () => new Promise(() => undefined);
+    render(<MemoryRouter><Overview /></MemoryRouter>);
+    expect(await screen.findByText("1 of 2 done")).toBeTruthy();
+    expect(screen.queryByText("Last workout")).toBeNull();
+  });
+
   it("shows today's to-dos with what's done, goals with progress, and goal tags on tips", async () => {
     render(<MemoryRouter><Overview /></MemoryRouter>);
     expect(await screen.findByText("1 of 2 done")).toBeTruthy(); // the rest/other note can't be ticked, so it doesn't count

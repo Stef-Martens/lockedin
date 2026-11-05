@@ -651,3 +651,4 @@ fieldset.plain { border: 0; padding: 0; margin: 0; min-width: 0; }
 .plan-tag.off { background: transparent; border: 1px dashed var(--ink-muted); color: var(--ink-3); }
 .plan-item.skipped .plan-change { text-decoration: none; }
 @media (max-width: 899px) { .timeoff-part select, .timeoff-part input { font-size: 16px; } }
+.pill.close { background: transparent; border: 1px solid #4a3a17; color: var(--sport-gym); }

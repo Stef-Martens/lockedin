@@ -1,5 +1,6 @@
 import { Link, useParams } from "react-router-dom";
 import SeriesChart, { type Point } from "../components/SeriesChart";
+import VerdictCard from "../components/VerdictCard";
 import { Card, PageHeader, Tile } from "../components/ui";
 import { activityTitle } from "../lib/activity";
 import { formatDateLong, formatDistance, formatDuration, formatMin, formatPace, formatSwimPace, SPORT_LABEL } from "../lib/format";
@@ -119,6 +120,8 @@ export default function ActivityDetail() {
       {a.duplicates.length > 0 && !a.hr_merged_from_summary && (
         <div className="note rise" style={stagger(0)}>Also recorded by your <Link to={`/activities/${a.duplicates[0].id}`}>Apple Watch</Link>; only this one counts.</div>
       )}
+
+      <VerdictCard activityId={a.id} />
 
       <div className="tiles">
         {shown.map(([label, value], n) => <Tile key={label + n} label={label} value={value} i={n} />)}

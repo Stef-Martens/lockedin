@@ -33,7 +33,8 @@ const GYM: SessionDetail = {
 };
 
 let reply: SessionDetail = BEFORE;
-const apiFetch = vi.fn((path: string, _init?: RequestInit) => Promise.resolve(path.endsWith("/detail") ? reply : {}));
+const apiFetch = vi.fn((path: string, _init?: RequestInit) => Promise.resolve(path.endsWith("/detail") ? reply
+  : path.startsWith("/api/verdicts/") ? { activity: null, verdict: { status: "done", label: "on_plan", text: "Right on the targets." } } : {}));
 vi.mock("../lib/api", () => ({
   apiFetch: (path: string, init?: RequestInit) => apiFetch(path, init),
   ApiError: class ApiError extends Error { status = 0; detail = ""; },
@@ -45,6 +46,19 @@ const open = (d: SessionDetail) => {
 };
 
 describe("Session page", () => {
+  it("shows the coach's verdict on a done session, without a header", async () => {
+    open(AFTER);
+    expect(await screen.findByText("Right on the targets.")).toBeTruthy();
+    expect(apiFetch).toHaveBeenCalledWith("/api/verdicts/29", undefined);
+    expect(screen.queryByText("Last workout")).toBeNull();
+  });
+
+  it("asks for no verdict before the workout is done", async () => {
+    open(BEFORE);
+    await screen.findByRole("heading", { name: "Sweet Spot 3x10" });
+    expect(apiFetch.mock.calls.some(([p]) => p.startsWith("/api/verdicts"))).toBe(false);
+  });
+
   it("shows the plan's parts before the ride", async () => {
     open(BEFORE);
     await screen.findByRole("heading", { name: "Sweet Spot 3x10" });

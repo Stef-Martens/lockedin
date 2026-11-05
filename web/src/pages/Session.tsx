@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { Card } from "../components/ui";
+import VerdictCard from "../components/VerdictCard";
 import { SPORT_NAME } from "../lib/agenda";
 import { apiFetch } from "../lib/api";
 import { longDay } from "../lib/format";
@@ -52,6 +53,7 @@ export default function Session() {
         </div>
       </Card>
       {editing && <Edit item={item} onCancel={() => setEditing(false)} onSaved={() => { setEditing(false); reload(); }} />}
+      {item.done && item.activity_id != null && <VerdictCard activityId={item.activity_id} />}
       {actual && <ActualSection d={d} />}
       {(!actual || plan.kind === "note") && <PlanSection plan={plan} item={item} />}
       {actual && plan.kind !== "note" && (

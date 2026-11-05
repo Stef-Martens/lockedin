@@ -184,6 +184,12 @@ The **Overview** page answers two questions: am I improving, and what should I f
 - **Gym:** a flat 40 per hour, as a rough estimate.
 - **Fitness** is your 42-day average load and **fatigue** your 7-day average. **Form** is fitness minus fatigue: well below zero means you're carrying fatigue, around zero is steady training, above zero means fresh.
 
+**The coach's verdict on your last workout** (top of the Overview, and on the session and activity pages): a label (On plan, Close to plan, Off plan, or Not planned when nothing was on the agenda) and two to four plain sentences on how it went against the plan.
+- **When it's written:** the first time you open the page after a workout, for workouts up to 14 days old. The card says "The coach is looking at it…" and fills in within a few seconds. It is saved, so later opens cost nothing.
+- **What it costs:** about 2 to 4 cents per verdict, counted in the coach's daily budget. When the budget is used up, the card says so and tries again tomorrow. Without an API key there is no card.
+- **If it fails:** the card says so and tries again next time you open the page, at most once every 15 minutes per workout.
+- **Plan added right after a verdict:** if you add the plan for a workout just after its verdict was written, the verdict can take up to 6 minutes to be rewritten.
+
 **Deploying an update with a new migration:** run `supabase db push` **before** `git push`, so the database is ready when the new code goes live.
 
 ## 7. Workout planner

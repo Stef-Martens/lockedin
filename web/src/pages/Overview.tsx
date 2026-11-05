@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import FocusCard from "../components/FocusCard";
+import VerdictCard from "../components/VerdictCard";
 import { Card, PageHeader, SectionHead, Segmented } from "../components/ui";
 import WeeklyVolumeChart from "../components/WeeklyVolumeChart";
 import WinsStrip from "../components/WinsStrip";
@@ -182,6 +183,7 @@ export default function Overview() {
         </Card>
       )}
 
+      <VerdictCard source="latest" />
       {today && <TodayBlock items={today} upcoming={upcoming} />}
       <GoalsCard goals={goals} goalsFailed={goalsFailed} />
 
