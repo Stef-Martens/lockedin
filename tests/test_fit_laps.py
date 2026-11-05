@@ -212,3 +212,28 @@ def test_one_odd_lap_does_not_make_the_file_unreadable():
     start = datetime(2026, 11, 1, 8, tzinfo=UTC)
     lap = _lap({"start_time": "not a time", "total_timer_time": 480, "wkt_step_index": 1}, start)
     assert lap["start_s"] is None and lap["timer_s"] == 480 and lap["step_index"] == 1
+
+
+@pytest.mark.parametrize("values, nulled", [
+    ({"wkt_step_index": "mask"}, "step_index"),
+    ({"avg_heart_rate": "x"}, "avg_hr"),
+    ({"avg_heart_rate": (150, 151)}, "avg_hr"),
+    ({"total_timer_time": b"\x01"}, "timer_s"),
+    ({"total_elapsed_time": "9"}, "elapsed_s"),
+    ({"total_distance": True}, "distance_m"),
+    ({"avg_speed": "fast"}, "avg_speed"),
+    ({"intensity": 3}, "intensity"),
+    ({"lap_trigger": b"x"}, "trigger"),
+])
+def test_an_odd_lap_value_is_nulled_and_never_fails(values, nulled):
+    import json
+    from datetime import UTC, datetime
+
+    from lockedin.agenda.blocks import blocks
+    from lockedin.fit.parse import _lap
+
+    start = datetime(2026, 11, 1, 8, tzinfo=UTC)
+    lap = _lap({"start_time": start, "total_timer_time": 480, "wkt_step_index": 1, **values}, start)
+    assert lap[nulled] is None
+    json.dumps(lap)
+    blocks([lap], {"blocks": [{"repeat": 1, "steps": [{"kind": "work", "goal": {"time_s": 480}}]}]}, {})

@@ -1,6 +1,7 @@
 """Decode a FIT activity file (Zwift or HealthFit) into a summary plus per-second streams."""
 
 import io
+import math
 from bisect import bisect_right
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -78,19 +79,27 @@ def _lap_start_s(start, start_at: datetime) -> float | None:
     return round((_aware(start) - start_at).total_seconds(), 1)
 
 
+def _num(v) -> float | int | None:
+    """A real number, else None: a lap with an odd value (a string, bytes, a tuple) must never fail the file."""
+    return v if isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) else None
+
+
+def _str(v) -> str | None:
+    return v if isinstance(v, str) else None
+
+
 def _lap(values: dict, start_at: datetime) -> dict:
     speed = values.get("enhanced_avg_speed", values.get("avg_speed"))
-    intensity, trigger = values.get("intensity"), values.get("lap_trigger")
     return {
         "start_s": _lap_start_s(values.get("start_time"), start_at),
-        "timer_s": values.get("total_timer_time"),
-        "elapsed_s": values.get("total_elapsed_time"),
-        "distance_m": values.get("total_distance"),
-        "avg_hr": _hr(values.get("avg_heart_rate")),
-        "avg_speed": speed,
-        "intensity": None if intensity is None else str(intensity),
-        "trigger": None if trigger is None else str(trigger),
-        "step_index": _int(values.get("wkt_step_index")),
+        "timer_s": _num(values.get("total_timer_time")),
+        "elapsed_s": _num(values.get("total_elapsed_time")),
+        "distance_m": _num(values.get("total_distance")),
+        "avg_hr": _hr(_num(values.get("avg_heart_rate"))),
+        "avg_speed": _num(speed),
+        "intensity": _str(values.get("intensity")),
+        "trigger": _str(values.get("lap_trigger")),
+        "step_index": _int(_num(values.get("wkt_step_index"))),
     }
 
 
