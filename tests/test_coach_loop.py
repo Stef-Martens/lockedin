@@ -23,8 +23,9 @@ class FakeLLM:
         self.turns = list(turns)
         self.calls = []
 
-    def stream(self, *, system, messages, tools, tool_choice=None):
-        self.calls.append({"system": system, "messages": copy.deepcopy(messages), "tools": tools})
+    def stream(self, *, system, messages, tools, tool_choice=None, output_format=None):
+        self.calls.append({"system": system, "messages": copy.deepcopy(messages), "tools": tools,
+                           "output_format": output_format})
         turn = self.turns.pop(0)
         if isinstance(turn, Exception):
             raise turn
@@ -237,6 +238,9 @@ def test_anthropic_adapter_request_shape(monkeypatch):
     assert sent["betas"] == ["server-side-fallback-2026-07-01", "thinking-binding-controls-2026-08-01"]
     assert sent["cache_control"] == {"type": "ephemeral"}
     assert sent["output_config"] == {"effort": "medium"} and sent["system"] == [{"type": "text", "text": "SYS"}]
+    fmt = {"type": "json_schema", "schema": {"type": "object"}}
+    list(llm.stream(system="SYS", messages=[{"role": "user", "content": "x"}], tools=[], output_format=fmt))
+    assert sent["output_config"] == {"effort": "medium", "format": fmt}
     # Old chats outlive deploys that change the system prompt or tools; their thinking blocks are then bound to
     # a different conversation. Dropping them beats a 400 ("The coach request was rejected").
     assert sent["thinking"] == {"type": "adaptive", "block_binding": {"prefix_mismatch_behavior": "drop_block"}}

@@ -27,7 +27,7 @@ class CoachUnavailable(Exception):
 
 class CoachLLM(Protocol):
     def stream(self, *, system: str, messages: list[dict], tools: list[dict],
-               tool_choice: dict | None = None) -> Iterator[dict | Final]:
+               tool_choice: dict | None = None, output_format: dict | None = None) -> Iterator[dict | Final]:
         """Yields {"type": "text", "text": ...} deltas, then one Final."""
 
 
@@ -83,9 +83,10 @@ class AnthropicLLM:
         self.model = model
 
     def stream(self, *, system: str, messages: list[dict], tools: list[dict],
-               tool_choice: dict | None = None) -> Iterator[dict | Final]:
+               tool_choice: dict | None = None, output_format: dict | None = None) -> Iterator[dict | Final]:
         a = self._anthropic
         extra = {"tool_choice": tool_choice} if tool_choice else {}
+        output_config = {"effort": "medium", **({"format": output_format} if output_format else {})}
         try:
             with self.client.beta.messages.stream(
                 model=self.model,
@@ -96,7 +97,7 @@ class AnthropicLLM:
                 # A thinking block is bound to the system prompt and tools it was made with; after a deploy that
                 # changes either, an old chat's blocks no longer match. Drop them rather than fail the request.
                 thinking={"type": "adaptive", "block_binding": {"prefix_mismatch_behavior": "drop_block"}},
-                output_config={"effort": "medium"},
+                output_config=output_config,
                 cache_control={"type": "ephemeral"},
                 betas=["server-side-fallback-2026-07-01", "thinking-binding-controls-2026-08-01"],
                 fallbacks="default",
