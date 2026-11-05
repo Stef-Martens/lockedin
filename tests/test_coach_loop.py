@@ -241,6 +241,9 @@ def test_anthropic_adapter_request_shape(monkeypatch):
     fmt = {"type": "json_schema", "schema": {"type": "object"}}
     list(llm.stream(system="SYS", messages=[{"role": "user", "content": "x"}], tools=[], output_format=fmt))
     assert sent["output_config"] == {"effort": "medium", "format": fmt}
+    assert "tools" not in sent  # an empty list is left out of the request
+    list(llm.stream(system="SYS", messages=[{"role": "user", "content": "x"}], tools=[{"name": "t"}]))
+    assert sent["tools"] == [{"name": "t"}]
     # Old chats outlive deploys that change the system prompt or tools; their thinking blocks are then bound to
     # a different conversation. Dropping them beats a 400 ("The coach request was rejected").
     assert sent["thinking"] == {"type": "adaptive", "block_binding": {"prefix_mismatch_behavior": "drop_block"}}

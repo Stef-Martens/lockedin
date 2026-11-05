@@ -13,6 +13,7 @@ from lockedin.coach.llm import Final
 from lockedin.config import get_settings
 from lockedin.routes import coach, verdicts
 from lockedin.routes.overview import get_now
+from lockedin.verdict import store
 
 NOW = datetime(2026, 11, 4, 12, 0, tzinfo=UTC)
 START = datetime(2026, 11, 3, 17, 0, tzinfo=UTC)
@@ -40,7 +41,7 @@ class Fake(FakeLLM):
 @pytest.fixture
 def fake(client, clean_db):
     llm = Fake([])
-    app.dependency_overrides[verdicts.get_verdict_llm] = lambda: llm
+    app.dependency_overrides[verdicts.get_verdict_llm] = lambda: lambda: llm
     app.dependency_overrides[coach.get_coach_engine] = lambda: clean_db
     app.dependency_overrides[get_now] = lambda: NOW
     return llm
@@ -72,7 +73,7 @@ def test_writes_once_then_serves_saved(client, fake, run, clean_db):
     first = get(client).json()
     assert first["verdict"] == {"status": "done", "label": "unplanned", "text": "Steady run."}
     assert first["activity"] == {"id": run, "sport": "run", "day": "2026-11-03", "start_at": "2026-11-03T17:00:00Z",
-                                 "title": "Run", "item_id": None}
+                                 "title": None, "item_id": None}
     assert get(client).json() == first
     assert get(client, str(run)).json() == first
     assert len(fake.calls) == 1
@@ -269,3 +270,38 @@ def test_no_store(client, fake, run):
     fake.turns = [good()]
     assert get(client).headers["cache-control"] == "no-store"
     assert get(client, str(run)).headers["cache-control"] == "no-store"
+
+
+def test_real_dependency_builds_no_client_until_asked(monkeypatch):
+    built = []
+    monkeypatch.setattr(verdicts, "AnthropicLLM", lambda key, model: built.append((key, model)) or "llm")
+    make = verdicts.get_verdict_llm(replace(get_settings(), anthropic_api_key="sk-x", anthropic_model="m"))
+    assert built == []
+    assert make() == "llm" and built == [("sk-x", "m")]
+
+
+def test_saved_verdict_and_waiting_do_not_build_a_client(client, fake, run, clean_db):
+    fake.turns = [good()]
+    made = []
+    app.dependency_overrides[verdicts.get_verdict_llm] = lambda: lambda: made.append(1) or fake
+    assert get(client).json()["verdict"]["status"] == "done"
+    assert made == [1]
+    assert get(client).json()["verdict"]["status"] == "done"
+    assert made == [1]  # served from the saved row
+
+
+def test_a_claim_held_elsewhere_builds_no_client(client, fake, run, clean_db):
+    with clean_db.begin() as c:
+        store.claim(c, run, None, NOW, rewrite=False)
+    made = []
+    app.dependency_overrides[verdicts.get_verdict_llm] = lambda: lambda: made.append(1) or fake
+    assert get(client).json()["verdict"] == {"status": "writing"}
+    assert made == []
+
+
+def test_an_unplanned_ride_has_no_title_to_repeat(client, fake, clean_db):
+    with clean_db.begin() as c:
+        add_session(c, "bike", START, 3600, distance_m=30000, avg_hr=140)
+    fake.turns = [good()]
+    a = get(client).json()["activity"]
+    assert a["sport"] == "bike" and a["title"] is None

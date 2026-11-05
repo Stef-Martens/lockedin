@@ -14,7 +14,13 @@ label and a few sentences. You get the facts as JSON: the workout, the plan it w
 comparison the app already computed, recent similar sessions, and the owner's goals.
 
 Rules:
-- Use only numbers present in the facts. Never work out new ones or invent any.
+- Use only numbers present in the facts. Never invent any, and don't work out new ones, other than converting units to read them.
+- Units in the facts: paces are seconds per km (swims: seconds per 100 m: swim_pace_s_per_100m), as in pace, \
+pace_s_per_km, avg_pace_s_per_km, pace_low and pace_high. Distances are metres (distance_m, metres, goal \
+distance_m), except a gym row's distance_km, which is kilometres, and the km in a split, which is its number. \
+Durations and zone values are seconds (duration_s, moving_s, seconds, time_s, start_s, end_s, zones). \
+Converting these for reading is expected (5:38/km, 8 km, 22 minutes); show them that way, never raw seconds or \
+metres. Working out anything else stays forbidden.
 - Say what's missing instead of guessing (no heart rate, no splits, no recent sessions).
 - Plain words, 2 to 4 sentences, no headings, no lists, no praise for its own sake. Say plainly when it went badly.
 - Compare with recent sessions only when they are in the facts ("faster than last week at the same heart rate").
@@ -27,6 +33,8 @@ plan's), don't describe the rows as blocks they ran: say the run doesn't appear 
 use the km splits and zones.
 - When step_results is null, speak about km splits, zones and totals only; never about individual blocks.
 - On a stepped run, the km splits include the warm-up and the recovery, so a slower km isn't by itself a miss.
+- When plan is null, judge the workout itself and don't talk about being on or off plan (the label you must \
+still give is replaced by the app).
 - When rest_day is true, the owner's plan for that day was to rest; say so if it matters.
 
 Labels, one of:
@@ -59,6 +67,22 @@ class Written:
     usage: list[dict]
 
 
+def _parse(content: list[dict]) -> dict:
+    """The JSON in the text blocks. After a mid-stream fallback the answer is whatever follows the last
+    `fallback` block; the text before it is the abandoned attempt. If that doesn't parse, try all the text joined."""
+    last = max((i for i, b in enumerate(content) if b.get("type") == "fallback"), default=-1)
+
+    def joined(blocks: list[dict]) -> str:
+        return "".join(b.get("text", "") for b in blocks if b.get("type") == "text")
+
+    try:
+        return json.loads(joined(content[last + 1:]))
+    except ValueError:
+        if last < 0:
+            raise
+        return json.loads(joined(content))
+
+
 def write(llm: CoachLLM, facts: dict, planned: bool) -> Written:
     """`planned` is whether an agenda item is ticked; without one the label is always `unplanned`."""
     message = {"role": "user", "content": "The facts about the workout:\n" + json.dumps(facts, ensure_ascii=False)}
@@ -72,9 +96,8 @@ def write(llm: CoachLLM, facts: dict, planned: bool) -> Written:
         raise VerdictFailed(str(e)) from e
     if final is None or final.stop_reason == "refusal":
         raise VerdictFailed("The model gave no verdict.", final.usage if final else [])
-    raw = "".join(b.get("text", "") for b in final.content if b.get("type") == "text")
     try:
-        data = json.loads(raw)
+        data = _parse(final.content)
         label, text = data["label"], data["text"].strip()
     except (ValueError, KeyError, TypeError, AttributeError):
         raise VerdictFailed("The verdict wasn't in the expected shape.", final.usage) from None

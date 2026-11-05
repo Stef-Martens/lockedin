@@ -86,6 +86,7 @@ class AnthropicLLM:
                tool_choice: dict | None = None, output_format: dict | None = None) -> Iterator[dict | Final]:
         a = self._anthropic
         extra = {"tool_choice": tool_choice} if tool_choice else {}
+        tools_arg = {"tools": tools} if tools else {}  # an empty list isn't sent; the API may not accept it
         output_config = {"effort": "medium", **({"format": output_format} if output_format else {})}
         try:
             with self.client.beta.messages.stream(
@@ -93,7 +94,7 @@ class AnthropicLLM:
                 max_tokens=MAX_TOKENS,
                 system=[{"type": "text", "text": system}],
                 messages=messages,
-                tools=tools,
+                **tools_arg,
                 # A thinking block is bound to the system prompt and tools it was made with; after a deploy that
                 # changes either, an old chat's blocks no longer match. Drop them rather than fail the request.
                 thinking={"type": "adaptive", "block_binding": {"prefix_mismatch_behavior": "drop_block"}},
