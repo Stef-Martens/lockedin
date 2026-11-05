@@ -93,6 +93,7 @@ def test_prompt_gives_the_units_and_allows_converting_them():
     assert "distance_km" in SYSTEM  # gym rows are in km, not metres
     assert "Never work out new ones" not in SYSTEM
     assert "plan is null" in SYSTEM
+    assert "on a swim, pace_low and pace_high are per 100 m" in SYSTEM
 
 
 def test_text_after_the_last_fallback_is_parsed_first():

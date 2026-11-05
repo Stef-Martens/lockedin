@@ -16,7 +16,7 @@ comparison the app already computed, recent similar sessions, and the owner's go
 Rules:
 - Use only numbers present in the facts. Never invent any, and don't work out new ones, other than converting units to read them.
 - Units in the facts: paces are seconds per km (swims: seconds per 100 m: swim_pace_s_per_100m), as in pace, \
-pace_s_per_km, avg_pace_s_per_km, pace_low and pace_high. Distances are metres (distance_m, metres, goal \
+pace_s_per_km, avg_pace_s_per_km, pace_low and pace_high; on a swim, pace_low and pace_high are per 100 m too. Distances are metres (distance_m, metres, goal \
 distance_m), except a gym row's distance_km, which is kilometres, and the km in a split, which is its number. \
 Durations and zone values are seconds (duration_s, moving_s, seconds, time_s, start_s, end_s, zones). \
 Converting these for reading is expected (5:38/km, 8 km, 22 minutes); show them that way, never raw seconds or \
