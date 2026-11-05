@@ -114,9 +114,9 @@ The sync remembers what it already uploaded in `~/Library/Application Support/lo
 ```bash
 python3 sync/fit_sync.py --refresh-days 30
 ```
-The server fills in the laps of files it already has, and drops the saved verdict of a workout that has step laps, so the coach rewrites it with the exact result per block. The log line then ends with `sent again N`. A normal run is unchanged.
+The server fills in the laps of files it already has (also of a re-export with other bytes). For a workout from the last 14 days that has step laps it also drops the saved verdict, so the coach rewrites it with the exact result per block the next time it's opened, at the normal cost per verdict; an older workout keeps its verdict, since no new one is written that old. The log line then ends with `sent again N`. A normal run is unchanged.
 
-On the session page, a run done from a watch workout shows a **Blocks** card above the splits: each lap (warm-up, Block 1, 2, 3, recovery, cool-down) with its time, pace and heart rate, and for work blocks whether it was on target, faster or slower. `python3 sync/fit_sync.py --refresh-days 30` is a one-time step for runs imported before laps were kept: it reads their laps again and rewrites those workouts' verdicts, at the normal cost per verdict, the next time they're opened.
+On the session page, a run done from a watch workout shows a **Blocks** card above the splits: each lap (warm-up, Block 1, 2, 3, recovery, cool-down) with its time, pace and heart rate, and for work blocks whether it was on target, faster or slower.
 
 ## 4. Apple Watch workouts via HealthFit (iPhone)
 

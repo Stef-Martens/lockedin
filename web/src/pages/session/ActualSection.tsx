@@ -22,8 +22,10 @@ function blockVerdict(r: BlockRow): ReturnType<typeof statusLabel> | null {
   return { text: "Off target", tone: "near" };
 }
 
+const km = (m: number) => `${+(m / 1000).toFixed(2)} km`;
+
 /** The watch's laps, one row each. Block numbers count the work rows in order. */
-function BlocksCard({ blocks, i }: { blocks: NonNullable<SessionDetail["actual"]>["blocks"] & object; i: number }) {
+function BlocksCard({ blocks, hasSteps, i }: { blocks: NonNullable<SessionDetail["actual"]>["blocks"] & object; hasSteps: boolean; i: number }) {
   let n = 0;
   return (
     <Card i={i}>
@@ -36,16 +38,18 @@ function BlocksCard({ blocks, i }: { blocks: NonNullable<SessionDetail["actual"]
             const v = blocks.follows_plan ? blockVerdict(r) : null;
             const planned = r.planned_goal?.time_s;
             const cut = r.kind === "work" && planned != null && r.seconds != null && r.seconds < planned * 0.9;
+            const far = r.planned_goal?.distance_m;
+            const cutFar = r.kind === "work" && far != null && r.metres != null && r.metres < far * 0.9;
             return (
               <tr key={k}><td>{name}</td>
-                <td className="num">{r.seconds != null ? (cut ? `${formatDuration(r.seconds)} of ${formatDuration(planned)}` : formatDuration(r.seconds)) : "–"}</td>
+                <td className="num">{r.seconds != null ? (cut ? `${formatDuration(r.seconds)} of ${formatDuration(planned)}` : formatDuration(r.seconds)) : "–"}{cutFar && r.metres != null && far != null && <span className="muted"> · {km(r.metres)} of {km(far)}</span>}</td>
                 <td className="num">{formatSportPace(r.pace_s_per_km, "run")}</td><td className="num">{r.avg_hr ?? "–"}</td>
                 <td>{v ? <span className={`status-${v.tone}`}>{v.text}</span> : null}</td></tr>
             );
           })}</tbody>
         </table>
       </div>
-      {!blocks.follows_plan && <p className="muted small-print">This run didn't follow the plan's steps.</p>}
+      {!blocks.follows_plan && hasSteps && <p className="muted small-print">This run didn't follow the plan's steps.</p>}
     </Card>
   );
 }
@@ -118,7 +122,7 @@ export default function ActualSection({ d }: { d: SessionDetail }) {
         {sport === "run" && a.pace && (
           <Card i={3}><SectionHead title="Pace" /><PaceChart a={a} low={t?.pace_low} high={t?.pace_high} /></Card>
         )}
-        {a.blocks && a.blocks.rows.length > 0 && <BlocksCard blocks={a.blocks} i={4} />}
+        {a.blocks && a.blocks.rows.length > 0 && <BlocksCard blocks={a.blocks} hasSteps={!!item.targets?.steps} i={4} />}
         {a.splits && (
           <Card i={4}>
             <SectionHead title="Splits" />

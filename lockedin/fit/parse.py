@@ -72,12 +72,17 @@ def _hr(v) -> int | None:
     return v if v else None
 
 
+def _lap_start_s(start, start_at: datetime) -> float | None:
+    if not isinstance(start, datetime):  # one odd lap must not make the whole file unreadable
+        return None
+    return round((_aware(start) - start_at).total_seconds(), 1)
+
+
 def _lap(values: dict, start_at: datetime) -> dict:
-    start = values.get("start_time")
     speed = values.get("enhanced_avg_speed", values.get("avg_speed"))
     intensity, trigger = values.get("intensity"), values.get("lap_trigger")
     return {
-        "start_s": round((_aware(start) - start_at).total_seconds(), 1) if start else None,
+        "start_s": _lap_start_s(values.get("start_time"), start_at),
         "timer_s": values.get("total_timer_time"),
         "elapsed_s": values.get("total_elapsed_time"),
         "distance_m": values.get("total_distance"),

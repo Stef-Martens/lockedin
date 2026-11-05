@@ -67,6 +67,7 @@ class SyncReport:
     duplicates: int = 0
     refreshed: int = 0  # HealthFit files uploaded again by --refresh-days
     pending: int = 0
+    refresh_waiting: list[str] = field(default_factory=list)  # refresh files still in iCloud, for the next pass
     errors: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     workouts_written: int = 0
@@ -208,7 +209,8 @@ def _unchanged(entry, st: os.stat_result) -> bool:
     return entry is not None and entry[:2] == [st.st_size, st.st_mtime_ns]
 
 
-def sync_once(cfg: dict, now: float, http: Http = urllib_http, refresh_days: int = 0) -> SyncReport:
+def sync_once(cfg: dict, now: float, http: Http = urllib_http, refresh_days: int = 0,
+              refresh_again: frozenset[str] = frozenset()) -> SyncReport:
     report = SyncReport()
     api, token = cfg.get("LOCKEDIN_API", "").rstrip("/"), cfg.get("SYNC_TOKEN", "")
     if not api or not token:
@@ -218,7 +220,7 @@ def sync_once(cfg: dict, now: float, http: Http = urllib_http, refresh_days: int
     where = state_file()
     state = _load_state(where)
     try:
-        _upload_new(cfg, api, token, now, http, report, state, refresh_days)
+        _upload_new(cfg, api, token, now, http, report, state, refresh_days, refresh_again)
     finally:
         try:
             _save_state(where, state)
@@ -228,7 +230,7 @@ def sync_once(cfg: dict, now: float, http: Http = urllib_http, refresh_days: int
 
 
 def _upload_new(cfg: dict, api: str, token: str, now: float, http: Http, report: SyncReport, state: dict,
-                refresh_days: int = 0) -> None:
+                refresh_days: int = 0, refresh_again: frozenset[str] = frozenset()) -> None:
     record, failed = state["files"], state["failed"]
     pending: list = []
     files, report.warnings = candidate_files(folders_from(cfg), now, pending=pending)
@@ -247,7 +249,7 @@ def _upload_new(cfg: dict, api: str, token: str, now: float, http: Http, report:
     for p, label in files:
         try:
             st, entry = p.stat(), record.get(str(p))
-            if refresh_days > 0 and label == "healthfit" and st.st_mtime >= cutoff:
+            if str(p) in refresh_again or (refresh_days > 0 and label == "healthfit" and st.st_mtime >= cutoff):
                 refresh.append((p, label))  # sent again below, whatever the state says
                 continue
             if _unchanged(entry, st) and entry[3]:  # on the server already: not read, not fetched from iCloud
@@ -298,11 +300,13 @@ def _upload_new(cfg: dict, api: str, token: str, now: float, http: Http, report:
         for path, label in refresh:
             try:
                 data = path.read_bytes()
+                st = path.stat()
             except OSError as e:
                 unreadable_here(path, e)
+                if e.errno == errno.EDEADLK:
+                    report.refresh_waiting.append(str(path))  # asked iCloud for it; a later pass sends it
                 continue
             digest = hashlib.sha256(data).hexdigest()
-            st = path.stat()
             record[str(path)] = [st.st_size, st.st_mtime_ns, digest, False]
             if not send(path, label, digest, data, refreshing=True):
                 return
@@ -556,11 +560,12 @@ def sync_zwift_ftp(cfg: dict, http: Http = urllib_http) -> list[str]:
 def run(cfg: dict, now: Callable[[], float] = time.time, sleep: Callable[[float], None] = time.sleep,
         http: Http = urllib_http, refresh_days: int = 0) -> list[SyncReport]:
     """Sync, then keep waiting a bit while files are still being written (launchd fires on the first write).
-    Only the first pass sends the files of `refresh_days` again."""
+    Only the first pass sends the files of `refresh_days` again; later passes only retry the ones that were
+    still downloading from iCloud."""
     reports = [sync_once(cfg, now(), http=http, refresh_days=refresh_days)]
     while reports[-1].pending and not reports[-1].stopped and len(reports) <= MAX_WAITS:
         sleep(WAIT_S)
-        reports.append(sync_once(cfg, now(), http=http))
+        reports.append(sync_once(cfg, now(), http=http, refresh_again=frozenset(reports[-1].refresh_waiting)))
     last = reports[-1]
     try:
         last.workouts_written, last.workouts_removed, notes = sync_workouts(cfg, http)

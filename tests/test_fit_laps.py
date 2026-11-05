@@ -126,3 +126,89 @@ def test_a_failure_filling_laps_is_still_a_duplicate(conn, monkeypatch):
     again = import_fit(conn, read(SAMPLE), "a.fit", "healthfit")
     assert again.status == "duplicate" and lap_rows(conn, r.activity_id) is None
     assert verdict_count(conn, r.activity_id) == 1  # and the transaction still works
+
+
+def age(conn, activity_id, days):
+    conn.execute(text("update activities set start_at = now() - make_interval(days => :d) where id = :i"),
+                 {"d": days, "i": activity_id})
+
+
+def crc16(data):
+    table = [0x0000, 0xCC01, 0xD801, 0x1400, 0xF001, 0x3C00, 0x2800, 0xE401,
+             0xA001, 0x6C00, 0x7800, 0xB401, 0x5000, 0x9C01, 0x8801, 0x4400]
+    crc = 0
+    for b in data:
+        for nibble in (b & 0xF, b >> 4):
+            crc = ((crc >> 4) & 0x0FFF) ^ table[crc & 0xF] ^ table[nibble]
+    return crc
+
+
+def reexport(data):
+    """The same session as other bytes: one value in the last record changed, the footer's CRC fixed."""
+    d = bytearray(data)
+    d[-3] ^= 1
+    d[-2:] = crc16(d[:-2]).to_bytes(2, "little")
+    return bytes(d)
+
+
+def test_filling_laps_of_an_old_run_keeps_its_verdict(conn):
+    r = import_fit(conn, read(SAMPLE), "a.fit", "healthfit")
+    conn.execute(text("update activities set laps = null where id = :i"), {"i": r.activity_id})
+    age(conn, r.activity_id, 20)
+    verdict_for(conn, r.activity_id)
+    assert import_fit(conn, read(SAMPLE), "a.fit", "healthfit").status == "duplicate"
+    assert len(lap_rows(conn, r.activity_id)) == 8
+    assert verdict_count(conn, r.activity_id) == 1  # no new verdict gets written that old; keep this one
+
+
+def test_known_reexport_fills_the_laps_of_the_first_files_activity(conn):
+    other = reexport(read(SAMPLE))
+    r = import_fit(conn, read(SAMPLE), "a.fit", "healthfit")
+    again = import_fit(conn, other, "b.fit", "healthfit")
+    assert again.status == "duplicate" and again.activity_id == r.activity_id and again.sha256 != r.sha256
+    conn.execute(text("update activities set laps = null where id = :i"), {"i": r.activity_id})
+    verdict_for(conn, r.activity_id)
+    assert import_fit(conn, other, "b.fit", "healthfit").status == "duplicate"
+    assert len(lap_rows(conn, r.activity_id)) == 8
+    assert verdict_count(conn, r.activity_id) == 0
+
+
+def test_new_bytes_of_a_session_without_laps_fill_them(conn):
+    r = import_fit(conn, read(SAMPLE), "a.fit", "healthfit")
+    conn.execute(text("update activities set laps = null where id = :i"), {"i": r.activity_id})
+    verdict_for(conn, r.activity_id)
+    again = import_fit(conn, reexport(read(SAMPLE)), "b.fit", "healthfit")
+    assert again.status == "duplicate" and again.activity_id == r.activity_id
+    assert len(lap_rows(conn, r.activity_id)) == 8
+    assert verdict_count(conn, r.activity_id) == 0
+
+
+def test_new_bytes_of_an_old_session_fill_laps_and_keep_the_verdict(conn, monkeypatch):
+    from datetime import UTC, datetime, timedelta
+
+    import lockedin.fit.importer as imp
+
+    r = import_fit(conn, read(SAMPLE), "a.fit", "healthfit")
+    conn.execute(text("update activities set laps = null where id = :i"), {"i": r.activity_id})
+    verdict_for(conn, r.activity_id)
+    age(conn, r.activity_id, 20)
+    real = imp.parse_fit_activities
+
+    def twenty_days_ago(data):  # the same session, as it would read had it been done 20 days ago
+        legs = real(data)
+        legs[0].start_at = datetime.now(UTC) - timedelta(days=20)
+        return legs
+
+    monkeypatch.setattr(imp, "parse_fit_activities", twenty_days_ago)
+    assert import_fit(conn, reexport(read(SAMPLE)), "b.fit", "healthfit").activity_id == r.activity_id
+    assert len(lap_rows(conn, r.activity_id)) == 8
+    assert verdict_count(conn, r.activity_id) == 1
+
+
+def test_one_odd_lap_does_not_make_the_file_unreadable():
+    from datetime import UTC, datetime
+
+    from lockedin.fit.parse import _lap
+    start = datetime(2026, 11, 1, 8, tzinfo=UTC)
+    lap = _lap({"start_time": "not a time", "total_timer_time": 480, "wkt_step_index": 1}, start)
+    assert lap["start_s"] is None and lap["timer_s"] == 480 and lap["step_index"] == 1

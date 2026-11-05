@@ -2,6 +2,7 @@ import hashlib
 import json
 import logging
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Literal
 
 from sqlalchemy import Connection, text
@@ -11,6 +12,7 @@ from lockedin.dedupe import resolve_overlaps
 from lockedin.fit.metrics import best_avg_power, normalized_power
 from lockedin.fit.parse import EmptyActivity, FitParseError, ParsedFit, parse_fit_activities
 from lockedin.fitness import recompute_training_load
+from lockedin.verdict.store import NEW_FOR
 
 log = logging.getLogger(__name__)
 
@@ -68,10 +70,19 @@ def _same_session(conn: Connection, source: str, f: ParsedFit) -> int | None:
     ), {"src": source, "sport": f.sport, "start": f.start_at, "dur": f.duration_s, "tol": SAME_START_S}).scalar()
 
 
-def _fill_laps(conn: Connection, sha: str, data: bytes) -> None:
-    """Activities imported before laps were kept get them from the file when it is uploaded again. A new
-    lap list that has workout steps replaces the saved verdict, which was written without them. Never raises:
-    the upload is a duplicate either way."""
+def _set_laps(conn: Connection, where: str, params: dict, laps: list[dict]) -> None:
+    """Give the activity picked by `where` its laps if it has none. A lap list with workout steps replaces the
+    saved verdict, which was written without them, unless the workout is too old to get a new one."""
+    row = conn.execute(text(f"update activities set laps = cast(:l as jsonb) where laps is null and {where} "
+                            "returning id, start_at"), {**params, "l": json.dumps(laps)}).first()
+    if row and any(lap["step_index"] is not None for lap in laps) and datetime.now(UTC) - row.start_at <= NEW_FOR:
+        conn.execute(text("delete from workout_verdicts where activity_id = :i"), {"i": row.id})
+
+
+def _fill_laps(conn: Connection, sha: str, data: bytes, activity_id: int | None = None) -> None:
+    """Activities imported before laps were kept get them from the file when it is uploaded again. A re-export
+    with other bytes is matched by `activity_id`, the activity it was attached to. Never raises: the upload is
+    a duplicate either way."""
     try:
         savepoint = conn.begin_nested()
     except Exception:
@@ -79,14 +90,15 @@ def _fill_laps(conn: Connection, sha: str, data: bytes) -> None:
         return
     try:
         if conn.execute(text(
-            "select 1 from activities where laps is null and (source_ref = :s or source_ref like :s || '#%') limit 1"
-        ), {"s": sha}).first():
+            "select 1 from activities where laps is null and (source_ref = :s or source_ref like :s || '#%' "
+            "or id = :a) limit 1"
+        ), {"s": sha, "a": activity_id}).first():
             for i, f in enumerate(parse_fit_activities(data)):
-                activity_id = conn.execute(text(
-                    "update activities set laps = cast(:l as jsonb) where source_ref = :ref and laps is null "
-                    "returning id"), {"l": json.dumps(f.laps), "ref": sha if i == 0 else f"{sha}#{i + 1}"}).scalar()
-                if activity_id is not None and any(lap["step_index"] is not None for lap in f.laps):
-                    conn.execute(text("delete from workout_verdicts where activity_id = :i"), {"i": activity_id})
+                ref = sha if i == 0 else f"{sha}#{i + 1}"
+                if conn.execute(text("select 1 from activities where source_ref = :r"), {"r": ref}).first():
+                    _set_laps(conn, "source_ref = :ref", {"ref": ref}, f.laps)
+                elif i == 0 and activity_id is not None:
+                    _set_laps(conn, "id = :id", {"id": activity_id}, f.laps)
     except Exception:
         savepoint.rollback()
         log.warning("Could not fill in the laps of %s", sha, exc_info=True)
@@ -100,7 +112,7 @@ def import_fit(conn: Connection, data: bytes, filename: str, source_hint: Source
         "select activity_id, parse_status, error, unreadable from fit_files where sha256 = :s"), {"s": sha}).first()
     if existing and existing.parse_status in ("ok", "empty"):
         if existing.parse_status == "ok":
-            _fill_laps(conn, sha, data)
+            _fill_laps(conn, sha, data, existing.activity_id)
         return FitImportResult("duplicate", sha, existing.activity_id)
     if existing and existing.unreadable:  # the same bytes get the same answer; no need to parse them again
         return FitImportResult("error", sha, error=existing.error, already_failed=True)
@@ -140,6 +152,7 @@ def _store(conn: Connection, ref: str, filename: str, source: str, f: ParsedFit)
     """(activity id, whether it is new) for one activity of a file."""
     same = _same_session(conn, source, f)
     if same is not None:  # a re-export of a session we already have, with different bytes
+        _set_laps(conn, "id = :id", {"id": same}, f.laps)  # which may be the first file this session's laps come from
         return same, False
     pace_km, pace_100 = _paces(f)
     activity_id = conn.execute(text(

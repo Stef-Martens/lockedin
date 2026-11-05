@@ -205,8 +205,9 @@ describe("Session page", () => {
       { ...row, kind: "work" as const, planned_target: { hr_zone: 4 }, in_target: false },
       { ...row, kind: "cooldown" as const, repeat: null, planned_target: null, in_target: null },
     ];
-    const run = (blocks: unknown, splits: unknown = null): SessionDetail => ({
-      item: { ...base, sport: "run", title: "Intervals", zwift: null, zwift_status: null, done: true, activity_id: 31, targets: null },
+    const STEPS = { blocks: [{ repeat: 4, steps: [{ kind: "work" as const, goal: { time_s: 480 } }] }] };
+    const run = (blocks: unknown, splits: unknown = null, targets: unknown = { steps: STEPS }): SessionDetail => ({
+      item: { ...base, sport: "run", title: "Intervals", zwift: null, zwift_status: null, done: true, activity_id: 31, targets } as SessionDetail["item"],
       plan: { kind: "targets", hr_bpm: null },
       actual: { ...AFTER.actual!, power: undefined, parts: undefined, pace: undefined, zones: null, splits, blocks } as SessionDetail["actual"] });
 
@@ -234,6 +235,26 @@ describe("Session page", () => {
       expect(t.getByText("Block 4")).toBeTruthy();
       expect(t.queryByText(/target|Faster|Slower/i)).toBeNull();
       expect(screen.getByText("This run didn't follow the plan's steps.")).toBeTruthy();
+    });
+
+    it("shows the laps without the note when the plan has no steps", async () => {
+      const bare = rows.map((x) => ({ ...x, repeat: null, planned_goal: null, planned_target: null, in_target: null }));
+      open(run({ follows_plan: false, rows: bare }, null, { pace_low: 345, pace_high: 360 }));
+      await screen.findByRole("heading", { name: "Intervals" });
+      const t = within(screen.getByRole("table", { name: "Blocks" }));
+      expect(t.getByText("Block 4")).toBeTruthy();
+      expect(t.queryByText(/target|Faster|Slower/i)).toBeNull();
+      expect(screen.queryByText("This run didn't follow the plan's steps.")).toBeNull();
+    });
+
+    it("says when a block with a distance goal was cut short", async () => {
+      const far = { ...row, kind: "work" as const, seconds: 480, metres: 1450, planned_goal: { distance_m: 2000 }, planned_target: null, in_target: null };
+      const ok = { ...far, metres: 1900 };
+      const recovery = { ...far, kind: "recovery" as const, metres: 100 };
+      open(run({ follows_plan: true, rows: [far, ok, recovery] }));
+      await screen.findByRole("heading", { name: "Intervals" });
+      const r = within(screen.getByRole("table", { name: "Blocks" })).getAllByRole("row").slice(1).map((x) => x.textContent);
+      expect(r[0]).toContain("1.45 km of 2 km"); expect(r[1]).not.toContain(" of "); expect(r[2]).not.toContain(" of ");
     });
 
     it("has no card without blocks, and a split without status has no label", async () => {

@@ -45,6 +45,9 @@ def test_prompt_scopes_blocks_to_plans_with_steps():
     assert "the km splits are usable" in SYSTEM and "On a run, when blocks is null" in SYSTEM
     assert "one per planned step" not in SYSTEM
     assert "in_target covers pace or heart rate only" in SYSTEM and "cut short" in SYSTEM
+    assert "seconds or metres" in SYSTEM and "fewer work blocks than planned" in SYSTEM
+    assert "blocks are missing" not in SYSTEM and "What the facts can't tell you" not in SYSTEM
+    assert "plan.pace_low and plan.pace_high belong to the work steps" in SYSTEM and "be modest about the label" in SYSTEM
 
 
 @pytest.mark.parametrize("turn", [

@@ -688,3 +688,50 @@ def test_refresh_uploads_recent_known_files_only(tmp_path, monkeypatch):
 
     again = fit_sync.run(config, now=lambda: NOW, sleep=lambda s: None, http=http)[0]  # normal run: unchanged
     assert again.refreshed == 0 and len(uploads()) == 1
+
+
+def test_refresh_of_an_icloud_evicted_file_is_retried_by_the_later_pass(tmp_path, monkeypatch):
+    import errno
+    monkeypatch.setenv("LOCKEDIN_SYNC_STATE", str(tmp_path / "state.json"))
+    fit = tmp_path / "healthfit"
+    fit.mkdir()
+    evicted = make(fit / "recent.fit", b"recent", age_s=2 * 86400)
+    config = {**cfg(tmp_path / "zwift"), "HEALTHFIT_DIR": str(fit)}
+    http = FakeHttp(known={fit_sync.sha256_file(evicted)})
+    fit_sync.sync_once(config, NOW, http=http)  # remembers it as on the server
+    state = {"downloaded": False}
+    real = Path.read_bytes
+
+    def read_bytes(self):
+        if self == evicted and not state["downloaded"]:
+            raise OSError(errno.EDEADLK, "Resource deadlock avoided")
+        return real(self)
+
+    monkeypatch.setattr(Path, "read_bytes", read_bytes)
+    monkeypatch.setattr(fit_sync, "icloud_download", lambda p: state.update(downloaded=True))
+    reports = fit_sync.run(config, now=lambda: NOW, sleep=lambda s: None, http=http, refresh_days=7)
+    assert reports[0].pending == 1 and reports[0].refreshed == 0
+    assert sum(r.refreshed for r in reports) == 1
+    assert len([c for c in http.calls if c[0].endswith("/api/fit/upload")]) == 1
+
+
+def test_a_refresh_file_that_vanishes_does_not_stop_the_pass(tmp_path, monkeypatch):
+    monkeypatch.setenv("LOCKEDIN_SYNC_STATE", str(tmp_path / "state.json"))
+    fit = tmp_path / "healthfit"
+    fit.mkdir()
+    gone = make(fit / "gone.fit", b"gone", age_s=86400)
+    other = make(fit / "other.fit", b"other", age_s=86400)
+    config = {**cfg(tmp_path / "zwift"), "HEALTHFIT_DIR": str(fit)}
+    http = FakeHttp(known={fit_sync.sha256_file(p) for p in (gone, other)})
+    fit_sync.sync_once(config, NOW, http=http)
+    real = Path.read_bytes
+
+    def read_bytes(self):
+        data = real(self)
+        if self == gone:
+            self.unlink()  # deleted between reading and the stat that follows
+        return data
+
+    monkeypatch.setattr(Path, "read_bytes", read_bytes)
+    report = fit_sync.sync_once(config, NOW, http=http, refresh_days=7)
+    assert report.refreshed == 1 and not report.stopped

@@ -8,6 +8,7 @@ from lockedin.agenda.store import items_between
 from lockedin.focus.sessions import COUNTED_SQL
 from lockedin.timeutil import TZ
 
+NEW_FOR = timedelta(days=14)  # a workout this recent gets a new verdict written; older ones keep what they have
 CLAIM_TTL = timedelta(minutes=6)
 FAIL_WAIT = timedelta(minutes=15)
 

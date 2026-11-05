@@ -14,7 +14,7 @@ export type SessionPlan =
 export interface BlockRow {
   kind: "warmup" | "work" | "recovery" | "cooldown"; repeat: number | null;
   seconds: number | null; metres: number | null; pace_s_per_km: number | null; avg_hr: number | null;
-  planned_goal: { time_s?: number; distance_m?: number } | null;
+  planned_goal: { time_s?: number; distance_m?: number; open?: boolean } | null;
   planned_target: { pace_low?: number; pace_high?: number; hr_zone?: number } | null;
   in_target: boolean | null;
 }

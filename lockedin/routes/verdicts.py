@@ -1,6 +1,6 @@
 import logging
 from collections.abc import Callable
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy import Engine
@@ -13,13 +13,12 @@ from lockedin.routes.coach import get_coach_engine
 from lockedin.routes.overview import get_now
 from lockedin.verdict import store
 from lockedin.verdict.facts import facts as build_facts
+from lockedin.verdict.store import NEW_FOR
 from lockedin.verdict.write import VerdictFailed, write
 
 log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/verdicts", dependencies=[Depends(require_owner)])
-
-NEW_FOR = timedelta(days=14)
 
 
 def get_verdict_llm(settings: Settings = Depends(get_settings)) -> Callable[[], CoachLLM] | None:
