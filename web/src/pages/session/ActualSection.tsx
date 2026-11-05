@@ -11,13 +11,13 @@ function StatusText({ status }: { status: Status }) {
 const BLOCK_NAMES = { warmup: "Warm-up", recovery: "Recovery", cooldown: "Cool-down" } as const;
 
 /** A work block's verdict from its own numbers; a zone target can only be on or off, since the row has no bpm range. */
-function blockVerdict(r: BlockRow): { text: string; tone: "good" | "near" } | null {
+function blockVerdict(r: BlockRow): ReturnType<typeof statusLabel> | null {
   if (r.kind !== "work" || r.in_target == null) return null;
   if (r.in_target) return statusLabel("on_target");
   const t = r.planned_target;
   if (t?.pace_low != null && t.pace_high != null && r.pace_s_per_km != null) {
-    if (r.pace_s_per_km < t.pace_low) return statusLabel("faster") as { text: string; tone: "near" };
-    if (r.pace_s_per_km > t.pace_high) return statusLabel("slower") as { text: string; tone: "near" };
+    if (r.pace_s_per_km < t.pace_low) return statusLabel("faster");
+    if (r.pace_s_per_km > t.pace_high) return statusLabel("slower");
   }
   return { text: "Off target", tone: "near" };
 }
