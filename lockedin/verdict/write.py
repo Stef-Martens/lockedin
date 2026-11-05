@@ -45,7 +45,11 @@ SCHEMA = {
 
 
 class VerdictFailed(Exception):
-    """No usable verdict came back."""
+    """No usable verdict came back. `usage` is what the attempt was billed, so the caller can still record it."""
+
+    def __init__(self, message: str, usage: list[dict] | None = None):
+        super().__init__(message)
+        self.usage = usage or []
 
 
 @dataclass
@@ -67,13 +71,13 @@ def write(llm: CoachLLM, facts: dict, planned: bool) -> Written:
     except CoachUnavailable as e:
         raise VerdictFailed(str(e)) from e
     if final is None or final.stop_reason == "refusal":
-        raise VerdictFailed("The model gave no verdict.")
+        raise VerdictFailed("The model gave no verdict.", final.usage if final else [])
     raw = "".join(b.get("text", "") for b in final.content if b.get("type") == "text")
     try:
         data = json.loads(raw)
         label, text = data["label"], data["text"].strip()
     except (ValueError, KeyError, TypeError, AttributeError):
-        raise VerdictFailed("The verdict wasn't in the expected shape.") from None
+        raise VerdictFailed("The verdict wasn't in the expected shape.", final.usage) from None
     if label not in LABELS or not text:
-        raise VerdictFailed("The verdict was empty or had an unknown label.")
+        raise VerdictFailed("The verdict was empty or had an unknown label.", final.usage)
     return Written(label=label if planned else "unplanned", text=text, usage=final.usage)
