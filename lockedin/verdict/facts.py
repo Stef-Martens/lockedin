@@ -22,6 +22,10 @@ COMPARISON = ("parts", "intervals_on_target", "splits", "zones", "rows")
 RECENT = 3
 MIN_COVERED = 0.9  # of the planned time and of the planned distance; less and the run didn't follow the steps
 MAX_GAP_S = 30  # moving seconds without a distance reading; more and the steps around it can't be placed exactly
+MAX_SPEED = 10  # m/s; metres gained faster than this over moving time were run while the timeline counted a stop
+JUMP_SLACK_M = 30  # GPS drift that a stop or an auto-pause can add on its own
+MAX_STOP_S = 30  # stopped with samples coming in; the watch may count a time step through it, and this much barely moves a block's average
+SAMPLES_EVERY_S = 10  # a longer wait for the next sample means recording stopped (auto-pause), which the watch's clock also does
 EVER = datetime(2000, 1, 1, tzinfo=UTC)
 
 
@@ -56,10 +60,17 @@ def _in_target(target: dict | None, pace: int | None, avg_hr: int | None, zones:
     return None if bpm is None or avg_hr is None else bpm[0] <= avg_hr <= bpm[1]
 
 
+def _stopped_with_samples(t: list[int], moving: list[float], end: float) -> int:
+    """Seconds standing still before `end` while samples kept coming in."""
+    return sum(t[i] - t[i - 1] for i in range(1, len(moving))
+               if moving[i] == moving[i - 1] and moving[i] < end and t[i] - t[i - 1] <= SAMPLES_EVERY_S)
+
+
 def step_results(steps: dict, stream, zones: dict[int, tuple[int, int]] | None = None) -> list[dict] | None:
     """Each planned step before the first open one, placed by the plan's order and lengths on the moving-time
     timeline, since the watch moves on by itself. None when that can't be trusted: no time or distance goals, a run
-    that didn't cover them, or a long GPS gap. `zones` is zone → bpm range; without it a zone target isn't judged."""
+    that didn't cover them, a long GPS gap, metres that jump ahead, or a long stop before a time goal's end. `zones`
+    is zone → bpm range; without it a zone target isn't judged."""
     if stream is None or not stream.t_offset or not stream.distance or not any(stream.distance):
         return None
     planned = []
@@ -95,7 +106,7 @@ def step_results(steps: dict, stream, zones: dict[int, tuple[int, int]] | None =
         did = seconds if key == "time_s" else covered
         done[key] += did
         if did >= act.MIN_COVERAGE * goal[key]:
-            pace = round(seconds / (covered / 1000)) if covered > 0 else None
+            pace = round(seconds / (covered / 1000)) if covered > 0 and seconds > 0 else None
             avg_hr = _avg_hr(stream.hr, moving, start_s, end_s)
             rows.append({"kind": step["kind"], "repeat": step["repeat"], "goal": goal, "target": step["target"],
                          "seconds": round(seconds), "metres": round(covered), "pace_s_per_km": pace, "avg_hr": avg_hr,
@@ -106,6 +117,11 @@ def step_results(steps: dict, stream, zones: dict[int, tuple[int, int]] | None =
         if total < MIN_COVERED * sum(s["goal"].get(key) or 0 for s in planned):
             return None
     if any(b - a > MAX_GAP_S and a < start_s for a, b in zip(secs, secs[1:])):
+        return None
+    if any(m1 - m0 > MAX_SPEED * (s1 - s0) + JUMP_SLACK_M and m0 < start_m
+           for s0, s1, m0, m1 in zip(secs, secs[1:], metres, metres[1:])):
+        return None
+    if done["time_s"] > 0 and _stopped_with_samples(stream.t_offset, moving, start_s) > MAX_STOP_S:
         return None
     return rows or None
 

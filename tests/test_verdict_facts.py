@@ -133,12 +133,110 @@ def test_boundary_between_samples_is_interpolated():
     assert (rows[1]["seconds"], rows[1]["metres"]) == (60, 180)
 
 
-def test_pause_does_not_shift_steps():
-    steps = {"blocks": [{"repeat": 1, "steps": [{"kind": "work", "goal": {"time_s": 600}},
-                                                {"kind": "recovery", "goal": {"time_s": 120}}]}]}
+WORK_THEN_JOG = {"blocks": [{"repeat": 1, "steps": [{"kind": "work", "goal": {"time_s": 600}},
+                                                    {"kind": "recovery", "goal": {"time_s": 120}}]}]}
+
+
+def test_long_stop_with_samples_gets_no_results_on_time_goals():
+    """With auto-pause off the watch's step clock runs on through it, so later windows would be off by its length."""
+    s = stream((300, 3.0, 160), (31, 0.0, 100), (300, 3.0, 160), (120, 2.0, 130))
+    assert step_results(WORK_THEN_JOG, s) is None
+
+
+def test_short_stops_with_samples_add_up():
+    s = stream((100, 3.0, 160), (16, 0.0, 100), (100, 3.0, 160), (16, 0.0, 100), (400, 3.0, 160), (120, 2.0, 130))
+    assert step_results(WORK_THEN_JOG, s) is None
+
+
+def test_short_stop_with_samples_does_not_shift_steps():
+    s = stream((300, 3.0, 160), (30, 0.0, 100), (300, 3.0, 160), (120, 2.0, 130))
+    rows = step_results(WORK_THEN_JOG, s)
+    assert [(r["seconds"], r["metres"], r["avg_hr"]) for r in rows] == [(600, 1800, 160), (120, 240, 130)]
+
+
+def test_long_stop_after_the_matched_steps_is_fine():
+    s = stream((600, 3.0, 160), (120, 2.0, 130), (200, 0.0, 100), (300, 2.0, 125))
+    rows = step_results({**WORK_THEN_JOG, "cooldown": {"goal": {"open": True}}}, s)
+    assert [(r["seconds"], r["metres"]) for r in rows] == [(600, 1800), (120, 240)]
+
+
+def test_long_stop_with_samples_does_not_touch_distance_goals():
+    steps = {"blocks": [{"repeat": 1, "steps": [{"kind": "work", "goal": {"distance_m": 1800}},
+                                                {"kind": "recovery", "goal": {"distance_m": 240}}]}]}
     s = stream((300, 3.0, 160), (200, 0.0, 100), (300, 3.0, 160), (120, 2.0, 130))
     rows = step_results(steps, s)
     assert [(r["seconds"], r["metres"], r["avg_hr"]) for r in rows] == [(600, 1800, 160), (120, 240, 130)]
+
+
+def three_blocks():
+    return stream((600, 3.0, 160), (300, 2.0, 130), (600, 3.0, 160))
+
+
+THREE_BLOCKS = {"blocks": [{"repeat": 1, "steps": [{"kind": "work", "goal": {"time_s": 600}},
+                                                   {"kind": "recovery", "goal": {"time_s": 300}},
+                                                   {"kind": "work", "goal": {"time_s": 600}}]}]}
+
+
+def test_clean_three_blocks():
+    rows = step_results(THREE_BLOCKS, three_blocks())
+    assert [(r["seconds"], r["metres"], r["pace_s_per_km"]) for r in rows] == [(600, 1800, 333), (300, 600, 500), (600, 1800, 333)]
+
+
+def test_gps_dropout_without_distance_or_speed_gets_no_results():
+    """Was (600, 2040, 294), (300, 720, 417), (480, 1440, 333): the gap counted as stopped, the metres arrived in one jump."""
+    s = three_blocks()
+    for i in range(300, 420):
+        s.distance[i] = s.speed[i] = None
+    assert step_results(THREE_BLOCKS, s) is None
+
+
+def test_gps_dropout_with_speed_zero_gets_no_results():
+    s = three_blocks()
+    for i in range(300, 420):
+        s.distance[i], s.speed[i] = None, 0.0
+    assert step_results(THREE_BLOCKS, s) is None
+
+
+def test_samples_missing_with_slow_looking_metres_get_no_results():
+    """Was (600, 2200, 273), (300, 600, 500), (600, 1800, 333): 400 m over 900 s reads as under 0.5 m/s, so as stopped."""
+    s = stream((300, 3.0, 160), (1, 0.0, 160), (300, 3.0, 160), (300, 2.0, 130), (600, 3.0, 160))
+    s.distance = s.distance[:301] + [d + 400 for d in s.distance[301:]]
+    s.t_offset = s.t_offset[:301] + [t + 899 for t in s.t_offset[301:]]
+    assert step_results(THREE_BLOCKS, s) is None
+
+
+def test_metres_jumping_ahead_on_distance_goals_get_no_results():
+    """Was (50 s, 300 m, 167), (17 s, 300 m, 56): 400 m in no moving time."""
+    steps = {"blocks": [{"repeat": 2, "steps": [{"kind": "work", "goal": {"distance_m": 300}}]}]}
+    s = stream((50, 3.0, 160), (1, 0.0, 160), (200, 3.0, 160))
+    assert len(step_results(steps, s)) == 2
+    s.distance = s.distance[:51] + [d + 400 for d in s.distance[51:]]
+    s.t_offset = s.t_offset[:51] + [t + 899 for t in s.t_offset[51:]]
+    assert step_results(steps, s) is None
+
+
+def test_metres_jumping_after_the_matched_steps_are_fine():
+    s = stream((600, 3.0, 160), (120, 2.0, 130), (1, 0.0, 130), (300, 2.0, 125))
+    s.distance = s.distance[:722] + [d + 400 for d in s.distance[722:]]
+    s.t_offset = s.t_offset[:722] + [t + 899 for t in s.t_offset[722:]]
+    rows = step_results({**WORK_THEN_JOG, "cooldown": {"goal": {"open": True}}}, s)
+    assert [(r["seconds"], r["metres"]) for r in rows] == [(600, 1800), (120, 240)]
+
+
+def test_gps_drift_during_an_auto_pause_is_fine():
+    s = stream((300, 3.0, 160), (1, 0.0, 100), (300, 3.0, 160), (120, 2.0, 130))
+    s.distance = s.distance[:301] + [d + 20 for d in s.distance[301:]]
+    s.t_offset = s.t_offset[:301] + [t + 500 for t in s.t_offset[301:]]
+    rows = step_results(WORK_THEN_JOG, s)
+    assert [(r["seconds"], r["metres"]) for r in rows] == [(600, 1820), (120, 240)]
+
+
+def test_metres_in_no_moving_time_give_no_pace():
+    """Never a pace of 0."""
+    steps = {"blocks": [{"repeat": 1, "steps": [{"kind": "work", "goal": {"distance_m": 20}}]}]}
+    s = SimpleNamespace(t_offset=[0, 100], speed=None, hr=None, distance=[0.0, 25.0])
+    row = step_results(steps, s)[0]
+    assert (row["seconds"], row["metres"], row["pace_s_per_km"], row["in_target"]) == (0, 20, None, None)
 
 
 def test_auto_pause_without_samples_does_not_shift_steps():
