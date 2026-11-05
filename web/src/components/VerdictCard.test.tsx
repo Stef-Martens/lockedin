@@ -63,6 +63,100 @@ describe("VerdictCard", () => {
     expect(screen.queryByText("The coach is looking at it…")).toBeNull();
   });
 
+  it("shows the being-written text from a poll while the first request is still pending", async () => {
+    let first!: (v: unknown) => void;
+    apiFetch.mockReturnValueOnce(new Promise((r) => { first = r; }));
+    apiFetch.mockResolvedValue(reply({ status: "writing" }));
+    await mount(<VerdictCard source="latest" />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(2900); });
+    expect(document.body.textContent).toBe("");
+    await act(async () => { await vi.advanceTimersByTimeAsync(100); });
+    expect(screen.getByText("The coach is looking at it…")).toBeTruthy();
+
+    first(reply(DONE));
+    await flush();
+    expect(screen.getByText("Close to plan")).toBeTruthy();
+    expect(screen.queryByText("The coach is looking at it…")).toBeNull();
+    const calls = apiFetch.mock.calls.length;
+    await act(async () => { await vi.advanceTimersByTimeAsync(20_000); });
+    expect(apiFetch).toHaveBeenCalledTimes(calls);
+  });
+
+  it("keeps the text and keeps polling when a poll fails", async () => {
+    let first!: (v: unknown) => void;
+    apiFetch.mockReturnValueOnce(new Promise((r) => { first = r; }));
+    apiFetch.mockResolvedValueOnce(reply({ status: "writing" }));
+    apiFetch.mockRejectedValueOnce(new Error("offline"));
+    apiFetch.mockResolvedValue(reply({ status: "writing" }));
+    await mount(<VerdictCard source="latest" />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
+    expect(screen.getByText("The coach is looking at it…")).toBeTruthy();
+    await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
+    expect(screen.getByText("The coach is looking at it…")).toBeTruthy();
+    await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
+    expect(apiFetch).toHaveBeenCalledTimes(4);
+    first(reply(DONE));
+    await flush();
+    expect(screen.getByText("Close to plan")).toBeTruthy();
+  });
+
+  it("keeps polling when the first request fails after a poll showed the text", async () => {
+    let first!: (v: unknown) => void;
+    apiFetch.mockReturnValueOnce(new Promise((_r, rej) => { first = rej; }));
+    apiFetch.mockResolvedValueOnce(reply({ status: "writing" }));
+    apiFetch.mockResolvedValue(reply(DONE));
+    await mount(<VerdictCard source="latest" />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
+    first(new Error("500"));
+    await flush();
+    expect(screen.getByText("The coach is looking at it…")).toBeTruthy();
+    await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
+    expect(screen.getByText("Close to plan")).toBeTruthy();
+  });
+
+  it("stops when the first request fails before anything was shown", async () => {
+    let first!: (v: unknown) => void;
+    apiFetch.mockReturnValueOnce(new Promise((_r, rej) => { first = rej; }));
+    await mount(<VerdictCard source="latest" />);
+    first(new Error("500"));
+    await flush();
+    await act(async () => { await vi.advanceTimersByTimeAsync(20_000); });
+    expect(apiFetch).toHaveBeenCalledTimes(1);
+    expect(document.body.textContent).toBe("");
+  });
+
+  it("ignores a being-written poll that resolves after the first request's final answer", async () => {
+    let first!: (v: unknown) => void;
+    let poll!: (v: unknown) => void;
+    apiFetch.mockReturnValueOnce(new Promise((r) => { first = r; }));
+    apiFetch.mockReturnValueOnce(new Promise((r) => { poll = r; }));
+    await mount(<VerdictCard source="latest" />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
+    first(reply(DONE));
+    await flush();
+    poll(reply({ status: "writing" }));
+    await flush();
+    expect(screen.getByText("Close to plan")).toBeTruthy();
+    expect(screen.queryByText("The coach is looking at it…")).toBeNull();
+  });
+
+  it("shows no being-written text before the first poll is due", async () => {
+    apiFetch.mockReturnValue(new Promise(() => undefined));
+    await mount(<VerdictCard source="latest" />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(2900); });
+    expect(document.body.textContent).toBe("");
+  });
+
+  it("names an unplanned workout by its sport once, and a planned one by its title too", async () => {
+    apiFetch.mockResolvedValueOnce(reply(DONE, { ...ACTIVITY, item_id: null, title: null, sport: "bike" }));
+    await mount(<VerdictCard source="latest" />);
+    expect(screen.getByText("4 Nov · Bike")).toBeTruthy();
+    cleanup();
+    apiFetch.mockResolvedValueOnce(reply(DONE));
+    await mount(<VerdictCard source="latest" />);
+    expect(screen.getByText("4 Nov · Run · Tempo")).toBeTruthy();
+  });
+
   it("stops after 90 seconds and keeps the being-written text", async () => {
     apiFetch.mockResolvedValue(reply({ status: "writing" }));
     await mount(<VerdictCard source="latest" />);

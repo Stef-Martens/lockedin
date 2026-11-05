@@ -37,17 +37,27 @@ export default function VerdictCard(props: { source: "latest" } | { activityId: 
 
   useEffect(() => {
     let live = true;
+    let over = false; // a final answer came, or the first request failed with nothing to show
+    let shown = false;
+    let polls = 0;
     let timer: ReturnType<typeof setTimeout> | undefined;
     setReply(null);
-    const load = (polls: number) => {
-      apiFetch<Reply>(path).then((r) => {
-        if (!live) return;
-        if (!r?.verdict) return setReply(null);
-        setReply(r);
-        if (r.verdict.status === "writing" && polls < POLL_MAX) timer = setTimeout(() => load(polls + 1), POLL_MS);
-      }).catch(() => { if (live) setReply(null); });
+    const stop = () => { over = true; clearTimeout(timer); };
+    const take = (r: Reply | null | undefined) => {
+      if (!live || over || !r?.verdict) return;
+      shown = true;
+      setReply(r);
+      if (r.verdict.status !== "writing") stop();
     };
-    load(0);
+    // The first request is the writer and can take a minute, so a poll (which only sees "writing") shows the state meanwhile.
+    const poll = () => {
+      polls += 1;
+      apiFetch<Reply>(path).then(take, () => undefined).then(() => {
+        if (live && !over && polls < POLL_MAX) timer = setTimeout(poll, POLL_MS);
+      });
+    };
+    timer = setTimeout(poll, POLL_MS);
+    apiFetch<Reply>(path).then((r) => r?.verdict ? take(r) : (shown || stop()), () => { if (!shown) stop(); });
     return () => { live = false; clearTimeout(timer); };
   }, [path]);
 
@@ -65,7 +75,7 @@ export default function VerdictCard(props: { source: "latest" } | { activityId: 
           right={to && <Link to={to} style={{ fontSize: 13, fontWeight: 600, textDecoration: "none" }}>See how it went</Link>} />
       )}
       {latest && a && <div className="secondary" style={{ fontSize: 14, marginBottom: 8 }}>
-        {dayMonth(a.day)} · {SPORT_LABEL[a.sport]} · {a.title ?? SPORT_LABEL[a.sport]}</div>}
+        {dayMonth(a.day)} · {SPORT_LABEL[a.sport]}{a.title ? ` · ${a.title}` : ""}</div>}
       {label && <span className={`pill ${label.pill}`}>{label.text}</span>}
       <p style={{ margin: label ? "8px 0 0" : 0 }} className={label ? undefined : "secondary"}>{body}</p>
     </Card>
