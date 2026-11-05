@@ -25,7 +25,9 @@ activities: one row per recorded session.
   distance_m, elevation_m, avg_hr, max_hr, calories, avg_power, max_power, avg_cadence (bike rpm; run = strides/min,
   double it for steps/min), np (normalized power W), if_ (intensity factor vs FTP), tss, best_20m_power,
   avg_pace_s_per_km (run), swim_pace_s_per_100m, swim_lengths, swim_strokes, pool_length_m,
-  superseded_by (not null = Apple Watch duplicate of another recording), hr_merged_from.
+  superseded_by (not null = Apple Watch duplicate of another recording), hr_merged_from,
+  laps (jsonb list, one per lap the watch recorded; for a planned workout one per step, with start_s, timer_s,
+  distance_m, avg_hr, avg_speed m/s, intensity, step_index; null = not read yet, [] = none).
   COUNTED sessions (what totals, streaks and trends use):
     superseded_by is null and coalesce(sub_type, '') not like 'walking%'
 gym_workouts: activity_id (= activities.id of the gym session), title, description.

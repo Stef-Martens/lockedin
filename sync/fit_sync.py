@@ -17,11 +17,15 @@ It remembers which files are already on the server in ~/Library/Application Supp
 (LOCKEDIN_SYNC_STATE overrides the path), so those are never read or fetched from iCloud again, and files the
 server couldn't read are only retried once a day. Delete that file to have everything checked again.
 
+`--refresh-days N` uploads the HealthFit files of the last N days once more whatever that file says, so the
+server can read what it didn't keep the first time (the laps). The normal run is unchanged.
+
 It also sends the FTP readings Zwift leaves in its logs now and then, so LockedIn uses Zwift's FTP.
 """
 
 from __future__ import annotations
 
+import argparse
 import errno
 import hashlib
 import json
@@ -61,6 +65,7 @@ Http = Callable[[str, str, bytes, dict], tuple[int, bytes]]
 class SyncReport:
     uploaded: int = 0
     duplicates: int = 0
+    refreshed: int = 0  # HealthFit files uploaded again by --refresh-days
     pending: int = 0
     errors: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
@@ -203,7 +208,7 @@ def _unchanged(entry, st: os.stat_result) -> bool:
     return entry is not None and entry[:2] == [st.st_size, st.st_mtime_ns]
 
 
-def sync_once(cfg: dict, now: float, http: Http = urllib_http) -> SyncReport:
+def sync_once(cfg: dict, now: float, http: Http = urllib_http, refresh_days: int = 0) -> SyncReport:
     report = SyncReport()
     api, token = cfg.get("LOCKEDIN_API", "").rstrip("/"), cfg.get("SYNC_TOKEN", "")
     if not api or not token:
@@ -213,7 +218,7 @@ def sync_once(cfg: dict, now: float, http: Http = urllib_http) -> SyncReport:
     where = state_file()
     state = _load_state(where)
     try:
-        _upload_new(cfg, api, token, now, http, report, state)
+        _upload_new(cfg, api, token, now, http, report, state, refresh_days)
     finally:
         try:
             _save_state(where, state)
@@ -222,7 +227,8 @@ def sync_once(cfg: dict, now: float, http: Http = urllib_http) -> SyncReport:
     return report
 
 
-def _upload_new(cfg: dict, api: str, token: str, now: float, http: Http, report: SyncReport, state: dict) -> None:
+def _upload_new(cfg: dict, api: str, token: str, now: float, http: Http, report: SyncReport, state: dict,
+                refresh_days: int = 0) -> None:
     record, failed = state["files"], state["failed"]
     pending: list = []
     files, report.warnings = candidate_files(folders_from(cfg), now, pending=pending)
@@ -235,10 +241,15 @@ def _upload_new(cfg: dict, api: str, token: str, now: float, http: Http, report:
         else:
             report.warnings.append(f"Skipped {p.name} for now, couldn't read it: {e}")
 
+    cutoff = now - refresh_days * 86400
+    refresh: list[tuple[Path, str]] = []
     hashed = []
     for p, label in files:
         try:
             st, entry = p.stat(), record.get(str(p))
+            if refresh_days > 0 and label == "healthfit" and st.st_mtime >= cutoff:
+                refresh.append((p, label))  # sent again below, whatever the state says
+                continue
             if _unchanged(entry, st) and entry[3]:  # on the server already: not read, not fetched from iCloud
                 report.duplicates += 1
                 continue
@@ -254,7 +265,48 @@ def _upload_new(cfg: dict, api: str, token: str, now: float, http: Http, report:
         record[str(path)][3] = True
         failed.pop(digest, None)
 
+    def send(path: Path, label: str, digest: str, data: bytes, refreshing: bool = False) -> bool:
+        """Upload one file and note the outcome; False when the whole run must stop."""
+        body, ctype = _multipart(path.name, data, label)
+        status, resp = http(f"{api}/api/fit/upload", token, body, {"Content-Type": ctype})
+        try:
+            result = json.loads(resp) if resp else {}
+        except ValueError:
+            result = {}
+        if status == 401:
+            report.errors.append("Server said 401: SYNC_TOKEN doesn't match the server's. Stopped.")
+            report.stopped = True
+            return False
+        if status != 200:
+            detail = result.get("detail") or resp[:120].decode("utf-8", "replace")
+            report.errors.append(f"{path.name}: server said {status} {detail}")
+        elif result.get("status") == "imported" and not refreshing:
+            report.uploaded += 1
+            on_server(path, digest)
+        elif result.get("status") in ("imported", "duplicate", "empty"):  # empty: a ride started and quit
+            if refreshing:
+                report.refreshed += 1
+            else:
+                report.duplicates += 1
+            on_server(path, digest)
+        else:  # the server couldn't read it: say so now, try again tomorrow, not every run
+            report.errors.append(f"{path.name}: {result.get('error') or 'import failed'} (retried in a day)")
+            failed[digest] = now + RETRY_UNREADABLE_S
+        return True
+
     try:
+        for path, label in refresh:
+            try:
+                data = path.read_bytes()
+            except OSError as e:
+                unreadable_here(path, e)
+                continue
+            digest = hashlib.sha256(data).hexdigest()
+            st = path.stat()
+            record[str(path)] = [st.st_size, st.st_mtime_ns, digest, False]
+            if not send(path, label, digest, data, refreshing=True):
+                return
+
         known: set[str] = set()
         for i in range(0, len(hashed), BATCH):
             body = json.dumps({"hashes": [h for _, _, h in hashed[i:i + BATCH]]}).encode()
@@ -275,28 +327,8 @@ def _upload_new(cfg: dict, api: str, token: str, now: float, http: Http, report:
             except OSError as e:
                 unreadable_here(path, e)
                 continue
-            body, ctype = _multipart(path.name, data, label)
-            status, resp = http(f"{api}/api/fit/upload", token, body, {"Content-Type": ctype})
-            try:
-                result = json.loads(resp) if resp else {}
-            except ValueError:
-                result = {}
-            if status == 401:
-                report.errors.append("Server said 401: SYNC_TOKEN doesn't match the server's. Stopped.")
-                report.stopped = True
+            if not send(path, label, digest, data):
                 return
-            if status != 200:
-                detail = result.get("detail") or resp[:120].decode("utf-8", "replace")
-                report.errors.append(f"{path.name}: server said {status} {detail}")
-            elif result.get("status") == "imported":
-                report.uploaded += 1
-                on_server(path, digest)
-            elif result.get("status") in ("duplicate", "empty"):  # empty: a ride started and quit
-                report.duplicates += 1
-                on_server(path, digest)
-            else:  # the server couldn't read it: say so now, try again tomorrow, not every run
-                report.errors.append(f"{path.name}: {result.get('error') or 'import failed'} (retried in a day)")
-                failed[digest] = now + RETRY_UNREADABLE_S
     except (OSError, ValueError) as e:
         report.errors.append(f"Stopped, will retry next run: {e}")
         report.stopped = True
@@ -522,9 +554,10 @@ def sync_zwift_ftp(cfg: dict, http: Http = urllib_http) -> list[str]:
 
 
 def run(cfg: dict, now: Callable[[], float] = time.time, sleep: Callable[[float], None] = time.sleep,
-        http: Http = urllib_http) -> list[SyncReport]:
-    """Sync, then keep waiting a bit while files are still being written (launchd fires on the first write)."""
-    reports = [sync_once(cfg, now(), http=http)]
+        http: Http = urllib_http, refresh_days: int = 0) -> list[SyncReport]:
+    """Sync, then keep waiting a bit while files are still being written (launchd fires on the first write).
+    Only the first pass sends the files of `refresh_days` again."""
+    reports = [sync_once(cfg, now(), http=http, refresh_days=refresh_days)]
     while reports[-1].pending and not reports[-1].stopped and len(reports) <= MAX_WAITS:
         sleep(WAIT_S)
         reports.append(sync_once(cfg, now(), http=http))
@@ -541,9 +574,13 @@ def run(cfg: dict, now: Callable[[], float] = time.time, sleep: Callable[[float]
     return reports
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Upload new FIT files to LockedIn.")
+    parser.add_argument("--refresh-days", type=int, default=0, metavar="N",
+                        help="send the HealthFit files of the last N days again, whatever was uploaded before")
+    args = parser.parse_args(argv or [])
     try:
-        reports = run(load_config())
+        reports = run(load_config(), refresh_days=max(args.refresh_days, 0))
     except Exception as e:  # launchd swallows tracebacks; always leave a readable line in the log
         print(f"{datetime.now().isoformat(timespec='seconds')} sync failed: {e!r}")
         return 0
@@ -551,11 +588,12 @@ def main() -> int:
         stamp = datetime.now().isoformat(timespec="seconds")
         print(f"{stamp} uploaded {report.uploaded}, already there {report.duplicates}, "
               f"waiting (being written or downloading from iCloud) {report.pending}, errors {len(report.errors)}"
-              f", Zwift workouts +{report.workouts_written} -{report.workouts_removed}")
+              f", Zwift workouts +{report.workouts_written} -{report.workouts_removed}"
+              + (f", sent again {report.refreshed}" if report.refreshed else ""))
         for line in report.warnings + report.errors:
             print(f"{stamp}   {line}")
     return 0
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(main(sys.argv[1:]))

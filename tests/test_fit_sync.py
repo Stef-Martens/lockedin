@@ -205,7 +205,7 @@ def test_server_error_on_one_file_does_not_block_the_rest(tmp_path):
 
 
 def test_main_logs_a_line_even_when_something_unexpected_breaks(monkeypatch, capsys):
-    def explode(cfg):
+    def explode(cfg, **kwargs):
         raise RuntimeError("kaboom")
 
     monkeypatch.setattr(fit_sync, "run", explode)
@@ -664,3 +664,27 @@ def test_no_zwift_logs_no_calls(tmp_path, monkeypatch):
     monkeypatch.setenv("LOCKEDIN_SYNC_STATE", str(tmp_path / "state.json"))
     http = FakeHttp()
     assert fit_sync.sync_zwift_ftp(cfg(tmp_path / "nowhere" / "Activities"), http) == [] and http.calls == []
+
+
+def test_refresh_uploads_recent_known_files_only(tmp_path, monkeypatch):
+    monkeypatch.setenv("LOCKEDIN_SYNC_STATE", str(tmp_path / "state.json"))
+    zwift, fit = tmp_path / "zwift", tmp_path / "healthfit"
+    zwift.mkdir(), fit.mkdir()
+    recent = make(fit / "recent.fit", b"recent", age_s=2 * 86400)
+    make(fit / "old.fit", b"old", age_s=20 * 86400)
+    make(zwift / "ride.fit", b"ride", age_s=3600)
+    config = {**cfg(zwift), "HEALTHFIT_DIR": str(fit)}
+    http = FakeHttp(known={fit_sync.sha256_file(p) for p in (recent, fit / "old.fit", zwift / "ride.fit")})
+
+    def uploads():
+        return [c[2] for c in http.calls if c[0].endswith("/api/fit/upload")]
+
+    fit_sync.sync_once(config, NOW, http=http)  # remembers everything as on the server
+    assert uploads() == []
+
+    report = fit_sync.run(config, now=lambda: NOW, sleep=lambda s: None, http=http, refresh_days=7)[0]
+    assert report.refreshed == 1 and len(uploads()) == 1 and b"recent" in uploads()[0]
+    assert b'name="source"\r\n\r\nhealthfit' in uploads()[0]
+
+    again = fit_sync.run(config, now=lambda: NOW, sleep=lambda s: None, http=http)[0]  # normal run: unchanged
+    assert again.refreshed == 0 and len(uploads()) == 1

@@ -110,6 +110,12 @@ Uninstall with `sync/uninstall.sh`. A file the server can't read is listed in th
 
 The sync remembers what it already uploaded in `~/Library/Application Support/lockedin/fit-sync-state.json`, so it doesn't re-read every file or pull old HealthFit files back from iCloud. **If you ever reset the server's database, delete that file** so everything is uploaded again.
 
+**Laps.** The importer keeps the laps a watch records (a Watch workout has one per planned step), in `activities.laps`. Workouts imported before that have none; upload the recent ones again once, whatever the saved state says:
+```bash
+python3 sync/fit_sync.py --refresh-days 30
+```
+The server fills in the laps of files it already has, and drops the saved verdict of a workout that has step laps, so the coach rewrites it with the exact result per block. The log line then ends with `sent again N`. A normal run is unchanged.
+
 ## 4. Apple Watch workouts via HealthFit (iPhone)
 
 HealthFit is a third-party app (about €8, one-time). It turns your Apple Health workouts into `.fit` files.

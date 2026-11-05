@@ -22,6 +22,8 @@ from fit_tool.profile.profile_type import (  # noqa: E402
     Event,
     EventType,
     FileType,
+    Intensity,
+    LapTrigger,
     LengthType,
     Manufacturer,
     Sport,
@@ -121,6 +123,54 @@ def pool_swim_with_rest(path: str, start: datetime) -> None:
     b.build().to_file(str(OUT / path))
 
 
+def watch_interval_run(path: str, start: datetime) -> None:
+    """A Watch run of a planned workout: one lap per workout step (warm-up, 3 × [active, recovery], cool-down)."""
+    # (workout step, intensity, seconds, pace s/km, bpm)
+    steps = [(0, Intensity.WARMUP, 600, 360, 135), (1, Intensity.ACTIVE, 480, 331, 164),
+             (2, Intensity.RECOVERY, 120, 420, 150), (1, Intensity.ACTIVE, 480, 351, 163),
+             (2, Intensity.RECOVERY, 120, 420, 152), (1, Intensity.ACTIVE, 480, 356, 163),
+             (2, Intensity.RECOVERY, 120, 420, 153), (4, Intensity.COOLDOWN, 300, 380, 140)]
+    b = FitFileBuilder(auto_define=True, min_string_size=50)
+    t0 = ms(start)
+    fid = FileIdMessage()
+    fid.type, fid.manufacturer, fid.product, fid.serial_number, fid.time_created = (
+        FileType.ACTIVITY, Manufacturer.DEVELOPMENT.value, 0, 0x5151, t0)
+    b.add(fid)
+    ev = EventMessage()
+    ev.event, ev.event_type, ev.timestamp = Event.TIMER, EventType.START, t0
+    b.add(ev)
+    t, dist, laps = 0, 0.0, []
+    for index, intensity, secs, pace, bpm in steps:
+        speed = 1000 / pace
+        for sec in range(0, secs, 5):
+            r = RecordMessage()
+            r.timestamp, r.heart_rate, r.speed, r.distance = t0 + (t + sec) * 1000, bpm, speed, dist + speed * sec
+            b.add(r)
+        lap = LapMessage()
+        lap.start_time, lap.timestamp = t0 + t * 1000, t0 + (t + secs) * 1000
+        lap.total_elapsed_time = lap.total_timer_time = secs
+        lap.total_distance, lap.avg_heart_rate, lap.enhanced_avg_speed = speed * secs, bpm, speed
+        lap.intensity, lap.lap_trigger, lap.workout_step_index = intensity, LapTrigger.MANUAL, index
+        laps.append(lap)
+        t, dist = t + secs, dist + speed * secs
+    for lap in laps:
+        b.add(lap)
+    end = t0 + t * 1000
+    ev = EventMessage()
+    ev.event, ev.event_type, ev.timestamp = Event.TIMER, EventType.STOP_ALL, end
+    b.add(ev)
+    s = SessionMessage()
+    s.start_time, s.timestamp = t0, end
+    s.sport, s.sub_sport = Sport.RUNNING, SubSport.STREET
+    s.total_elapsed_time = s.total_timer_time = t
+    s.total_distance, s.avg_heart_rate, s.max_heart_rate = dist, 152, 170
+    b.add(s)
+    act = ActivityMessage()
+    act.timestamp, act.total_timer_time, act.num_sessions = end, t, 1
+    b.add(act)
+    b.build().to_file(str(OUT / path))
+
+
 def main() -> None:
     zwift, watch = Manufacturer.ZWIFT.value, Manufacturer.DEVELOPMENT.value
 
@@ -162,6 +212,7 @@ def main() -> None:
           start=datetime(2026, 8, 15, 9, 0, tzinfo=UTC), duration_s=1800,
           records=[{"t": t, "heart_rate": 140, "distance": ow_speed * t} for t in range(0, 1801, 10)],
           session={"total_distance": 1500.0, "avg_heart_rate": 140, "max_heart_rate": 152})
+    watch_interval_run("watch_interval_run.fit", datetime(2026, 11, 4, 17, 35, tzinfo=UTC))
     print(f"wrote ingest samples to {OUT}")
 
 

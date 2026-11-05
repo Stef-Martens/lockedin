@@ -54,6 +54,8 @@ class ParsedFit:
     swim_strokes: int | None
     streams: Streams
     swim_active_s: int | None = None  # pool swims: time in active lengths, i.e. without rest at the wall
+    # One per lap the device recorded (a Watch workout has one per planned step); start_s is from the activity's start.
+    laps: list[dict] = field(default_factory=list)
 
 
 def _values(frame) -> dict:
@@ -68,6 +70,23 @@ def _hr(v) -> int | None:
     """Zwift writes 0 when no heart-rate strap is paired; that means "no data", not 0 bpm."""
     v = _int(v)
     return v if v else None
+
+
+def _lap(values: dict, start_at: datetime) -> dict:
+    start = values.get("start_time")
+    speed = values.get("enhanced_avg_speed", values.get("avg_speed"))
+    intensity, trigger = values.get("intensity"), values.get("lap_trigger")
+    return {
+        "start_s": round((_aware(start) - start_at).total_seconds(), 1) if start else None,
+        "timer_s": values.get("total_timer_time"),
+        "elapsed_s": values.get("total_elapsed_time"),
+        "distance_m": values.get("total_distance"),
+        "avg_hr": _hr(values.get("avg_heart_rate")),
+        "avg_speed": speed,
+        "intensity": None if intensity is None else str(intensity),
+        "trigger": None if trigger is None else str(trigger),
+        "step_index": _int(values.get("wkt_step_index")),
+    }
 
 
 def _avg(xs: list) -> int | None:
@@ -105,6 +124,7 @@ def _parse(data: bytes) -> list[ParsedFit]:
     sessions: list[dict] = []
     records: list[dict] = []
     lengths: list[dict] = []
+    laps: list[dict] = []
     try:
         with fitdecode.FitReader(io.BytesIO(data), check_crc=fitdecode.CrcCheck.RAISE) as fit:
             for frame in fit:
@@ -120,31 +140,35 @@ def _parse(data: bytes) -> list[ParsedFit]:
                         records.append(v)
                 elif frame.name == "length":
                     lengths.append(_values(frame))
+                elif frame.name == "lap":
+                    laps.append(_values(frame))
     except Exception as e:  # fitdecode raises several types for truncated/garbage input
         raise FitParseError(f"Could not read FIT file: {e}") from e
 
     legs = sorted((s for s in sessions if "start_time" in s), key=lambda s: _aware(s["start_time"]))
     if len(legs) < 2:
-        return [_activity(file_id, sessions[0] if sessions else {}, records, lengths)]
+        return [_activity(file_id, sessions[0] if sessions else {}, records, lengths, laps)]
     starts = [_aware(s["start_time"]) for s in legs]
 
     def leg(ts) -> int:  # the last leg started by then
         return max(bisect_right(starts, _aware(ts)) - 1, 0) if ts else 0
 
-    parts: list[tuple[list, list]] = [([], []) for _ in legs]
+    parts: list[tuple[list, list, list]] = [([], [], []) for _ in legs]
     for r in records:
         parts[leg(r["timestamp"])][0].append(r)
     for ln in lengths:
         parts[leg(ln.get("start_time") or ln.get("timestamp"))][1].append(ln)
+    for lap in laps:
+        parts[leg(lap.get("start_time") or lap.get("timestamp"))][2].append(lap)
     out = []
-    for s, (recs, lens) in zip(legs, parts):
+    for s, (recs, lens, leg_laps) in zip(legs, parts):
         if str(s.get("sport")) == "transition":
             continue
         d0 = next((r["distance"] for r in recs if r.get("distance") is not None), None)
         if d0:  # some devices count distance on from the previous leg
             recs = [{**r, "distance": r["distance"] - d0} if r.get("distance") is not None else r for r in recs]
         try:
-            out.append(_activity(file_id, s, recs, lens))
+            out.append(_activity(file_id, s, recs, lens, leg_laps))
         except EmptyActivity:
             continue
     if not out:
@@ -152,7 +176,8 @@ def _parse(data: bytes) -> list[ParsedFit]:
     return out
 
 
-def _activity(file_id: dict, session: dict, records: list[dict], lengths: list[dict]) -> ParsedFit:
+def _activity(file_id: dict, session: dict, records: list[dict], lengths: list[dict],
+              laps: list[dict]) -> ParsedFit:
     if not session and not records:
         raise FitParseError("FIT file has no activity data.")
     timer = session.get("total_timer_time")
@@ -209,4 +234,5 @@ def _activity(file_id: dict, session: dict, records: list[dict], lengths: list[d
         streams=streams,
         swim_active_s=_int(sum(ln.get("total_timer_time", ln.get("total_elapsed_time", 0)) for ln in active))
         if active else None,
+        laps=[_lap(lap, start_at) for lap in laps],
     )

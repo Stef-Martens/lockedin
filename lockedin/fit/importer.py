@@ -1,5 +1,6 @@
 import hashlib
 import json
+import logging
 from dataclasses import dataclass
 from typing import Literal
 
@@ -10,6 +11,8 @@ from lockedin.dedupe import resolve_overlaps
 from lockedin.fit.metrics import best_avg_power, normalized_power
 from lockedin.fit.parse import EmptyActivity, FitParseError, ParsedFit, parse_fit_activities
 from lockedin.fitness import recompute_training_load
+
+log = logging.getLogger(__name__)
 
 Source = Literal["zwift", "healthfit"]
 
@@ -65,11 +68,39 @@ def _same_session(conn: Connection, source: str, f: ParsedFit) -> int | None:
     ), {"src": source, "sport": f.sport, "start": f.start_at, "dur": f.duration_s, "tol": SAME_START_S}).scalar()
 
 
+def _fill_laps(conn: Connection, sha: str, data: bytes) -> None:
+    """Activities imported before laps were kept get them from the file when it is uploaded again. A new
+    lap list that has workout steps replaces the saved verdict, which was written without them. Never raises:
+    the upload is a duplicate either way."""
+    try:
+        savepoint = conn.begin_nested()
+    except Exception:
+        log.warning("Could not fill in the laps of %s", sha, exc_info=True)
+        return
+    try:
+        if conn.execute(text(
+            "select 1 from activities where laps is null and (source_ref = :s or source_ref like :s || '#%') limit 1"
+        ), {"s": sha}).first():
+            for i, f in enumerate(parse_fit_activities(data)):
+                activity_id = conn.execute(text(
+                    "update activities set laps = cast(:l as jsonb) where source_ref = :ref and laps is null "
+                    "returning id"), {"l": json.dumps(f.laps), "ref": sha if i == 0 else f"{sha}#{i + 1}"}).scalar()
+                if activity_id is not None and any(lap["step_index"] is not None for lap in f.laps):
+                    conn.execute(text("delete from workout_verdicts where activity_id = :i"), {"i": activity_id})
+    except Exception:
+        savepoint.rollback()
+        log.warning("Could not fill in the laps of %s", sha, exc_info=True)
+        return
+    savepoint.commit()
+
+
 def import_fit(conn: Connection, data: bytes, filename: str, source_hint: Source | None) -> FitImportResult:
     sha = hashlib.sha256(data).hexdigest()
     existing = conn.execute(text(
         "select activity_id, parse_status, error, unreadable from fit_files where sha256 = :s"), {"s": sha}).first()
     if existing and existing.parse_status in ("ok", "empty"):
+        if existing.parse_status == "ok":
+            _fill_laps(conn, sha, data)
         return FitImportResult("duplicate", sha, existing.activity_id)
     if existing and existing.unreadable:  # the same bytes get the same answer; no need to parse them again
         return FitImportResult("error", sha, error=existing.error, already_failed=True)
@@ -114,10 +145,10 @@ def _store(conn: Connection, ref: str, filename: str, source: str, f: ParsedFit)
     activity_id = conn.execute(text(
         "insert into activities (source, source_ref, sport, sub_type, start_at, end_at, duration_s, moving_s, "
         "distance_m, elevation_m, avg_hr, max_hr, calories, avg_power, max_power, avg_cadence, "
-        "avg_pace_s_per_km, swim_pace_s_per_100m, swim_lengths, swim_strokes, pool_length_m) "
+        "avg_pace_s_per_km, swim_pace_s_per_100m, swim_lengths, swim_strokes, pool_length_m, laps) "
         "values (:source, :ref, :sport, :sub_type, :start_at, :end_at, :duration_s, :moving_s, "
         ":distance_m, :elevation_m, :avg_hr, :max_hr, :calories, :avg_power, :max_power, :avg_cadence, "
-        ":pace_km, :pace_100, :swim_lengths, :swim_strokes, :pool_length_m) "
+        ":pace_km, :pace_100, :swim_lengths, :swim_strokes, :pool_length_m, cast(:laps as jsonb)) "
         "on conflict (source, source_ref) do update set source_ref = excluded.source_ref returning id"
     ), {
         "source": source, "ref": ref, "sport": f.sport, "sub_type": f.sub_type, "start_at": f.start_at,
@@ -125,7 +156,7 @@ def _store(conn: Connection, ref: str, filename: str, source: str, f: ParsedFit)
         "elevation_m": f.elevation_m, "avg_hr": f.avg_hr, "max_hr": f.max_hr, "calories": f.calories,
         "avg_power": f.avg_power, "max_power": f.max_power, "avg_cadence": f.avg_cadence,
         "pace_km": pace_km, "pace_100": pace_100, "swim_lengths": f.swim_lengths,
-        "swim_strokes": f.swim_strokes, "pool_length_m": f.pool_length_m,
+        "swim_strokes": f.swim_strokes, "pool_length_m": f.pool_length_m, "laps": json.dumps(f.laps),
     }).scalar_one()
 
     s = f.streams
