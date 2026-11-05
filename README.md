@@ -112,7 +112,7 @@ The sync remembers what it already uploaded in `~/Library/Application Support/lo
 
 **Laps.** The importer keeps the laps a watch records (a Watch workout has one per planned step), in `activities.laps`. Workouts imported before that have none; upload the recent ones again once, whatever the saved state says:
 ```bash
-python3 sync/fit_sync.py --refresh-days 30
+/usr/bin/python3 sync/fit_sync.py --refresh-days 30
 ```
 The server fills in the laps of files it already has (also of a re-export with other bytes). For a workout from the last 14 days that has step laps it also drops the saved verdict, so the coach rewrites it with the exact result per block the next time it's opened, at the normal cost per verdict; an older workout keeps its verdict, since no new one is written that old. The log line then ends with `sent again N`. A normal run is unchanged.
 
