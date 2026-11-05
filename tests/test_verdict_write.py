@@ -33,10 +33,18 @@ def test_sends_facts_and_no_tools():
 
 
 def test_prompt_is_about_blocks_and_short():
-    assert "blocks.follows_plan is false" in SYSTEM and "didn't follow the plan's steps" in SYSTEM
-    assert "use them only when blocks is null" in SYSTEM and "2 to 4 sentences" in SYSTEM
+    assert "Start with how it went against the plan, the main point first" in SYSTEM
+    assert "When the plan has steps and blocks.follows_plan is false" in SYSTEM and "didn't follow the plan's steps" in SYSTEM
+    assert "only when blocks is null" in SYSTEM and "2 to 4 sentences" in SYSTEM
     assert "step_results" not in SYSTEM and "matched_by" not in SYSTEM
     assert "per-block breakdown" in SYSTEM  # only to forbid saying it
+
+
+def test_prompt_scopes_blocks_to_plans_with_steps():
+    assert "Without plan steps" in SYSTEM and "never call it a failure to follow the plan" in SYSTEM
+    assert "the km splits are usable" in SYSTEM and "On a run, when blocks is null" in SYSTEM
+    assert "one per planned step" not in SYSTEM
+    assert "in_target covers pace or heart rate only" in SYSTEM and "cut short" in SYSTEM
 
 
 @pytest.mark.parametrize("turn", [

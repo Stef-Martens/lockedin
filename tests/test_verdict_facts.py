@@ -116,6 +116,15 @@ def test_blocks_come_from_the_laps(conn):
     assert f["blocks"]["rows"][1]["in_target"] is True and "laps" not in f["workout"]
 
 
+def test_rest_day_run_with_step_laps_has_unjudged_blocks(conn):
+    add(conn, day="2026-10-29", sport="rest", title="Rest")
+    aid = add_run(conn)
+    set_laps(conn, aid, [lap(600, 2.5, 140, 0, "warmup"), lap(300, 3.0, 160, 1, "active")])
+    f = facts(conn, NOW, aid)
+    assert f["plan"] is None and f["rest_day"] is True
+    assert f["blocks"]["follows_plan"] is False and f["blocks"]["rows"][1]["in_target"] is None
+
+
 def test_free_run_has_blocks_without_judgement(conn):
     aid = add_run(conn)
     set_laps(conn, aid, [lap(600, 2.5, 140, 0, "warmup")])
