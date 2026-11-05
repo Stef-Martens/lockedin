@@ -15,7 +15,7 @@ MAX_POINTS = 600
 SMOOTH_S = 30
 MIN_COVERAGE = 0.5  # a planned part counts as ridden when the ride covers at least half of it
 ACTIVITY = ("id, sport, start_at, duration_s, moving_s, distance_m, avg_power, np, tss, avg_hr, avg_pace_s_per_km, "
-            "swim_pace_s_per_100m, swim_lengths, swim_strokes")
+            "swim_pace_s_per_100m, swim_lengths, swim_strokes, laps")
 
 
 def activity(conn: Connection, activity_id: int):

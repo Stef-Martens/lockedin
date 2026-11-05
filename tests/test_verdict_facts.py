@@ -11,7 +11,7 @@ from lockedin import timeoff
 from lockedin.agenda.store import ItemIn, create
 from lockedin.focus.zones import hr_ranges
 from lockedin.timeoff import Restriction, TimeOffIn
-from lockedin.verdict.facts import MATCHED_BY, facts, step_results
+from lockedin.verdict.facts import facts
 
 NOW = datetime(2026, 10, 29, 20, 0, tzinfo=UTC)
 START = datetime(2026, 10, 29, 7, tzinfo=UTC)
@@ -59,6 +59,15 @@ def add_run(conn, s=None, start=START, **fields):
     return aid
 
 
+def lap(seconds, speed, hr, step, intensity):
+    return {"start_s": 0, "timer_s": seconds, "elapsed_s": seconds, "distance_m": seconds * speed, "avg_hr": hr,
+            "avg_speed": speed, "intensity": intensity, "trigger": "time", "step_index": step}
+
+
+def set_laps(conn, aid, laps):
+    conn.execute(text("update activities set laps = cast(:l as jsonb) where id = :i"), {"l": json.dumps(laps), "i": aid})
+
+
 def lists_in(value):
     if isinstance(value, dict):
         for v in value.values():
@@ -67,299 +76,6 @@ def lists_in(value):
         yield value
         for v in value:
             yield from lists_in(v)
-
-
-# ---- step_results
-
-
-def test_steps_by_time():
-    rows = step_results(TEMPO, tempo_stream(), Z)
-    work = {"pace_low": 330, "pace_high": 350}
-    assert [r["kind"] for r in rows] == ["warmup"] + ["work", "recovery"] * 4
-    assert [r["repeat"] for r in rows] == [None, 1, 1, 2, 2, 3, 3, 4, 4]
-    assert rows[:4] == [
-        {"kind": "warmup", "repeat": None, "goal": {"time_s": 600}, "target": {"hr_zone": 2}, "seconds": 600,
-         "metres": 1500, "pace_s_per_km": 400, "avg_hr": 140, "in_target": True},
-        {"kind": "work", "repeat": 1, "goal": {"time_s": 300}, "target": work, "seconds": 300,
-         "metres": 900, "pace_s_per_km": 333, "avg_hr": 160, "in_target": True},
-        {"kind": "recovery", "repeat": 1, "goal": {"time_s": 120}, "target": None, "seconds": 120,
-         "metres": 240, "pace_s_per_km": 500, "avg_hr": 130, "in_target": None},
-        {"kind": "work", "repeat": 2, "goal": {"time_s": 300}, "target": work, "seconds": 300,
-         "metres": 750, "pace_s_per_km": 400, "avg_hr": 165, "in_target": False},
-    ]
-
-
-def test_zone_target_is_judged_by_average_hr():
-    steps = {"warmup": {"goal": {"time_s": 600}, "target": {"hr_zone": 2}},
-             "blocks": [{"repeat": 1, "steps": [{"kind": "work", "goal": {"open": True}}]}]}
-    assert step_results(steps, stream((600, 2.5, 137)), Z)[0]["in_target"] is True
-    assert step_results(steps, stream((600, 2.5, 157)), Z)[0]["in_target"] is False
-
-
-def test_no_data_leaves_in_target_null():
-    steps = {"warmup": {"goal": {"time_s": 600}, "target": {"hr_zone": 2}},
-             "blocks": [{"repeat": 1, "steps": [{"kind": "work", "goal": {"open": True}}]}]}
-    s = stream((600, 2.5, 140))
-    assert step_results(steps, s)[0]["in_target"] is None  # max HR not known
-    s.hr = None
-    row = step_results(steps, s, Z)[0]
-    assert row["avg_hr"] is None and row["in_target"] is None and row["seconds"] == 600
-
-
-def test_dropped_hr_samples_do_not_pull_the_average_down():
-    steps = {"blocks": [{"repeat": 1, "steps": [{"kind": "work", "goal": {"time_s": 100}}]}]}
-    s = stream((100, 2.5, 150))
-    s.hr[1:21] = [None] * 10 + [0] * 10
-    assert step_results(steps, s)[0]["avg_hr"] == 150
-
-
-def test_steps_by_distance():
-    steps = {"warmup": {"goal": {"distance_m": 1000}},
-             "blocks": [{"repeat": 2, "steps": [
-                 {"kind": "work", "goal": {"distance_m": 400}, "target": {"pace_low": 240, "pace_high": 260}},
-                 {"kind": "recovery", "goal": {"time_s": 60}}]}]}
-    s = stream((200, 2.5, 130), (125, 4.0, 140), (100, 4.0, 170), (60, 2.0, 120), (80, 5.0, 175), (60, 2.0, 121))
-    rows = step_results(steps, s)
-    assert [(r["seconds"], r["metres"], r["pace_s_per_km"]) for r in rows] == [
-        (325, 1000, 325), (100, 400, 250), (60, 120, 500), (80, 400, 200), (60, 120, 500)]
-    assert [r["in_target"] for r in rows] == [None, True, None, False, None]
-
-
-def test_boundary_between_samples_is_interpolated():
-    steps = {"blocks": [{"repeat": 1, "steps": [{"kind": "work", "goal": {"distance_m": 1000}},
-                                                {"kind": "recovery", "goal": {"time_s": 60}}]}]}
-    rows = step_results(steps, stream((500, 3.0, 150)))
-    assert (rows[0]["seconds"], rows[0]["metres"]) == (333, 1000)
-    assert (rows[1]["seconds"], rows[1]["metres"]) == (60, 180)
-
-
-WORK_THEN_JOG = {"blocks": [{"repeat": 1, "steps": [{"kind": "work", "goal": {"time_s": 600}},
-                                                    {"kind": "recovery", "goal": {"time_s": 120}}]}]}
-
-
-def test_long_stop_with_samples_gets_no_results_on_time_goals():
-    """With auto-pause off the watch's step clock runs on through it, so later windows would be off by its length."""
-    s = stream((300, 3.0, 160), (31, 0.0, 100), (300, 3.0, 160), (120, 2.0, 130))
-    assert step_results(WORK_THEN_JOG, s) is None
-
-
-def test_short_stops_with_samples_add_up():
-    s = stream((100, 3.0, 160), (16, 0.0, 100), (100, 3.0, 160), (16, 0.0, 100), (400, 3.0, 160), (120, 2.0, 130))
-    assert step_results(WORK_THEN_JOG, s) is None
-
-
-def test_short_stop_with_samples_does_not_shift_steps():
-    s = stream((300, 3.0, 160), (30, 0.0, 100), (300, 3.0, 160), (120, 2.0, 130))
-    rows = step_results(WORK_THEN_JOG, s)
-    assert [(r["seconds"], r["metres"], r["avg_hr"]) for r in rows] == [(600, 1800, 160), (120, 240, 130)]
-
-
-def test_long_stop_after_the_matched_steps_is_fine():
-    s = stream((600, 3.0, 160), (120, 2.0, 130), (200, 0.0, 100), (300, 2.0, 125))
-    rows = step_results({**WORK_THEN_JOG, "cooldown": {"goal": {"open": True}}}, s)
-    assert [(r["seconds"], r["metres"]) for r in rows] == [(600, 1800), (120, 240)]
-
-
-def test_long_stop_with_samples_does_not_touch_distance_goals():
-    steps = {"blocks": [{"repeat": 1, "steps": [{"kind": "work", "goal": {"distance_m": 1800}},
-                                                {"kind": "recovery", "goal": {"distance_m": 240}}]}]}
-    s = stream((300, 3.0, 160), (200, 0.0, 100), (300, 3.0, 160), (120, 2.0, 130))
-    rows = step_results(steps, s)
-    assert [(r["seconds"], r["metres"], r["avg_hr"]) for r in rows] == [(600, 1800, 160), (120, 240, 130)]
-
-
-def three_blocks():
-    return stream((600, 3.0, 160), (300, 2.0, 130), (600, 3.0, 160))
-
-
-THREE_BLOCKS = {"blocks": [{"repeat": 1, "steps": [{"kind": "work", "goal": {"time_s": 600}},
-                                                   {"kind": "recovery", "goal": {"time_s": 300}},
-                                                   {"kind": "work", "goal": {"time_s": 600}}]}]}
-
-
-def test_clean_three_blocks():
-    rows = step_results(THREE_BLOCKS, three_blocks())
-    assert [(r["seconds"], r["metres"], r["pace_s_per_km"]) for r in rows] == [(600, 1800, 333), (300, 600, 500), (600, 1800, 333)]
-
-
-def test_gps_dropout_without_distance_or_speed_gets_no_results():
-    """Was (600, 2040, 294), (300, 720, 417), (480, 1440, 333): the gap counted as stopped, the metres arrived in one jump."""
-    s = three_blocks()
-    for i in range(300, 420):
-        s.distance[i] = s.speed[i] = None
-    assert step_results(THREE_BLOCKS, s) is None
-
-
-def test_gps_dropout_with_speed_zero_gets_no_results():
-    s = three_blocks()
-    for i in range(300, 420):
-        s.distance[i], s.speed[i] = None, 0.0
-    assert step_results(THREE_BLOCKS, s) is None
-
-
-def test_samples_missing_with_slow_looking_metres_get_no_results():
-    """Was (600, 2200, 273), (300, 600, 500), (600, 1800, 333): 400 m over 900 s reads as under 0.5 m/s, so as stopped."""
-    s = stream((300, 3.0, 160), (1, 0.0, 160), (300, 3.0, 160), (300, 2.0, 130), (600, 3.0, 160))
-    s.distance = s.distance[:301] + [d + 400 for d in s.distance[301:]]
-    s.t_offset = s.t_offset[:301] + [t + 899 for t in s.t_offset[301:]]
-    assert step_results(THREE_BLOCKS, s) is None
-
-
-def test_metres_jumping_ahead_on_distance_goals_get_no_results():
-    """Was (50 s, 300 m, 167), (17 s, 300 m, 56): 400 m in no moving time."""
-    steps = {"blocks": [{"repeat": 2, "steps": [{"kind": "work", "goal": {"distance_m": 300}}]}]}
-    s = stream((50, 3.0, 160), (1, 0.0, 160), (200, 3.0, 160))
-    assert len(step_results(steps, s)) == 2
-    s.distance = s.distance[:51] + [d + 400 for d in s.distance[51:]]
-    s.t_offset = s.t_offset[:51] + [t + 899 for t in s.t_offset[51:]]
-    assert step_results(steps, s) is None
-
-
-def test_metres_jumping_after_the_matched_steps_are_fine():
-    s = stream((600, 3.0, 160), (120, 2.0, 130), (1, 0.0, 130), (300, 2.0, 125))
-    s.distance = s.distance[:722] + [d + 400 for d in s.distance[722:]]
-    s.t_offset = s.t_offset[:722] + [t + 899 for t in s.t_offset[722:]]
-    rows = step_results({**WORK_THEN_JOG, "cooldown": {"goal": {"open": True}}}, s)
-    assert [(r["seconds"], r["metres"]) for r in rows] == [(600, 1800), (120, 240)]
-
-
-def test_gps_drift_during_an_auto_pause_is_fine():
-    s = stream((300, 3.0, 160), (1, 0.0, 100), (300, 3.0, 160), (120, 2.0, 130))
-    s.distance = s.distance[:301] + [d + 20 for d in s.distance[301:]]
-    s.t_offset = s.t_offset[:301] + [t + 500 for t in s.t_offset[301:]]
-    rows = step_results(WORK_THEN_JOG, s)
-    assert [(r["seconds"], r["metres"]) for r in rows] == [(600, 1820), (120, 240)]
-
-
-def test_metres_in_no_moving_time_give_no_pace():
-    """Never a pace of 0."""
-    steps = {"blocks": [{"repeat": 1, "steps": [{"kind": "work", "goal": {"distance_m": 20}}]}]}
-    s = SimpleNamespace(t_offset=[0, 100], speed=None, hr=None, distance=[0.0, 25.0])
-    row = step_results(steps, s)[0]
-    assert (row["seconds"], row["metres"], row["pace_s_per_km"], row["in_target"]) == (0, 20, None, None)
-
-
-def stopped_in_step_1(seconds, every):
-    """Three blocks with a stop inside the first, sampled every so many seconds; sampled once, it's an auto-pause."""
-    n = seconds // every
-    s = stream((300, 3.0, 160), (n, 0.0, 100), (300, 3.0, 160), (300, 2.0, 130), (600, 3.0, 160))
-    s.t_offset = s.t_offset[:301] + [300 + every * k for k in range(1, n + 1)] + [t + seconds - n for t in s.t_offset[301 + n:]]
-    return s
-
-
-@pytest.mark.parametrize(("seconds", "every"), [
-    (120, 1), (120, 5), (120, 10), (120, 11), (120, 15), (120, 30), (120, 60), (300, 11), (300, 29), (600, 15),
-    (600, 300),  # a stray sample during an auto-pause falls on the safe side
-])
-def test_stop_with_samples_gets_no_results_however_far_apart_they_are(seconds, every):
-    assert step_results(THREE_BLOCKS, stopped_in_step_1(seconds, every)) is None
-
-
-@pytest.mark.parametrize("seconds", [120, 900])
-def test_sampleless_stop_does_not_shift_steps(seconds):
-    rows = step_results(THREE_BLOCKS, stopped_in_step_1(seconds, seconds))
-    assert [(r["seconds"], r["metres"], r["pace_s_per_km"]) for r in rows] == [(600, 1800, 333), (300, 600, 500), (600, 1800, 333)]
-
-
-def test_auto_pause_without_samples_does_not_shift_steps():
-    steps = {"blocks": [{"repeat": 1, "steps": [{"kind": "work", "goal": {"time_s": 600}},
-                                                {"kind": "recovery", "goal": {"time_s": 120}}]}]}
-    s = stream((300, 3.0, 160), (1, 0.0, 100), (300, 3.0, 160), (120, 2.0, 130))
-    s.t_offset = s.t_offset[:301] + [t + 500 for t in s.t_offset[301:]]  # the first sample back is where it stopped
-    rows = step_results(steps, s)
-    assert [(r["seconds"], r["metres"], r["avg_hr"]) for r in rows] == [(600, 1800, 160), (120, 240, 130)]
-
-
-def test_open_goal_stops_matching():
-    steps = {"warmup": {"goal": {"time_s": 300}},
-             "blocks": [{"repeat": 1, "steps": [{"kind": "work", "goal": {"open": True}},
-                                                {"kind": "recovery", "goal": {"time_s": 60}}]}],
-             "cooldown": {"goal": {"time_s": 300}}}
-    rows = step_results(steps, stream((300, 2.5, 130), (900, 3.0, 160)))
-    assert [r["kind"] for r in rows] == ["warmup"]
-
-
-def test_nothing_before_the_open_step_gives_no_results():
-    steps = {"blocks": [{"repeat": 1, "steps": [{"kind": "work", "goal": {"open": True}},
-                                                {"kind": "recovery", "goal": {"time_s": 60}}]}]}
-    assert step_results(steps, stream((900, 3.0, 160))) is None
-
-
-def test_free_run_gets_no_results():
-    planned_before_open = 600 + 4 * 420  # TEMPO: 2280 s
-    assert step_results(TEMPO, stream((int(planned_before_open * 0.89), 2.5, 150))) is None
-    assert step_results(TEMPO, stream((int(planned_before_open * 0.91), 2.5, 150))) is not None
-
-
-def test_coverage_is_judged_on_metres_for_distance_goals():
-    steps = {"blocks": [{"repeat": 1, "steps": [{"kind": "work", "goal": {"distance_m": 10000}}]}]}
-    assert step_results(steps, stream((3560, 2.5, 150))) is None  # 8900 m
-    assert step_results(steps, stream((3640, 2.5, 150)))[0]["metres"] == 9100
-
-
-def test_coverage_is_judged_per_kind_of_goal():
-    """All the time steps done doesn't make up for the distance steps left out."""
-    steps = {"warmup": {"goal": {"time_s": 3600}},
-             "blocks": [{"repeat": 1, "steps": [{"kind": "work", "goal": {"distance_m": 1000}}]}]}
-    assert step_results(steps, stream((3600, 2.5, 150), (200, 2.5, 150))) is None  # 500 of 1000 m
-
-
-def test_a_step_barely_started_is_not_reported():
-    steps = {"blocks": [{"repeat": 10, "steps": [{"kind": "work", "goal": {"time_s": 300}}]}]}
-    assert len(step_results(steps, stream((2880, 3.0, 150)))) == 10  # the tenth is 180 of 300 s
-    rows = step_results(steps, stream((2780, 3.0, 150)))  # the tenth is 80 of 300 s
-    assert [r["repeat"] for r in rows] == list(range(1, 10))
-
-
-def test_an_unfinished_step_reports_what_was_done():
-    steps = {"blocks": [{"repeat": 10, "steps": [{"kind": "work", "goal": {"time_s": 300}}]}]}
-    last = step_results(steps, stream((2880, 3.0, 150)))[-1]
-    assert (last["goal"], last["seconds"], last["metres"]) == ({"time_s": 300}, 180, 540)
-
-
-def test_no_stream_gets_no_results():
-    assert step_results(TEMPO, None) is None
-    assert step_results(TEMPO, SimpleNamespace(t_offset=[], speed=None, hr=None, distance=None)) is None
-    assert step_results(TEMPO, SimpleNamespace(t_offset=[0, 1], speed=[3, 3], hr=[150, 150], distance=None)) is None
-    assert step_results(TEMPO, SimpleNamespace(t_offset=[0, 1], speed=None, hr=None, distance=[None, None])) is None
-
-
-def test_gps_gap_inside_the_steps_gets_no_results():
-    """Where the distance jumped ahead the steps can't be placed exactly, and a wrong result is worse than none."""
-    s = tempo_stream()
-    for i in range(700, 760):
-        s.distance[i] = None
-    assert step_results(TEMPO, s) is None
-
-
-def test_samples_missing_inside_the_steps_get_no_results():
-    s = tempo_stream()
-    del s.t_offset[700:760], s.speed[700:760], s.hr[700:760], s.distance[700:760]
-    assert step_results(TEMPO, s) is None
-
-
-def test_clock_jumping_back_gets_no_results():
-    s = tempo_stream()
-    s.t_offset = s.t_offset[:700] + [t - 100 for t in s.t_offset[700:]]
-    assert step_results(TEMPO, s) is None
-
-
-def test_short_gaps_and_a_gap_in_the_open_part_are_fine():
-    s = tempo_stream()
-    for i in range(700, 710):
-        s.distance[i] = None
-    for i in range(2300, 2400):  # the open cool-down
-        s.distance[i] = None
-    rows = step_results(TEMPO, s, Z)
-    assert (rows[1]["seconds"], rows[1]["metres"]) == (300, 900)
-
-
-def test_distance_missing_at_the_start_counts_from_zero():
-    steps = {"blocks": [{"repeat": 1, "steps": [{"kind": "work", "goal": {"time_s": 100}}]}]}
-    s = stream((100, 3.0, 150))
-    s.distance[:6] = [None] * 6
-    row = step_results(steps, s)[0]
-    assert (row["seconds"], row["metres"]) == (100, 300)
 
 
 # ---- facts
@@ -375,7 +91,7 @@ def test_planned_ride_has_parts(conn):
     assert [p["label"] for p in f["comparison"]["parts"]] == ["Interval 1", "Interval 2", "Interval 3"]
     assert f["comparison"]["intervals_on_target"] is True
     assert f["workout"]["avg_power"] == 128 and f["workout"]["sport"] == "bike"
-    assert f["step_results"] is None and f["matched_by"] is None
+    assert f["blocks"] is None and "step_results" not in f and "matched_by" not in f
 
 
 def test_planned_run_has_splits_and_zones(conn):
@@ -386,22 +102,25 @@ def test_planned_run_has_splits_and_zones(conn):
     assert f["plan"]["kind"] == "targets" and f["plan"]["steps"]["blocks"][0]["repeat"] == 4
     assert f["plan"]["zone_bpm"]["2"] == [137, 156]
     assert f["comparison"]["splits"][0]["km"] == 1 and sum(f["comparison"]["zones"].values()) > 0
-    assert len(f["step_results"]) == 9 and f["step_results"][0]["in_target"] is True
-    assert f["matched_by"] == MATCHED_BY == "the plan's order and lengths from the start of the run"
+    assert f["blocks"] is None and "step_results" not in f and "matched_by" not in f
 
 
-def test_km_splits_of_a_stepped_run_are_not_judged_against_its_work_pace(conn):
-    """The band is the work steps'; a km of warm-up isn't "slower" than it."""
+def test_blocks_come_from_the_laps(conn):
+    conn.execute(text("update profile set max_hr_override = 190"))
     add(conn, day="2026-10-29", sport="run", title="Tempo", targets={"steps": TEMPO})
     aid = add_run(conn)
-    assert all("status" not in s for s in facts(conn, NOW, aid)["comparison"]["splits"])
-
-
-def test_km_splits_of_a_run_without_steps_keep_their_status(conn):
-    add(conn, day="2026-10-29", sport="run", title="Steady", targets={"duration_s": 3000, "pace_low": 330, "pace_high": 420})
-    aid = add_run(conn)
+    set_laps(conn, aid, [lap(600, 2.5, 140, 0, "warmup"), lap(300, 3.0, 160, 1, "active"),
+                         lap(120, 2.0, 130, 2, "recovery")])
     f = facts(conn, NOW, aid)
-    assert f["comparison"]["splits"][0]["status"] == "on_target" and f["step_results"] is None
+    assert f["blocks"]["follows_plan"] is True and [r["kind"] for r in f["blocks"]["rows"]] == ["warmup", "work", "recovery"]
+    assert f["blocks"]["rows"][1]["in_target"] is True and "laps" not in f["workout"]
+
+
+def test_free_run_has_blocks_without_judgement(conn):
+    aid = add_run(conn)
+    set_laps(conn, aid, [lap(600, 2.5, 140, 0, "warmup")])
+    b = facts(conn, NOW, aid)["blocks"]
+    assert b["follows_plan"] is False and b["rows"][0]["in_target"] is None
 
 
 def test_zone_1_starts_at_60_percent_as_on_the_watch(conn):
@@ -409,8 +128,9 @@ def test_zone_1_starts_at_60_percent_as_on_the_watch(conn):
     steps = {"blocks": [{"repeat": 1, "steps": [{"kind": "work", "goal": {"time_s": 600}, "target": {"hr_zone": 1}}]}]}
     add(conn, day="2026-10-29", sport="run", title="Very easy", targets={"steps": steps, "hr_zone": 1})
     aid = add_run(conn, stream((600, 2.5, 100)))
+    set_laps(conn, aid, [lap(600, 2.5, 100, 0, "active")])
     f = facts(conn, NOW, aid)
-    assert f["step_results"][0]["in_target"] is False  # 100 bpm is under 114
+    assert f["blocks"]["rows"][0]["in_target"] is False  # 100 bpm is under 114
     assert f["plan"]["zone_bpm"]["1"] == [114, 137] and f["plan"]["hr_bpm"] == [114, 137]
     assert hr_ranges(conn, NOW)[1] == (114, 137)
 
@@ -422,9 +142,10 @@ def test_max_hr_unknown_gives_no_zone_judgement(conn):
     s = tempo_stream()
     s.hr = None
     save_stream(conn, aid, s)
+    set_laps(conn, aid, [lap(600, 2.5, 140, 0, "warmup"), lap(300, 3.0, 160, 1, "active")])
     f = facts(conn, NOW, aid)
-    assert f["step_results"][0]["in_target"] is None and "zone_bpm" not in f["plan"]
-    assert f["step_results"][1]["in_target"] is True  # pace needs no max HR
+    assert f["blocks"]["rows"][0]["in_target"] is None and "zone_bpm" not in f["plan"]
+    assert f["blocks"]["rows"][1]["in_target"] is True  # 3.0 m/s is 5:33 in 5:30-5:50; pace needs no max HR
     assert f["comparison"]["zones"] is None
 
 
@@ -442,7 +163,7 @@ def test_unplanned_run_has_no_plan(conn):
     conn.execute(text("update profile set max_hr_override = 190"))
     aid = add_run(conn)
     f = facts(conn, NOW, aid)
-    assert f["plan"] is None and f["rest_day"] is False and f["step_results"] is None and f["matched_by"] is None
+    assert f["plan"] is None and f["rest_day"] is False and f["blocks"] is None
     assert f["comparison"]["splits"][0]["status"] is None and sum(f["comparison"]["zones"].values()) > 0
     assert f["workout"]["sport"] == "run" and f["workout"]["start_at"].startswith("2026-10-29T")
     json.dumps(f)

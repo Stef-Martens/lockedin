@@ -6,11 +6,12 @@ from datetime import date, datetime, timedelta
 from sqlalchemy import Connection, text
 
 from lockedin.agenda import actual as act
+from lockedin.agenda.blocks import blocks
 from lockedin.agenda.parts import parts, sweet_spot_minutes, tss_estimate
 from lockedin.agenda.store import get_item, local_today
 from lockedin.agenda.zwo import ZwiftWorkout, duration_s
 from lockedin.fitness import ftp_at, known_ftp_at
-from lockedin.focus.zones import hr_zone_bounds, max_hr_at
+from lockedin.focus.zones import hr_ranges, hr_zone_bounds, max_hr_at
 from lockedin.plan.build import build_plan
 from lockedin.timeoff import back_from, off_on
 from lockedin.timeutil import TZ
@@ -128,8 +129,13 @@ def detail(conn: Connection, now: datetime, item_id: int) -> dict:
             actual["pace"] = act.series(t, s.speed if s is not None else None,
                                         transform=lambda v: 1000 / v if v > 0.5 else None)
             actual["hr"] = act.series(t, s.hr if s is not None else None)
+            steps = (item["targets"] or {}).get("steps")
             band = ((item["targets"] or {}).get("pace_low"), (item["targets"] or {}).get("pace_high"))
             actual["splits"] = act.splits(s, band)
+            if steps and actual["splits"]:
+                # The summary pace is the work steps' only; a whole km of warm-up or jog isn't "slower" than it.
+                actual["splits"] = [{k: v for k, v in sp.items() if k != "status"} for sp in actual["splits"]]
+            actual["blocks"] = blocks(a.laps, steps, hr_ranges(conn, a.start_at))
             actual["zones"] = act.zones(conn, a.start_at, s)
         elif item["sport"] == "gym":
             actual["rows"] = _gym_rows(conn, plan.get("items", []), a.id)

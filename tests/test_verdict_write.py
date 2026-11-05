@@ -6,7 +6,7 @@ from test_coach_loop import FakeLLM, text_block
 from lockedin.coach.llm import CoachUnavailable, Final
 from lockedin.verdict.write import SCHEMA, SYSTEM, VerdictFailed, write
 
-FACTS = {"workout": {"sport": "run"}, "step_results": None}
+FACTS = {"workout": {"sport": "run"}, "blocks": None}
 
 
 def reply(label="close", text="Mostly there."):
@@ -32,9 +32,11 @@ def test_sends_facts_and_no_tools():
     assert json.loads(call["messages"][0]["content"].split("\n", 1)[1]) == FACTS
 
 
-def test_prompt_states_the_limits_of_step_results():
-    assert "step_results is null" in SYSTEM and "doesn't appear to follow the plan's steps" in SYSTEM
-    assert "include the warm-up" in SYSTEM
+def test_prompt_is_about_blocks_and_short():
+    assert "blocks.follows_plan is false" in SYSTEM and "didn't follow the plan's steps" in SYSTEM
+    assert "use them only when blocks is null" in SYSTEM and "2 to 4 sentences" in SYSTEM
+    assert "step_results" not in SYSTEM and "matched_by" not in SYSTEM
+    assert "per-block breakdown" in SYSTEM  # only to forbid saying it
 
 
 @pytest.mark.parametrize("turn", [

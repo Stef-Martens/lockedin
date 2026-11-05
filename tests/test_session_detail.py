@@ -1,3 +1,4 @@
+import json
 from datetime import UTC, datetime
 
 import pytest
@@ -121,6 +122,34 @@ def test_run_plan_and_done(client, clean_db, clock):
     assert a["splits"][0]["status"] == "on_target"
     assert a["splits"][-1]["km"] == pytest.approx(8.4, abs=0.05)
     assert sum(a["zones"].values()) == pytest.approx(2872, abs=5)
+
+
+def _lap(seconds, pace, step, intensity):
+    return {"start_s": 0, "timer_s": seconds, "elapsed_s": seconds, "distance_m": seconds * 1000 / pace, "avg_hr": 150,
+            "avg_speed": 1000 / pace, "intensity": intensity, "trigger": "time", "step_index": step}
+
+
+def test_stepped_run_has_blocks_and_splits_without_status(client, clean_db, clock):
+    steps = {"warmup": {"goal": {"time_s": 600}}, "blocks": [{"repeat": 1, "steps": [
+        {"kind": "work", "goal": {"time_s": 480}, "target": {"pace_low": 335, "pace_high": 350}}]}]}
+    with clean_db.begin() as c:
+        iid = add(c, day="2026-10-29", sport="run", title="Tempo", targets={"steps": steps})
+        aid = add_session(c, "run", datetime(2026, 10, 29, 7, tzinfo=UTC), 2872, distance_m=8400, avg_hr=150, avg_pace=342)
+        _run_streams(c, aid, km=8.4)
+        c.execute(text("update activities set laps = cast(:l as jsonb) where id = :i"),
+                  {"l": json.dumps([_lap(600, 400, 0, "warmup"), _lap(480, 342, 1, "active")]), "i": aid})
+    a = detail(client, iid)["actual"]
+    assert a["blocks"]["follows_plan"] is True and a["blocks"]["rows"][1]["in_target"] is True
+    assert a["splits"] and all("status" not in s for s in a["splits"])
+
+
+def test_plain_run_keeps_split_status_and_has_no_blocks(client, clean_db, clock):
+    with clean_db.begin() as c:
+        iid = add(c, day="2026-10-29", sport="run", title="Steady", targets={"duration_s": 2400, "pace_low": 335, "pace_high": 350})
+        aid = add_session(c, "run", datetime(2026, 10, 29, 7, tzinfo=UTC), 2872, distance_m=8400, avg_hr=150, avg_pace=342)
+        _run_streams(c, aid, km=8.4)
+    a = detail(client, iid)["actual"]
+    assert a["blocks"] is None and a["splits"][0]["status"] == "on_target"
 
 
 def test_run_without_streams(client, clean_db, clock):
