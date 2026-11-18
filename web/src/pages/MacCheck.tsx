@@ -5,7 +5,7 @@ import { stagger } from "../lib/motion";
 import type { MacStatus, Status } from "../lib/types";
 
 const POLL_MS = 5000;
-const GIVE_UP_MS = 5 * 60 * 1000;
+const GIVE_UP_MS = 20 * 60 * 1000; // a check waits up to ~15 minutes for iCloud to hand over files
 const QUIET_MS = 3 * 60 * 1000; // the Mac polls every minute while it's awake
 
 const isOpen = (m: MacStatus) => !!m.check_requested_at && (!m.check_done_at || m.check_done_at < m.check_requested_at);
@@ -51,7 +51,11 @@ export default function MacCheck({ mac: initial, lastWorkout }: { mac: MacStatus
 
   const stale = olderThan(mac.last_run_at, MAC_STALE_MS);
   let line: string | null = null;
-  if (waiting && mac.last_seen_at && olderThan(mac.last_seen_at, QUIET_MS)) {
+  // Once the Mac has been in touch after the press it has the request: it stays quiet while it checks.
+  const pickedUp = waiting && !!mac.last_seen_at && new Date(mac.last_seen_at) >= new Date(mac.check_requested_at!);
+  if (pickedUp && !gaveUp) {
+    line = "Your Mac is checking…";
+  } else if (waiting && !pickedUp && mac.last_seen_at && olderThan(mac.last_seen_at, QUIET_MS)) {
     line = `Your Mac hasn't been in touch since ${hhmm(mac.last_seen_at)}. It'll check as soon as it wakes up.`;
   } else if (waiting && gaveUp) {
     line = "Still waiting. It'll show up here once your Mac has checked.";

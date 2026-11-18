@@ -25,7 +25,8 @@ It also sends the FTP readings Zwift leaves in its logs now and then, so LockedI
 Every run tells the site it checked (and what it uploaded), so the site can say when the Mac last looked.
 `--poll` (launchd, once a minute) asks the site whether "Check again" was pressed. If so it asks iCloud to fetch
 the HealthFit folder, restarts the Mac's iCloud service (bird), runs a normal sync and reports it as the answer.
-With nothing to do it writes nothing to the log. Runs never overlap: one that finds another going skips.
+With nothing to do it writes nothing to the log. Runs never overlap: a normal run waits for one that's
+going, a poll that finds one going skips (the request stays open for the next minute).
 """
 
 from __future__ import annotations
@@ -609,13 +610,14 @@ def nudge_icloud(folder: Path, run_cmd: Callable = subprocess.run, sleep: Callab
 
 
 @contextlib.contextmanager
-def run_lock():
-    """True when this process may run; False when another sync holds the lock (it then simply skips)."""
+def run_lock(wait: bool = False):
+    """True when this process may run; False when another sync holds the lock. `wait` blocks until it's free:
+    a normal run waits its turn (the poll holds the lock for a moment every minute), the poll just skips."""
     path = state_file().parent / "fit-sync.lock"
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "a") as f:
         try:
-            fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            fcntl.flock(f, fcntl.LOCK_EX if wait else fcntl.LOCK_EX | fcntl.LOCK_NB)
         except OSError:
             yield False
             return
@@ -625,7 +627,7 @@ def run_lock():
             fcntl.flock(f, fcntl.LOCK_UN)
 
 
-def poll(cfg: dict, http: Http, run_sync: Callable[[dict], list[SyncReport]] = None, nudge: Callable = nudge_icloud,
+def poll(cfg: dict, http: Http, run_sync: Callable[[dict], list[SyncReport]] | None = None, nudge: Callable = nudge_icloud,
          lock: Callable = run_lock) -> list[SyncReport] | None:
     """Answer a "Check again" from the site, if there is one. None when there was nothing to do, another sync was
     running (the request stays open for the next minute) or the site couldn't be reached."""
@@ -642,12 +644,20 @@ def poll(cfg: dict, http: Http, run_sync: Callable[[dict], list[SyncReport]] = N
             return None
         if not requested:
             return None
+        nudge_note = None
         if cfg.get("HEALTHFIT_DIR"):
-            nudge(Path(cfg["HEALTHFIT_DIR"]).expanduser())
+            try:
+                nudge(Path(cfg["HEALTHFIT_DIR"]).expanduser())
+            except Exception as e:  # still look and answer, or the same request would poke iCloud every minute
+                nudge_note = f"Couldn't nudge iCloud, looked anyway: {e!r}"
         try:
             reports = (run_sync or run)(cfg)
         except Exception as e:  # answer anyway, or every poll would restart iCloud again
             reports = [SyncReport(errors=[f"sync failed: {e!r}"], stopped=True)]
+        if nudge_note:
+            if not reports:
+                reports = [SyncReport()]
+            reports[0].warnings.insert(0, nudge_note)
         report_run(cfg, reports, http, answered=requested)
         return reports
 
@@ -678,10 +688,7 @@ def main(argv: list[str] | None = None) -> int:
             if reports is not None:
                 _print_reports(reports, "(check from the site)")
             return 0
-        with run_lock() as mine:
-            if not mine:
-                print(f"{datetime.now().isoformat(timespec='seconds')} skipped: another sync is running")
-                return 0
+        with run_lock(wait=True):
             reports = run(cfg, refresh_days=max(args.refresh_days, 0))
             _print_reports(reports)
             report_run(cfg, reports, urllib_http)

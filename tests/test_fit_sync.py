@@ -841,13 +841,43 @@ def test_run_lock_is_exclusive(monkeypatch, tmp_path):
         assert again
 
 
-def test_main_reports_each_run_and_skips_when_locked(monkeypatch, capsys):
+def test_main_reports_each_run(monkeypatch):
     http = PollHttp()
     monkeypatch.setattr(fit_sync, "load_config", lambda: cfg("/z"))
     monkeypatch.setattr(fit_sync, "urllib_http", http)
     monkeypatch.setattr(fit_sync, "run", lambda c, **kw: [fit_sync.SyncReport(uploaded=2)])
     assert fit_sync.main([]) == 0
     assert http.posted("/api/sync/mac/run") == [{"uploaded": 2, "errors": 0, "answered": None}]
-    monkeypatch.setattr(fit_sync, "run_lock", _lock(False))
-    assert fit_sync.main([]) == 0
-    assert "skipped: another sync is running" in capsys.readouterr().out
+
+
+def test_a_normal_run_waits_for_the_lock_instead_of_skipping(monkeypatch, tmp_path):
+    """The minute poll holds the lock for a moment; a folder-change run in that moment must still run."""
+    import threading
+    monkeypatch.setenv("LOCKEDIN_SYNC_STATE", str(tmp_path / "state.json"))
+    monkeypatch.setattr(fit_sync, "load_config", lambda: cfg("/z"))
+    monkeypatch.setattr(fit_sync, "urllib_http", PollHttp())
+    ran = threading.Event()
+    monkeypatch.setattr(fit_sync, "run", lambda c, **kw: ran.set() or [])
+    with fit_sync.run_lock() as held:
+        assert held
+        t = threading.Thread(target=fit_sync.main, args=([],))
+        t.start()
+        assert not ran.wait(0.3)  # blocked while the poll has it
+    t.join(5)
+    assert ran.is_set()
+
+
+def test_a_failing_nudge_still_answers_the_check(tmp_path):
+    """Otherwise the same request comes back every minute and iCloud is poked again and again."""
+    import subprocess
+
+    def broken(folder):
+        raise subprocess.TimeoutExpired(["/usr/bin/brctl"], 30)
+
+    http, ran = PollHttp(requested=ASKED), []
+    conf = {**cfg(tmp_path), "HEALTHFIT_DIR": str(tmp_path / "hf")}
+    out = fit_sync.poll(conf, http, run_sync=lambda c: ran.append(c) or [fit_sync.SyncReport()], nudge=broken,
+                        lock=_lock())
+    assert len(ran) == 1
+    assert http.posted("/api/sync/mac/run") == [{"uploaded": 0, "errors": 0, "answered": ASKED}]
+    assert any("iCloud" in w for w in out[0].warnings)

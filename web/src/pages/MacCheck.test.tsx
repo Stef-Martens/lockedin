@@ -69,12 +69,21 @@ describe("MacCheck", () => {
     expect(screen.getByText(new RegExp(`hasn't been in touch since ${hhmm}`))).toBeTruthy();
   });
 
-  it("keeps waiting for a request still open when the page opens, and gives up polling after 5 minutes", async () => {
+  it("says the Mac is checking once it picked the request up, however long the check takes", async () => {
+    vi.useFakeTimers({ now: new Date("2026-11-18T21:10:00Z"), toFake: ["Date"] });
+    render(<MacCheck mac={{ ...asked, last_seen_at: "2026-11-18T21:00:40+00:00" }} lastWorkout={null} />);
+    expect(screen.getByText("Your Mac is checking…")).toBeTruthy();
+    expect(screen.queryByText(/hasn't been in touch/)).toBeNull();
+  });
+
+  it("keeps waiting for a request still open when the page opens, and gives up polling after 20 minutes", async () => {
     vi.useFakeTimers({ now: NOW, toFake: ["Date", "setInterval", "clearInterval"] });
-    server.mac = { ...asked, last_seen_at: "2026-11-18T21:04:50+00:00" }; // in touch, but busy with another sync
     render(<MacCheck mac={asked} lastWorkout={null} />);
     expect(screen.getByText("Waiting for your Mac…")).toBeTruthy();
-    await tick(5 * 60 * 1000);
+    server.mac = { ...asked, last_seen_at: "2026-11-18T21:00:40+00:00" }; // picked up, then busy for a long time
+    await tick(10 * 60 * 1000);
+    expect(screen.getByText("Your Mac is checking…")).toBeTruthy(); // a check can take ~15 minutes
+    await tick(10 * 60 * 1000);
     const polls = server.calls.length;
     expect(polls).toBeGreaterThan(0);
     await tick(60000);
