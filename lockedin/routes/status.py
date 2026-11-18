@@ -3,6 +3,7 @@ from sqlalchemy import Connection, text
 
 from lockedin.auth import require_owner
 from lockedin.db import get_conn
+from lockedin.routes.mac import mac_status
 
 router = APIRouter(prefix="/api", dependencies=[Depends(require_owner)])
 
@@ -20,4 +21,5 @@ def status(conn: Connection = Depends(get_conn)) -> dict:
     out["last_tape_measurement_on"] = conn.execute(text(
         "select max(m.measured_on) from measurements m join measurement_types t on t.id = m.type_id where t.kind = 'tape'"
     )).scalar()
+    out["mac"] = mac_status(conn)
     return out

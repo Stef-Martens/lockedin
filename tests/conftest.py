@@ -25,6 +25,7 @@ REFERENCE_TABLES = {"muscles", "library_exercises", "library_muscles"}
 
 SEED_SQL = """
 insert into profile (id) values (1);
+insert into mac_sync (id) values (1);
 insert into measurement_types (name, unit, kind) values
   ('Weight','kg','weight'),('Chest','cm','tape'),('Left arm','cm','tape'),('Right arm','cm','tape'),
   ('Waist','cm','tape'),('Hips','cm','tape'),('Left thigh','cm','tape'),('Right thigh','cm','tape'),
