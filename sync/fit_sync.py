@@ -21,12 +21,19 @@ server couldn't read are only retried once a day. Delete that file to have every
 server can read what it didn't keep the first time (the laps). The normal run is unchanged.
 
 It also sends the FTP readings Zwift leaves in its logs now and then, so LockedIn uses Zwift's FTP.
+
+Every run tells the site it checked (and what it uploaded), so the site can say when the Mac last looked.
+`--poll` (launchd, once a minute) asks the site whether "Check again" was pressed. If so it asks iCloud to fetch
+the HealthFit folder, restarts the Mac's iCloud service (bird), runs a normal sync and reports it as the answer.
+With nothing to do it writes nothing to the log. Runs never overlap: one that finds another going skips.
 """
 
 from __future__ import annotations
 
 import argparse
+import contextlib
 import errno
+import fcntl
 import hashlib
 import json
 import os
@@ -56,6 +63,7 @@ TMP_SUFFIX = ".lockedin-tmp"  # ".<name>.lockedin-tmp" while a file is being wri
 RETRY_UNREADABLE_S = 24 * 3600  # a file the server couldn't read is tried again a day later (maybe it's fixed)
 FTP_LINE = re.compile(r"\bprofile_ftp:\s*(\d{2,3})\b")
 STAMP_LINE = re.compile(r'\btimestamp:\s*"(\d{4})/(\d\d)/(\d\d) (\d\d:\d\d:\d\d) UTC"')
+NUDGE_WAIT_S = 30  # after restarting bird, before looking at the folder again
 STAMP_REACH = 20  # log lines: a profile_ftp belongs to the timestamp just above it in the same block
 
 Http = Callable[[str, str, bytes, dict], tuple[int, bytes]]
@@ -579,24 +587,106 @@ def run(cfg: dict, now: Callable[[], float] = time.time, sleep: Callable[[float]
     return reports
 
 
-def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Upload new FIT files to LockedIn.")
-    parser.add_argument("--refresh-days", type=int, default=0, metavar="N",
-                        help="send the HealthFit files of the last N days again, whatever was uploaded before")
-    args = parser.parse_args(argv or [])
+def report_run(cfg: dict, reports: list[SyncReport], http: Http, answered: str | None = None) -> None:
+    """Tell the site this Mac checked; `answered` is the "Check again" request this run answers. Never raises."""
+    api, token = cfg.get("LOCKEDIN_API", "").rstrip("/"), cfg.get("SYNC_TOKEN", "")
+    if not api or not token:
+        return
+    body = {"uploaded": sum(r.uploaded for r in reports), "errors": sum(len(r.errors) for r in reports),
+            "answered": answered}
     try:
-        reports = run(load_config(), refresh_days=max(args.refresh_days, 0))
-    except Exception as e:  # launchd swallows tracebacks; always leave a readable line in the log
-        print(f"{datetime.now().isoformat(timespec='seconds')} sync failed: {e!r}")
-        return 0
-    for report in reports:
+        http(f"{api}/api/sync/mac/run", token, json.dumps(body).encode(), {"Content-Type": "application/json"})
+    except Exception:
+        pass  # the next run reports again
+
+
+def nudge_icloud(folder: Path, run_cmd: Callable = subprocess.run, sleep: Callable[[float], None] = time.sleep) -> None:
+    """What got a stuck HealthFit folder moving again: ask for its files, restart bird (launchd starts it again
+    at once), and give it a moment to look."""
+    run_cmd(["/usr/bin/brctl", "download", str(folder)], capture_output=True, timeout=30, check=False)
+    run_cmd(["/usr/bin/killall", "bird"], capture_output=True, timeout=30, check=False)
+    sleep(NUDGE_WAIT_S)
+
+
+@contextlib.contextmanager
+def run_lock():
+    """True when this process may run; False when another sync holds the lock (it then simply skips)."""
+    path = state_file().parent / "fit-sync.lock"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "a") as f:
+        try:
+            fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            yield False
+            return
+        try:
+            yield True
+        finally:
+            fcntl.flock(f, fcntl.LOCK_UN)
+
+
+def poll(cfg: dict, http: Http, run_sync: Callable[[dict], list[SyncReport]] = None, nudge: Callable = nudge_icloud,
+         lock: Callable = run_lock) -> list[SyncReport] | None:
+    """Answer a "Check again" from the site, if there is one. None when there was nothing to do, another sync was
+    running (the request stays open for the next minute) or the site couldn't be reached."""
+    api, token = cfg.get("LOCKEDIN_API", "").rstrip("/"), cfg.get("SYNC_TOKEN", "")
+    if not api or not token:
+        return None
+    with lock() as mine:
+        if not mine:
+            return None
+        try:
+            status, resp = http(f"{api}/api/sync/mac/poll", token, b"{}", {"Content-Type": "application/json"})
+            requested = json.loads(resp).get("check_requested_at") if status == 200 else None
+        except Exception:
+            return None
+        if not requested:
+            return None
+        if cfg.get("HEALTHFIT_DIR"):
+            nudge(Path(cfg["HEALTHFIT_DIR"]).expanduser())
+        try:
+            reports = (run_sync or run)(cfg)
+        except Exception as e:  # answer anyway, or every poll would restart iCloud again
+            reports = [SyncReport(errors=[f"sync failed: {e!r}"], stopped=True)]
+        report_run(cfg, reports, http, answered=requested)
+        return reports
+
+
+def _print_reports(reports: list[SyncReport], note: str = "") -> None:
+    for i, report in enumerate(reports):
         stamp = datetime.now().isoformat(timespec="seconds")
         print(f"{stamp} uploaded {report.uploaded}, already there {report.duplicates}, "
               f"waiting (being written or downloading from iCloud) {report.pending}, errors {len(report.errors)}"
               f", Zwift workouts +{report.workouts_written} -{report.workouts_removed}"
-              + (f", sent again {report.refreshed}" if report.refreshed else ""))
+              + (f", sent again {report.refreshed}" if report.refreshed else "")
+              + (f" {note}" if note and i == 0 else ""))
         for line in report.warnings + report.errors:
             print(f"{stamp}   {line}")
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Upload new FIT files to LockedIn.")
+    parser.add_argument("--refresh-days", type=int, default=0, metavar="N",
+                        help="send the HealthFit files of the last N days again, whatever was uploaded before")
+    parser.add_argument("--poll", action="store_true",
+                        help="answer a \"Check again\" from the site, if there is one (launchd, once a minute)")
+    args = parser.parse_args(argv or [])
+    try:
+        cfg = load_config()
+        if args.poll:
+            reports = poll(cfg, urllib_http)
+            if reports is not None:
+                _print_reports(reports, "(check from the site)")
+            return 0
+        with run_lock() as mine:
+            if not mine:
+                print(f"{datetime.now().isoformat(timespec='seconds')} skipped: another sync is running")
+                return 0
+            reports = run(cfg, refresh_days=max(args.refresh_days, 0))
+            _print_reports(reports)
+            report_run(cfg, reports, urllib_http)
+    except Exception as e:  # launchd swallows tracebacks; always leave a readable line in the log
+        print(f"{datetime.now().isoformat(timespec='seconds')} sync failed: {e!r}")
     return 0
 
 

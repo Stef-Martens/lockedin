@@ -735,3 +735,114 @@ def test_a_refresh_file_that_vanishes_does_not_stop_the_pass(tmp_path, monkeypat
     monkeypatch.setattr(Path, "read_bytes", read_bytes)
     report = fit_sync.sync_once(config, NOW, http=http, refresh_days=7)
     assert report.refreshed == 1 and not report.stopped
+
+
+# --- the site's "Check again" and the run reports -------------------------------------------------------------
+
+ASKED = "2026-11-18T22:30:00.123456+00:00"
+
+
+class PollHttp:
+    """The server side of /api/sync/mac: poll returns `requested`, everything else is recorded."""
+
+    def __init__(self, requested=None, error=None):
+        self.requested, self.error, self.calls = requested, error, []
+
+    def __call__(self, url, token, body, headers):
+        self.calls.append((url, json.loads(body) if body else None))
+        if self.error:
+            raise self.error
+        if url.endswith("/api/sync/mac/poll"):
+            return 200, json.dumps({"check_requested_at": self.requested}).encode()
+        return 200, b'{"ok": true}'
+
+    def posted(self, path):
+        return [b for u, b in self.calls if u.endswith(path)]
+
+
+def _lock(free=True):
+    from contextlib import contextmanager
+
+    @contextmanager
+    def lock():
+        yield free
+    return lock
+
+
+def test_run_reports_totals():
+    http = PollHttp()
+    a, b = fit_sync.SyncReport(uploaded=1, errors=["x"]), fit_sync.SyncReport(uploaded=2)
+    fit_sync.report_run(cfg("/z"), [a, b], http)
+    assert http.posted("/api/sync/mac/run") == [{"uploaded": 3, "errors": 1, "answered": None}]
+
+
+def test_report_failure_never_raises():
+    assert fit_sync.report_run(cfg("/z"), [fit_sync.SyncReport()], PollHttp(error=OSError("down"))) is None
+
+
+def test_poll_nothing_to_do():
+    ran, nudged = [], []
+    out = fit_sync.poll(cfg("/z"), PollHttp(), run_sync=lambda c: ran.append(c) or [], nudge=nudged.append,
+                        lock=_lock())
+    assert out is None and ran == [] and nudged == []
+
+
+def test_poll_answers_request(tmp_path):
+    http, ran, nudged = PollHttp(requested=ASKED), [], []
+    conf = {**cfg(tmp_path), "HEALTHFIT_DIR": str(tmp_path / "hf")}
+    reports = [fit_sync.SyncReport(uploaded=1)]
+    out = fit_sync.poll(conf, http, run_sync=lambda c: ran.append(c) or reports, nudge=nudged.append, lock=_lock())
+    assert out == reports and len(ran) == 1
+    assert nudged == [tmp_path / "hf"]
+    assert http.posted("/api/sync/mac/run") == [{"uploaded": 1, "errors": 0, "answered": ASKED}]
+
+
+def test_check_without_healthfit_skips_nudge(tmp_path):
+    ran, nudged = [], []
+    fit_sync.poll(cfg(tmp_path), PollHttp(requested=ASKED), run_sync=lambda c: ran.append(c) or [],
+                  nudge=nudged.append, lock=_lock())
+    assert nudged == [] and len(ran) == 1
+
+
+def test_poll_skips_when_locked():
+    http = PollHttp(requested=ASKED)
+    assert fit_sync.poll(cfg("/z"), http, run_sync=lambda c: [], nudge=lambda f: None, lock=_lock(False)) is None
+    assert http.calls == []
+
+
+def test_poll_network_error_is_silent(monkeypatch, capsys):
+    import urllib.error
+    http = PollHttp(error=urllib.error.URLError("offline"))
+    assert fit_sync.poll(cfg("/z"), http, run_sync=lambda c: [], nudge=lambda f: None, lock=_lock()) is None
+    monkeypatch.setattr(fit_sync, "load_config", lambda: cfg("/z"))
+    monkeypatch.setattr(fit_sync, "urllib_http", http)
+    assert fit_sync.main(["--poll"]) == 0
+    assert capsys.readouterr().out == ""
+
+
+def test_nudge_icloud_commands(tmp_path):
+    cmds, slept = [], []
+    fit_sync.nudge_icloud(tmp_path, run_cmd=lambda c, **kw: cmds.append(c), sleep=slept.append)
+    assert cmds == [["/usr/bin/brctl", "download", str(tmp_path)], ["/usr/bin/killall", "bird"]]
+    assert slept == [30]
+
+
+def test_run_lock_is_exclusive(monkeypatch, tmp_path):
+    monkeypatch.setenv("LOCKEDIN_SYNC_STATE", str(tmp_path / "state.json"))
+    with fit_sync.run_lock() as first:
+        with fit_sync.run_lock() as second:
+            assert (first, second) == (True, False)
+    with fit_sync.run_lock() as again:
+        assert again
+
+
+def test_main_reports_each_run_and_skips_when_locked(monkeypatch, capsys):
+    http = PollHttp()
+    monkeypatch.setattr(fit_sync, "load_config", lambda: cfg("/z"))
+    monkeypatch.setattr(fit_sync, "urllib_http", http)
+    monkeypatch.setattr(fit_sync, "run", lambda c, **kw: [fit_sync.SyncReport(uploaded=2)])
+    assert fit_sync.main([]) == 0
+    assert http.posted("/api/sync/mac/run") == [{"uploaded": 2, "errors": 0, "answered": None}]
+    monkeypatch.setattr(fit_sync, "run_lock", _lock(False))
+    assert fit_sync.main([]) == 0
+    assert "skipped: another sync is running" in capsys.readouterr().out
