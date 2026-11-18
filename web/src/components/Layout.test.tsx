@@ -4,7 +4,8 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import Layout from "./Layout";
 
-const status = vi.hoisted(() => ({ zwift: { last_import_at: null as string | null }, healthfit: { last_import_at: null as string | null } }));
+const status = vi.hoisted(() => ({ zwift: { last_import_at: null as string | null }, healthfit: { last_import_at: null as string | null },
+  mac: undefined as { last_run_at: string | null } | undefined }));
 vi.mock("../lib/api", () => ({ apiFetch: () => Promise.resolve(status) }));
 vi.mock("../lib/supabase", () => ({ supabase: { auth: { signOut: vi.fn() } } }));
 afterEach(() => {
@@ -12,6 +13,7 @@ afterEach(() => {
   vi.useRealTimers();
   status.zwift.last_import_at = null;
   status.healthfit.last_import_at = null;
+  status.mac = undefined;
 });
 
 describe("Layout", () => {
@@ -21,6 +23,23 @@ describe("Layout", () => {
     status.healthfit.last_import_at = "2026-11-04T18:00:00+00:00";
     render(<MemoryRouter><Routes><Route element={<Layout />}><Route index element={<p>home</p>} /></Route></Routes></MemoryRouter>);
     await waitFor(() => expect(screen.getAllByText(/Mac sync · 3 h ago/).length).toBeGreaterThan(0));
+  });
+
+  it("says when the Mac last checked, once it has reported", async () => {
+    vi.useFakeTimers({ now: new Date("2026-11-18T21:00:00Z"), toFake: ["Date"] });
+    status.healthfit.last_import_at = "2026-11-05T12:00:00+00:00";
+    status.mac = { last_run_at: "2026-11-18T20:56:00+00:00" };
+    render(<MemoryRouter><Routes><Route element={<Layout />}><Route index element={<p>home</p>} /></Route></Routes></MemoryRouter>);
+    await waitFor(() => expect(screen.getAllByText(/Mac checked 4 min ago/).length).toBeGreaterThan(0));
+    expect(document.querySelector(".sync-dot.stale")).toBeNull();
+  });
+
+  it("marks the Mac as stale when it hasn't checked for over an hour", async () => {
+    vi.useFakeTimers({ now: new Date("2026-11-18T21:00:00Z"), toFake: ["Date"] });
+    status.mac = { last_run_at: "2026-11-18T19:00:00+00:00" };
+    render(<MemoryRouter><Routes><Route element={<Layout />}><Route index element={<p>home</p>} /></Route></Routes></MemoryRouter>);
+    await waitFor(() => expect(screen.getAllByText(/Mac checked 2 h ago/).length).toBeGreaterThan(0));
+    expect(document.querySelector(".sync-dot.stale")).not.toBeNull();
   });
 
   it("puts Agenda second and tucks Trends, Forecast, Body, Import and Sign out under More on phones", () => {

@@ -5,6 +5,7 @@ import { apiFetch, uploadFile } from "../lib/api";
 import { ago, recent } from "../lib/format";
 import { stagger } from "../lib/motion";
 import type { FitResult, HevyResult, Status } from "../lib/types";
+import MacCheck from "./MacCheck";
 
 interface FileRow {
   name: string;
@@ -142,6 +143,9 @@ function HevyUpload({ onDone }: { onDone: () => void }) {
   );
 }
 
+const latest = (...at: (string | null)[]) =>
+  at.filter((x): x is string => !!x).reduce<string | null>((a, b) => (!a || new Date(b) > new Date(a) ? b : a), null);
+
 export default function Import() {
   const [status, setStatus] = useState<Status | null>(null);
   const load = () => apiFetch<Status>("/api/status").then(setStatus).catch(() => undefined);
@@ -158,6 +162,7 @@ export default function Import() {
             sub={status.healthfit.count ? `${status.healthfit.count} workouts via HealthFit` : "Add your HealthFit folder to the sync"}
             dot={recent(status.healthfit.last_import_at) ? "live" : "idle"} />
           <StatusTile i={3} label="Hevy" when={ago(status.hevy.last_import_at)} sub={`${status.hevy.count} workouts · manual upload`} dot="gym" />
+          {status.mac && <MacCheck mac={status.mac} lastWorkout={latest(status.zwift.last_import_at, status.healthfit.last_import_at)} />}
         </div>
       )}
       <div className="grid-auto" style={{ ["--min" as string]: "420px" }}>

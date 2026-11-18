@@ -98,6 +98,13 @@ export function ago(iso: string | null, now = Date.now()): string {
   return d === 1 ? "yesterday" : `${d} days ago`;
 }
 
+/** Older than `ms`, or never. */
+export const olderThan = (iso: string | null | undefined, ms: number, now = Date.now()) =>
+  !iso || now - new Date(iso).getTime() > ms;
+
+/** The Mac checks every 15 minutes while it's awake; an hour without one means it's asleep, off or stuck. */
+export const MAC_STALE_MS = 3600 * 1000;
+
 /** Within the last 24 hours. */
 export const recent = (iso: string | null, now = Date.now()) => !!iso && now - new Date(iso).getTime() < 24 * 3600 * 1000;
 

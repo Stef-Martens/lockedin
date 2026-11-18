@@ -75,11 +75,23 @@ export interface SourceStatus {
   count: number;
 }
 
+/** What the Mac sync last did, and the latest "Check again" from the site. */
+export interface MacStatus {
+  last_run_at: string | null;
+  last_seen_at: string | null;
+  last_run_uploaded: number | null;
+  last_run_errors: number | null;
+  check_requested_at: string | null;
+  check_done_at: string | null;
+  check_uploaded: number | null;
+}
+
 export interface Status {
   zwift: SourceStatus;
   healthfit: SourceStatus;
   hevy: SourceStatus;
   last_tape_measurement_on: string | null;
+  mac?: MacStatus;
 }
 
 export interface FitResult {

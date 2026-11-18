@@ -1,7 +1,7 @@
 import { Suspense, useEffect, useRef, useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { apiFetch } from "../lib/api";
-import { ago, recent } from "../lib/format";
+import { MAC_STALE_MS, ago, olderThan, recent } from "../lib/format";
 import { supabase } from "../lib/supabase";
 import type { Status } from "../lib/types";
 import { Icon } from "./icons";
@@ -68,10 +68,13 @@ export default function Layout() {
   const uploads = [status?.zwift.last_import_at, status?.healthfit.last_import_at].filter((at): at is string => !!at);
   const last = uploads.length ? uploads.reduce((a, b) => (new Date(a) > new Date(b) ? a : b)) : null;
   const live = recent(last);
+  // Once the Mac reports its runs, say when it last looked: "nothing new" and "Mac asleep" no longer look alike.
+  const checked = status?.mac?.last_run_at ?? null;
+  const stale = !!checked && olderThan(checked, MAC_STALE_MS);
   const sync = (
     <span className="row sync" style={{ gap: 8 }}>
-      <span className={`sync-dot${live ? " live pulse" : ""}`} aria-hidden="true" />
-      Mac sync · {ago(last)}
+      <span className={`sync-dot${stale ? " stale" : live ? " live pulse" : ""}`} aria-hidden="true" />
+      {checked ? `Mac checked ${ago(checked)}` : `Mac sync · ${ago(last)}`}
     </span>
   );
 
