@@ -230,7 +230,12 @@ def test_install_uses_the_real_interpreter_and_names_it(tmp_path):
                           capture_output=True, text=True).stdout.strip()
     plist = plistlib.loads((home / "Library" / "LaunchAgents" / "com.lockedin.fitsync.plist").read_bytes())
     assert plist["ProgramArguments"][0] == real
+    assert plist["StartInterval"] == 900
     assert real in out.stdout and "Full Disk Access" in out.stdout
+    poll = plistlib.loads((home / "Library" / "LaunchAgents" / "com.lockedin.fitsync.poll.plist").read_bytes())
+    assert poll["Label"] == "com.lockedin.fitsync.poll"
+    assert poll["ProgramArguments"] == [real, str(ROOT / "sync" / "fit_sync.py"), "--poll"]
+    assert poll["StartInterval"] == 60 and "WatchPaths" not in poll and not poll.get("RunAtLoad")
 
 
 def test_icloud_evicted_file_is_downloaded_and_retried(tmp_path, monkeypatch):
