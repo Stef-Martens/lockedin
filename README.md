@@ -106,7 +106,11 @@ Free projects **pause after about a week with no activity**. Your regular syncs 
    ```
    A healthy run looks like `uploaded 1, already there 42, still being written 0, errors 0`. A line saying it *can't read* a folder means step 3 isn't done yet.
 
-Uninstall with `sync/uninstall.sh`. A file the server can't read is listed in the log once and tried again a day later, and newer files still upload. Files that are still being written (like Zwift's ride in progress) are skipped and picked up a few minutes later. Files over 4 MB are skipped with a warning; upload those on the **Import** page.
+**Is it working?** The header says **Mac checked 4 min ago**: when your Mac last looked, whether or not it found anything. The dot turns amber when that's over an hour ago (the Mac is asleep, off, or the sync broke). The **Import** page also shows when the last workout came in.
+
+**Check again.** If a workout is in HealthFit but not on LockedIn, press **Check again** on the Import page. Within about a minute your Mac asks iCloud to fetch the HealthFit folder, restarts the Mac's iCloud service, looks again and uploads what's new; the page then says **Done · 1 new workout** or **Done · nothing new**. This is the fix for iCloud on the Mac getting stuck on that folder, which happens now and then. The site can't reach your Mac, so a second background job asks the site once a minute whether you pressed it; if your Mac is asleep, the page says when it was last in touch.
+
+Uninstall with `sync/uninstall.sh` (it removes both background jobs). A file the server can't read is listed in the log once and tried again a day later, and newer files still upload. Files that are still being written (like Zwift's ride in progress) are skipped and picked up a few minutes later. Files over 4 MB are skipped with a warning; upload those on the **Import** page.
 
 The sync remembers what it already uploaded in `~/Library/Application Support/lockedin/fit-sync-state.json`, so it doesn't re-read every file or pull old HealthFit files back from iCloud. **If you ever reset the server's database, delete that file** so everything is uploaded again.
 
@@ -389,6 +393,8 @@ With a watch on watchOS 11 or newer, a watch app and Apple's workout scheduler c
 |---|---|
 | "File too large (max 4 MB)" | Vercel limits request size. FIT files are normally far smaller; check that you picked the right file. |
 | The sync log says it can't read a folder | Give Full Disk Access to the Python file named in that log line (section 3). |
+| A workout is in HealthFit (and in iCloud Drive on the web) but not on LockedIn | iCloud on the Mac stopped pulling HealthFit's folder. Press **Check again** on the Import page. If that doesn't do it, run `killall bird` in Terminal, or turn HealthFit off and on under System Settings → your name → iCloud → Drive → Apps syncing to iCloud Drive. |
+| The header says **Mac checked** hours ago while the Mac is on | The background job isn't running. Run `sync/install.sh` again and check `~/Library/Logs/lockedin-sync.log`. |
 | Sync log shows `server said 401` | `SYNC_TOKEN` in `sync.env` doesn't match Vercel's, or is shorter than 16 characters. |
 | You're logged out right after signing in | `OWNER_EMAIL` (or `OWNER_ID`, if set) on the server doesn't match the account you signed in with, or `SUPABASE_JWT_SECRET` is the local default or too short (the API logs a warning). |
 | A file the sync says the server can't read stays unread after a fix | The server remembers unreadable files. Run `update fit_files set unreadable = false` in the Supabase SQL editor, then wait for the next daily retry or upload it on **Import**. |
@@ -396,6 +402,8 @@ With a watch on watchOS 11 or newer, a watch app and Apple's workout scheduler c
 | Coach says "The Anthropic API key was rejected" | Check `ANTHROPIC_API_KEY` in Vercel, then redeploy (env changes only apply to new deployments). |
 | Coach says "Claude is busy right now" | Rate limit or a temporary outage. Wait a minute and press Retry. |
 | Coach says today's budget is used up | Raise `COACH_DAILY_BUDGET_USD` in Vercel and redeploy, or wait until tomorrow. |
+
+To deploy the Mac check: `supabase db push`, then `git push`, then run `sync/install.sh` once more on your Mac (it also adds the once-a-minute job).
 
 ## Layout
 
