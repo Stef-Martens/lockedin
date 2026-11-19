@@ -192,6 +192,22 @@ def test_a_renamed_gym_workout_still_ticks_its_day(client, clean_db, clock):
     assert item["done"] is True and item["activity_id"] == gym
 
 
+def test_a_renamed_workout_beats_an_earlier_unplanned_one_that_day(client, clean_db, clock):
+    """An extra ab session before the planned (but renamed) chest day: the chest workout ticks the chest item."""
+    with clean_db.begin() as c:
+        add_gym(c, datetime(2026, 10, 20, 17, tzinfo=UTC),
+                [("Bench Press (Barbell)", 80, 8, "normal"), ("Lateral Raise (Dumbbell)", 28, 10, "normal")],
+                title="Chest - Schouders - Triceps")
+    post(client, day="2026-10-21", sport="gym", title="Chest - Schouders - Triceps", routine="Chest - Schouders - Triceps")
+    with clean_db.begin() as c:
+        add_gym(c, datetime(2026, 10, 21, 6, 20, tzinfo=UTC), [("Bicycle Crunch", 0, 20, "normal")], title="Buik")
+        chest = add_gym(c, datetime(2026, 10, 21, 9, 43, tzinfo=UTC),
+                        [("Bench Press (Barbell)", 70, 7, "normal"), ("Lateral Raise (Dumbbell)", 28, 9, "normal")],
+                        title="Chest - shoulder - tricep")
+    item = week(client, "2026-10-19")["items"][0]
+    assert item["activity_id"] == chest
+
+
 def test_the_routine_named_workout_wins(client, clean_db, clock):
     with clean_db.begin() as c:
         for t in ("Push", "Pull"):

@@ -181,9 +181,11 @@ def _out(row, ftp: float | None, today: date, done: dict[int, int], goals: dict[
 
 def _ticks(conn: Connection, rows: list, start: date, end: date) -> dict[int, int]:
     """item id → activity id that ticks it. Each activity ticks one item. First the exact matches (a gym
-    workout titled like the item's routine, a ride for a ride); then a gym item takes any gym workout left that
-    day (the Hevy title was changed); last a rest day takes whatever is left (the optional spin was done).
-    Within a pass, main items go before optional ones, so one ride ticks the planned ride, not the extra spin."""
+    workout titled like the item's routine, a ride for a ride); then a gym item takes a gym workout left that
+    day (the Hevy title was changed), the one sharing most exercises with its routine, so an extra ab session
+    earlier that day doesn't take the planned chest day; last a rest day takes whatever is left (the optional
+    spin was done). Within a pass, main items go before optional ones, so one ride ticks the planned ride, not
+    the extra spin."""
     acts = conn.execute(text(
         "select a.id, a.sport, (a.start_at at time zone 'Europe/Brussels')::date as day, w.title "
         f"from activities a left join gym_workouts w on w.activity_id = a.id where {counted('a')} "
@@ -200,13 +202,43 @@ def _ticks(conn: Connection, rows: list, start: date, end: date) -> dict[int, in
             return a.sport == "gym" and (not item.routine or a.title == item.routine)
         return item.sport in ("bike", "run", "swim") and a.sport == item.sport
 
-    passes = (exact, lambda item, a: item.sport == "gym" and a.sport == "gym", lambda item, a: item.sport == "rest")
+    names: dict[int, set[str]] = {}
+
+    def exercises(activity_id: int | None) -> set[str]:
+        if activity_id is None:
+            return set()
+        if activity_id not in names:
+            names[activity_id] = set(conn.execute(text(
+                "select distinct e.name from gym_sets s join exercises e on e.id = s.exercise_id where s.workout_id = :a"
+            ), {"a": activity_id}).scalars())
+        return names[activity_id]
+
+    def routine_exercises(item) -> set[str]:
+        """The exercises of the latest workout titled like the item's routine, up to that day."""
+        if not item.routine:
+            return set()
+        return exercises(conn.execute(text(
+            "select a.id from gym_workouts w join activities a on a.id = w.activity_id "
+            f"where w.title = :t and {counted('a')} and a.start_at < :e order by a.start_at desc limit 1"
+        ), {"t": item.routine, "e": datetime.combine(item.day + timedelta(days=1), time(), TZ)}).scalar())
+
+    def first(item, candidates: list):
+        return candidates[0] if candidates else None
+
+    def most_alike(item, candidates: list):
+        if len(candidates) < 2:
+            return first(item, candidates)
+        want = routine_exercises(item)
+        return max(candidates, key=lambda a: len(want & exercises(a.id)))  # ties: the earliest
+
+    passes = ((exact, first), (lambda item, a: item.sport == "gym" and a.sport == "gym", most_alike),
+              (lambda item, a: item.sport == "rest", first))
     ordered = sorted(rows, key=lambda r: (r.day, bool(r.optional), 0 if r.routine else 1, r.sort, r.id))
-    for fits in passes:
+    for fits, pick in passes:
         for item in ordered:
             if item.id in done:
                 continue
-            a = next((a for a in by_day[item.day] if a.id not in used and fits(item, a)), None)
+            a = pick(item, [a for a in by_day[item.day] if a.id not in used and fits(item, a)])
             if a is not None:
                 used.add(a.id)
                 done[item.id] = a.id
