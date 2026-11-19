@@ -20,6 +20,26 @@ def verdict_count(conn, activity_id):
     return conn.execute(text("select count(*) from workout_verdicts where activity_id = :i"), {"i": activity_id}).scalar()
 
 
+@pytest.fixture
+def recent_sample(monkeypatch):
+    """The sample run as if it were done yesterday. A verdict is only dropped (and written again) for a workout
+    from the last 14 days, and the sample's real date (4 Nov 2026) slides out of that window."""
+    from datetime import UTC, datetime, timedelta
+
+    import lockedin.fit.importer as imp
+
+    real = imp.parse_fit_activities
+
+    def yesterday(data):
+        legs = real(data)
+        shift = datetime.now(UTC) - timedelta(days=1) - legs[0].start_at
+        for leg in legs:
+            leg.start_at += shift
+        return legs
+
+    monkeypatch.setattr(imp, "parse_fit_activities", yesterday)
+
+
 def test_laps_are_parsed():
     laps = parse_fit(read(SAMPLE)).laps
     assert [lap["step_index"] for lap in laps] == [0, 1, 2, 1, 2, 1, 2, 4]
@@ -72,7 +92,7 @@ def test_import_stores_laps(conn):
     assert len(stored) == 8 and stored[1]["step_index"] == 1 and stored[1]["avg_hr"] == 164
 
 
-def test_known_file_fills_null_laps_and_deletes_the_verdict(conn):
+def test_known_file_fills_null_laps_and_deletes_the_verdict(conn, recent_sample):
     r = import_fit(conn, read(SAMPLE), "a.fit", "healthfit")
     conn.execute(text("update activities set laps = null where id = :i"), {"i": r.activity_id})
     verdict_for(conn, r.activity_id)
@@ -161,7 +181,7 @@ def test_filling_laps_of_an_old_run_keeps_its_verdict(conn):
     assert verdict_count(conn, r.activity_id) == 1  # no new verdict gets written that old; keep this one
 
 
-def test_known_reexport_fills_the_laps_of_the_first_files_activity(conn):
+def test_known_reexport_fills_the_laps_of_the_first_files_activity(conn, recent_sample):
     other = reexport(read(SAMPLE))
     r = import_fit(conn, read(SAMPLE), "a.fit", "healthfit")
     again = import_fit(conn, other, "b.fit", "healthfit")
@@ -173,7 +193,7 @@ def test_known_reexport_fills_the_laps_of_the_first_files_activity(conn):
     assert verdict_count(conn, r.activity_id) == 0
 
 
-def test_new_bytes_of_a_session_without_laps_fill_them(conn):
+def test_new_bytes_of_a_session_without_laps_fill_them(conn, recent_sample):
     r = import_fit(conn, read(SAMPLE), "a.fit", "healthfit")
     conn.execute(text("update activities set laps = null where id = :i"), {"i": r.activity_id})
     verdict_for(conn, r.activity_id)
